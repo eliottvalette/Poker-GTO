@@ -1,27 +1,31 @@
 # expresso_pushfold_solver.py
 # ------------------------------------------------------------
-# Spin&Go (3-handed) PUSH/FOLD solver — from scratch, pure Python.
-# Focus: preflop 3-max with push/fold only, cEV model (no overcalls).
-# - Positions: BTN (no blind), SB (posts sb), BB (posts bb).
-# - Actions:
-#     * BTN: {FOLD, SHOVE}
-#     * If BTN shoves: SB: {FOLD, CALL}; if SB folds → BB: {FOLD, CALL}
-#       (Pas d’overcall: si SB call, BB ne peut pas overcall)
-#     * Si BTN fold: SB: {FOLD, SHOVE}; si SB shoves → BB: {FOLD, CALL}
-# - Décisions via best-response itératif sur ranges de shove/call.
-# - Équités all-in via Monte Carlo avec éval 7 cartes (best 5).
-# - EV en jetons (cEV) en se plaçant "post-blinds" (fold = 0 EV local).
+# Spin&Go (3-handed) — Solveur PUSH/FOLD
 #
-# Hypothèses/simplifications (à lever plus tard si besoin) :
-# - Pas d’overcall (3-way all-in) quand BTN shove et SB call.
-# - Décisions locales en cEV ; l’ICM ne sert qu’en reporting éventuel.
-# - Échantillonnage uniforme des combos dans une range adverse donnée.
-# - Pas de block effects dynamiques au-delà de la suppression des cartes héros.
+# Objet : calculer des ranges préflop 3-max en mode push/fold, en cEV
+# (pas d’ICM dans le moteur), sans overcalls (pas de all-in à 3).
+#
+# Positions : BTN (pas de blinde), SB (poste SB), BB (poste BB)
+# Séquence :
+#   - BTN : {FOLD, SHOVE}
+#   - Si BTN shove : SB {FOLD, CALL} ; si SB fold → BB {FOLD, CALL}
+#   - Si BTN fold : SB {FOLD, SHOVE} ; si SB shove → BB {FOLD, CALL}
+#
+# Méthode :
+#   - Itérations de meilleures réponses sur 5 ranges :
+#       BTN_shove, SB_call_vs_BTN, BB_call_vs_BTN, SB_shove, BB_call_vs_SB
+#   - Équités all-in via Monte Carlo (éval 7 cartes -> meilleure main 5 cartes)
+#   - EV en jetons (cEV) en se plaçant "post-blinds" (fold = 0 EV local)
+#
+# Hypothèses/simplifications :
+#   - Pas d’overcall quand BTN shove et SB call (pas de 3-way all-in)
+#   - Échantillonnage uniforme des combos dans les ranges adverses
+#   - Blockers pris en compte en filtrant les combos incompatibles
+#   - cEV uniquement (ICM en post-traitement si souhaité)
 #
 # Sorties :
-# - Solver.iterate() met à jour 5 ranges :
-#     BTN_shove, SB_call_vs_BTN, BB_call_vs_BTN, SB_shove, BB_call_vs_SB
-# - Utils pour afficher les ranges en 169 (A2..AKs) avec coverages.
+#   - Ranges push/call stables pour la profondeur donnée
+#   - Résumés en notation 169 (A2..AKs) et couverture en %
 #
 # ------------------------------------------------------------
 from __future__ import annotations
@@ -29,75 +33,34 @@ import random, math, itertools
 from collections import defaultdict, Counter
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Set, Iterable, Optional
+import tqdm
+import time
+
 
 # =========================
-# Cartes, combos, utilités
+# Import des classes et utilitaires
 # =========================
-
-RANKS = list(range(2, 15))  # 2..14 (A=14)
-SUITS = list(range(4))       # 0..3
-
-def card(rank: int, suit: int) -> int:
-    return (rank - 2) * 4 + suit  # 0..51
-
-def card_rank(c: int) -> int:
-    return (c // 4) + 2
-
-def card_suit(c: int) -> int:
-    return c % 4
-
-DECK = [card(r, s) for r in RANKS for s in SUITS]  # 52 cartes
-
-def all_starting_combos() -> List[Tuple[int,int]]:
-    combos = []
-    for i in range(52):
-        for j in range(i+1, 52):
-            combos.append((i, j))
-    return combos
-
-ALL_COMBOS = all_starting_combos()  # 1326 combos
-
-# 169 labelling (AKs, AKo, A5s, etc.)
-RANK_TO_STR = {14:'A', 13:'K', 12:'Q', 11:'J', 10:'T', 9:'9', 8:'8', 7:'7', 6:'6', 5:'5', 4:'4', 3:'3', 2:'2'}
-def combo_to_169(c1: int, c2: int) -> str:
-    r1, r2 = card_rank(c1), card_rank(c2)
-    s1, s2 = card_suit(c1), card_suit(c2)
-    hi, lo = max(r1, r2), min(r1, r2)
-    if r1 == r2:
-        return f"{RANK_TO_STR[hi]}{RANK_TO_STR[lo]}"
-    suited = (s1 == s2)
-    if hi == r1:
-        top, bot = r1, r2
-    else:
-        top, bot = r2, r1
-    return f"{RANK_TO_STR[top]}{RANK_TO_STR[bot]}{'s' if suited else 'o'}"
-
-def filter_combos_excluding(combos: Iterable[Tuple[int,int]], blocked: Set[int]) -> List[Tuple[int,int]]:
-    out = []
-    for a,b in combos:
-        if a in blocked or b in blocked: 
-            continue
-        out.append((a,b))
-    return out
+from classes import (
+    Card, Deck, DECK, ALL_COMBOS, 
+    card, card_rank, card_suit, combo_to_169, filter_combos_excluding
+)
 
 # ================
 # Éval mains 7->5
 # ================
 def hand_rank_5(cards5: Tuple[int,int,int,int,int]) -> Tuple:
-    # Retourne un tuple comparable (cat, tiebreakers...), cat: 8..0
+    # Retourne un tuple comparable (catégorie, bris d’égalité…), cat: 8..0
     ranks = sorted([card_rank(c) for c in cards5], reverse=True)
     suits = [card_suit(c) for c in cards5]
     rank_counts = Counter(ranks)
-    counts_sorted = sorted(rank_counts.items(), key=lambda x: (x[1], x[0]), reverse=True)  # by count then rank
+    counts_sorted = sorted(rank_counts.items(), key=lambda x: (x[1], x[0]), reverse=True)  # d’abord par multiplicité puis par rang
     is_flush = max(Counter(suits).values()) == 5
 
-    # Straight check (handle wheel A-5)
+    # Détection de la quinte (wheel A-5 gérée)
     uniq = sorted(set(ranks), reverse=True)
     def straight_high(uniq_ranks):
-        # returns high card of straight or None
-        # handle A-5 (A=14, 5..A)
         if 14 in uniq_ranks:
-            uniq_ranks = uniq_ranks + [1]  # treat A as 1
+            uniq_ranks = uniq_ranks + [1]  # A traité aussi comme 1
         for i in range(len(uniq_ranks)-4):
             window = uniq_ranks[i:i+5]
             if all(window[k] - 1 == window[k+1] for k in range(4)):
@@ -107,40 +70,40 @@ def hand_rank_5(cards5: Tuple[int,int,int,int,int]) -> Tuple:
     is_straight = straight_hi is not None
 
     if is_straight and is_flush:
-        return (8, straight_hi)  # straight flush
-    # Four of a kind
+        return (8, straight_hi)  # quinte flush
+    # Carré
     if counts_sorted[0][1] == 4:
         four = counts_sorted[0][0]
         kicker = max([r for r in ranks if r != four])
         return (7, four, kicker)
-    # Full house
+    # Full
     if counts_sorted[0][1] == 3 and counts_sorted[1][1] == 2:
         trips = counts_sorted[0][0]
         pair = counts_sorted[1][0]
         return (6, trips, pair)
-    # Flush
+    # Couleur
     if is_flush:
         return (5, ) + tuple(ranks)
-    # Straight
+    # Quinte
     if is_straight:
         return (4, straight_hi)
-    # Trips
+    # Brelan
     if counts_sorted[0][1] == 3:
         trips = counts_sorted[0][0]
         kickers = [r for r in ranks if r != trips][:2]
         return (3, trips) + tuple(kickers)
-    # Two pair
+    # Deux paires
     if counts_sorted[0][1] == 2 and counts_sorted[1][1] == 2:
         hi_pair = max(counts_sorted[0][0], counts_sorted[1][0])
         lo_pair = min(counts_sorted[0][0], counts_sorted[1][0])
         kicker = max([r for r in ranks if r != hi_pair and r != lo_pair])
         return (2, hi_pair, lo_pair, kicker)
-    # One pair
+    # Une paire
     if counts_sorted[0][1] == 2:
         pair = counts_sorted[0][0]
         kickers = [r for r in ranks if r != pair][:3]
         return (1, pair) + tuple(kickers)
-    # High card
+    # Hauteur
     return (0, ) + tuple(ranks)
 
 def best5_of7_rank(cards7: Tuple[int,...]) -> Tuple:
@@ -156,7 +119,8 @@ def best5_of7_rank(cards7: Tuple[int,...]) -> Tuple:
 # =======================
 class EquityCache:
     def __init__(self):
-        self.cache2 = {}  # ((h1a,h1b), frozenset(villain_combos_ids), eff), mc_samples -> (p_win,p_tie)
+        self.cache2 = {}  # ((h1a,h1b), frozenset(villain_range_ids), eff), mc_samples -> (p_win,p_tie)
+
     @staticmethod
     def combo_norm(c):
         a,b = c
@@ -166,12 +130,6 @@ def sample_board(excluded: Set[int], rng: random.Random) -> Tuple[int,int,int,in
     pool = [c for c in DECK if c not in excluded]
     rng.shuffle(pool)
     return tuple(pool[:5])
-
-def sample_combo_from_range(range_combos: List[Tuple[int,int]], excluded: Set[int], rng: random.Random) -> Optional[Tuple[int,int]]:
-    candidates = [c for c in range_combos if (c[0] not in excluded and c[1] not in excluded)]
-    if not candidates:
-        return None
-    return rng.choice(candidates)
 
 def estimate_equity_vs_range(hero_combo: Tuple[int,int],
                              villain_range: List[Tuple[int,int]],
@@ -185,13 +143,12 @@ def estimate_equity_vs_range(hero_combo: Tuple[int,int],
     wins = ties = losses = 0
     ha, hb = hero_combo
     blocked = {ha,hb}
-    # Pré-sélection rapide
+    # Pré-sélection pour tenir compte des blockers
     vill_list = [c for c in villain_range if c[0] not in blocked and c[1] not in blocked]
     if not vill_list:
-        return (1.0, 0.0, 0.0)  # personne ne peut caller -> on traite à part dans EV
+        return (1.0, 0.0, 0.0)  # Personne ne peut call → cas traité dans l’EV macro
     for _ in range(mc_samples):
-        vill = rng.choice(vill_list)
-        va, vb = vill
+        va, vb = rng.choice(vill_list)
         used = {ha,hb,va,vb}
         board = sample_board(used, rng)
         hero_rank = best5_of7_rank((ha,hb)+board)
@@ -206,7 +163,7 @@ def estimate_equity_vs_range(hero_combo: Tuple[int,int],
     return (wins/n, ties/n, losses/n)
 
 # ===========================
-# Config Spin&Go / Push-Fold
+# Configuration Expresso
 # ===========================
 @dataclass
 class ExpressoConfig:
@@ -217,7 +174,7 @@ class ExpressoConfig:
     seed: int = 42
 
 # ===========================
-# Ranges (sets de combos)
+# Ranges (ensembles de combos)
 # ===========================
 def combos_to_set(combos: Iterable[Tuple[int,int]]) -> Set[Tuple[int,int]]:
     return set((a,b) if a<b else (b,a) for a,b in combos)
@@ -226,7 +183,7 @@ def all_combos_set() -> Set[Tuple[int,int]]:
     return combos_to_set(ALL_COMBOS)
 
 # ===========================
-# EV all-in / noeuds de jeu
+# EV all-in / nœuds de jeu
 # ===========================
 class NodeEV:
     def __init__(self, cfg: ExpressoConfig):
@@ -234,7 +191,7 @@ class NodeEV:
         self.rng = random.Random(cfg.seed)
 
     def _pot_and_behind(self, stacks: Tuple[float,float,float]) -> Tuple[float, Tuple[float,float,float]]:
-        # stacks en BB (avant blinds). On passe en "behind" après blinds postées.
+        # Stacks en BB (avant blindes). On passe en "behind" après blindes postées.
         BTN, SB, BB = stacks
         pot = self.cfg.sb + self.cfg.bb
         behind = (BTN, SB - self.cfg.sb, BB - self.cfg.bb)
@@ -247,80 +204,64 @@ class NodeEV:
     def _ev_allin_2way(self, hero_combo: Tuple[int,int], villain_range: List[Tuple[int,int]],
                        behind_hero: float, behind_vill: float, pot: float) -> float:
         """
-        cEV pour HERO sur un all-in 2-way (post blinds).
+        cEV pour HERO sur un all-in à 2 joueurs (post-blinds).
         """
         E = self._eff(behind_hero, behind_vill)
         if E <= 0.0:
             return 0.0
         p_win, p_tie, p_lose = estimate_equity_vs_range(hero_combo, villain_range, self.cfg.mc_samples, self.rng)
-        # pot final = pot + 2E ; EV hero = p_win*( -E + pot+2E ) + p_tie*( -E + 0.5*(pot+2E) ) + p_lose*(-E)
+        # pot_final = pot + 2E ; EV = p_win*(-E + pot_final) + p_tie*(-E + 0.5*pot_final) + p_lose*(-E)
         pot_final = pot + 2.0 * E
         ev = p_win * (-E + pot_final) + p_tie * (-E + 0.5 * pot_final) + p_lose * (-E)
         return ev
 
-    # ---- EV pour boutons décisionnels ----
+    # ---- EV des décisions ----
     def ev_btn_shove(self, hero_combo: Tuple[int,int],
                      stacks: Tuple[float,float,float],
                      sb_call_range: Set[Tuple[int,int]],
                      bb_call_range: Set[Tuple[int,int]]) -> float:
         """
-        EV (en cEV) du shove du BTN. Baseline fold=0 (post blinds).
-        Branches:
-          - SB call -> all-in BTN vs SB
-          - SB fold & BB call -> all-in BTN vs BB
-          - SB fold & BB fold -> BTN gagne le pot
+        EV (cEV) du shove BTN. Référence fold=0 (post-blinds).
+        Branches : SB call / SB fold & BB call / SB fold & BB fold.
         """
         pot, (bBTN, bSB, bBB) = self._pot_and_behind(stacks)
         blocked = {hero_combo[0], hero_combo[1]}
-        sb_all = filter_combos_excluding(ALL_COMBOS, blocked)  # toutes mains possibles SB (posté sb déjà)
+        sb_all = filter_combos_excluding(ALL_COMBOS, blocked)
         sb_call = filter_combos_excluding(list(sb_call_range), blocked)
         bb_call = filter_combos_excluding(list(bb_call_range), blocked)
 
-        # Probas "combinatoires" d'appel
         p_sb_call = len(sb_call) / len(sb_all) if sb_all else 0.0
-        # Si SB fold, BB a l’option de call
         bb_all = filter_combos_excluding(ALL_COMBOS, blocked)
         p_bb_call = len(bb_call) / len(bb_all) if bb_all else 0.0
 
-        # EV si SB call :
         ev_vs_sb = self._ev_allin_2way(hero_combo, sb_call, bBTN, bSB, pot)
-        # EV si SB fold et BB call :
         ev_vs_bb = self._ev_allin_2way(hero_combo, bb_call, bBTN, bBB, pot)
-        # EV si tout le monde fold :
-        ev_steal = pot  # gain du pot actuel
+        ev_steal = pot
 
-        # EV totale (sans overcall) :
         ev = p_sb_call * ev_vs_sb + (1 - p_sb_call) * (p_bb_call * ev_vs_bb + (1 - p_bb_call) * ev_steal)
         return ev
 
     def ev_call_vs_btn(self, hero_combo: Tuple[int,int], stacks: Tuple[float,float,float],
                         btn_shove_range: Set[Tuple[int,int]], hero_pos: str) -> float:
         """
-        EV pour CALL face au shove du BTN :
-          hero_pos ∈ {"SB","BB"} (pas d’overcall dans ce modèle)
-        Baseline fold = 0 (post blinds).
+        EV pour CALL face au shove du BTN (hero_pos ∈ {"SB","BB"}). Fold = 0.
         """
         assert hero_pos in ("SB","BB")
         pot, (bBTN, bSB, bBB) = self._pot_and_behind(stacks)
         blocked = {hero_combo[0], hero_combo[1]}
-        # BTN a déjà choisit de shove → sa range est conditionnée : on échantillonne dedans.
         btn_range = filter_combos_excluding(list(btn_shove_range), blocked)
         if not btn_range:
-            return 0.0  # Personne ne shove en pratique -> call pas atteint
-
+            return 0.0
         if hero_pos == "SB":
             return self._ev_allin_2way(hero_combo, btn_range, bSB, bBTN, pot)
         else:
-            # BB : SB a fold pour que BB décide (pas d’overcall)
+            # BB : atteint seulement si SB a fold
             return self._ev_allin_2way(hero_combo, btn_range, bBB, bBTN, pot)
 
     def ev_sb_shove(self, hero_combo: Tuple[int,int], stacks: Tuple[float,float,float],
                     bb_call_range: Set[Tuple[int,int]]) -> float:
         """
-        BTN a fold ; SB décide shove vs BB (ou steal). Baseline fold=0 (post blinds).
-        Branches:
-          - BB call -> all-in SB vs BB
-          - BB fold -> SB gagne le pot
+        BTN a fold ; SB décide shove vs BB. Fold = 0.
         """
         pot, (bBTN, bSB, bBB) = self._pot_and_behind(stacks)
         blocked = {hero_combo[0], hero_combo[1]}
@@ -336,7 +277,7 @@ class NodeEV:
     def ev_call_vs_sb(self, hero_combo: Tuple[int,int], stacks: Tuple[float,float,float],
                       sb_shove_range: Set[Tuple[int,int]]) -> float:
         """
-        BB face au shove du SB (BTN a fold). Baseline fold=0 (post blinds).
+        BB face au shove du SB (BTN a fold). Fold = 0.
         """
         pot, (bBTN, bSB, bBB) = self._pot_and_behind(stacks)
         blocked = {hero_combo[0], hero_combo[1]}
@@ -346,7 +287,7 @@ class NodeEV:
         return self._ev_allin_2way(hero_combo, sb_range, bBB, bSB, pot)
 
 # ======================
-# Solver push/fold 3-max
+# Solveur push/fold 3-max
 # ======================
 class SpinGoPushFoldSolver:
     def __init__(self, cfg: ExpressoConfig):
@@ -359,74 +300,106 @@ class SpinGoPushFoldSolver:
         self.SB_shove: Set[Tuple[int,int]] = set()
         self.BB_call_vs_SB: Set[Tuple[int,int]] = set()
 
-        # Initialisation simple : aucune main (solver va remplir)
         self._all = all_combos_set()
         self.rng = random.Random(cfg.seed)
 
     def _update_btn_shove(self, stacks):
+        print(f"\nMise à jour : range BTN shove…")
         new_set = set()
-        for c in self._all:
+        for c in tqdm.tqdm(self._all, desc="BTN shove", leave=False):
             ev = self.node.ev_btn_shove(c, stacks, self.SB_call_vs_BTN, self.BB_call_vs_BTN)
             if ev > 0.0:
                 new_set.add(c)
         changed = (len(new_set ^ self.BTN_shove) > 0)
         self.BTN_shove = new_set
+        print(f"BTN shove : {len(new_set)} combos (modifié : {changed})")
         return changed
 
     def _update_sb_call_vs_btn(self, stacks):
+        print(f"\nMise à jour : range SB call vs BTN…")
         new_set = set()
-        for c in self._all:
+        for c in tqdm.tqdm(self._all, desc="SB call vs BTN", leave=False):
             ev_call = self.node.ev_call_vs_btn(c, stacks, self.BTN_shove, "SB")
             if ev_call > 0.0:
                 new_set.add(c)
         changed = (len(new_set ^ self.SB_call_vs_BTN) > 0)
         self.SB_call_vs_BTN = new_set
+        print(f"SB call vs BTN : {len(new_set)} combos (modifié : {changed})")
         return changed
 
     def _update_bb_call_vs_btn(self, stacks):
+        print(f"\nMise à jour : range BB call vs BTN…")
         new_set = set()
-        for c in self._all:
+        for c in tqdm.tqdm(self._all, desc="BB call vs BTN", leave=False):
             ev_call = self.node.ev_call_vs_btn(c, stacks, self.BTN_shove, "BB")
             if ev_call > 0.0:
                 new_set.add(c)
         changed = (len(new_set ^ self.BB_call_vs_BTN) > 0)
         self.BB_call_vs_BTN = new_set
+        print(f"BB call vs BTN : {len(new_set)} combos (modifié : {changed})")
         return changed
 
     def _update_sb_shove(self, stacks):
+        print(f"\nMise à jour : range SB shove…")
         new_set = set()
-        for c in self._all:
+        for c in tqdm.tqdm(self._all, desc="SB shove", leave=False):
             ev = self.node.ev_sb_shove(c, stacks, self.BB_call_vs_SB)
             if ev > 0.0:
                 new_set.add(c)
         changed = (len(new_set ^ self.SB_shove) > 0)
         self.SB_shove = new_set
+        print(f"SB shove : {len(new_set)} combos (modifié : {changed})")
         return changed
 
     def _update_bb_call_vs_sb(self, stacks):
+        print(f"\nMise à jour : range BB call vs SB…")
         new_set = set()
-        for c in self._all:
+        for c in tqdm.tqdm(self._all, desc="BB call vs SB", leave=False):
             ev_call = self.node.ev_call_vs_sb(c, stacks, self.SB_shove)
             if ev_call > 0.0:
                 new_set.add(c)
         changed = (len(new_set ^ self.BB_call_vs_SB) > 0)
         self.BB_call_vs_SB = new_set
+        print(f"BB call vs SB : {len(new_set)} combos (modifié : {changed})")
         return changed
 
     def iterate(self, n_iters: int = 8) -> None:
         stacks = self.cfg.stacks_bb
+        print(f"\nDémarrage des itérations ({n_iters})")
+        print(f"Stacks : BTN={stacks[0]}bb, SB={stacks[1]}bb, BB={stacks[2]}bb")
+        print(f"Samples Monte Carlo : {self.cfg.mc_samples}")
+        print(f"Total des combos évalués : {len(self._all)}")
+        
         for it in range(1, n_iters+1):
+            print(f"\n{'='*60}")
+            print(f"ITÉRATION {it}/{n_iters}")
+            print(f"{'='*60}")
+            start_time = time.time()
+            
             c1 = self._update_sb_call_vs_btn(stacks)
             c2 = self._update_bb_call_vs_btn(stacks)
             c3 = self._update_bb_call_vs_sb(stacks)
             c4 = self._update_btn_shove(stacks)
             c5 = self._update_sb_shove(stacks)
-            # Optionnel: petit logging concis
-            print(f"[Iter {it}] BTN shove:{len(self.BTN_shove)} | SB call vs BTN:{len(self.SB_call_vs_BTN)} | "
-                  f"BB call vs BTN:{len(self.BB_call_vs_BTN)} | SB shove:{len(self.SB_shove)} | "
-                  f"BB call vs SB:{len(self.BB_call_vs_SB)}")
+            
+            dt = time.time() - start_time
+            
+            print(f"\nRésumé itération {it} :")
+            print(f"Durée : {dt:.2f}s")
+            print(f"Modifs : SB_call_vs_BTN={c1}, BB_call_vs_BTN={c2}, BB_call_vs_SB={c3}, BTN_shove={c4}, SB_shove={c5}")
+            print(f"Tailles actuelles :")
+            print(f"   BTN shove : {len(self.BTN_shove)} combos ({self.coverage_pct(self.BTN_shove):.1f}%)")
+            print(f"   SB call vs BTN : {len(self.SB_call_vs_BTN)} combos ({self.coverage_pct(self.SB_call_vs_BTN):.1f}%)")
+            print(f"   BB call vs BTN : {len(self.BB_call_vs_BTN)} combos ({self.coverage_pct(self.BB_call_vs_BTN):.1f}%)")
+            print(f"   SB shove : {len(self.SB_shove)} combos ({self.coverage_pct(self.SB_shove):.1f}%)")
+            print(f"   BB call vs SB : {len(self.BB_call_vs_SB)} combos ({self.coverage_pct(self.BB_call_vs_SB):.1f}%)")
+            
+            total_changes = sum([c1, c2, c3, c4, c5])
+            if total_changes == 0:
+                print(f"\nCONVERGENCE atteinte à l’itération {it}.")
+                break
 
-    # ------------- Affichage / résumé en 169 -------------
+    # ----- Affichage / résumé en 169 -----
     @staticmethod
     def summarize_169(combos_set: Set[Tuple[int,int]]) -> Dict[str, int]:
         d = Counter()
@@ -444,7 +417,7 @@ class SpinGoPushFoldSolver:
             cov = self.coverage_pct(s)
             top = list(self.summarize_169(s).items())[:20]
             print(f"\n{name}: {len(s)} combos ({cov:.1f}%)")
-            print("Top (by combos count):", ", ".join([f"{k}:{v}" for k,v in top]))
+            print("Top (par nombre de combos) :", ", ".join([f"{k}:{v}" for k,v in top]))
         show("BTN shove", self.BTN_shove)
         show("SB call vs BTN", self.SB_call_vs_BTN)
         show("BB call vs BTN", self.BB_call_vs_BTN)
@@ -452,7 +425,7 @@ class SpinGoPushFoldSolver:
         show("BB call vs SB", self.BB_call_vs_SB)
 
 # ======================
-# Demo d’utilisation
+# Démonstration
 # ======================
 if __name__ == "__main__":
     cfg = ExpressoConfig(
