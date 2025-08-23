@@ -79,8 +79,8 @@ def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Calla
                 plt.savefig(f'viz/matrix_{range_name.replace(" ", "_").replace("vs", "vs_")}.png', 
                             dpi=300, bbox_inches='tight')
             else:
-                os.makedirs(f'viz_iter_{iter_num}', exist_ok=True)
-                plt.savefig(f'viz_iter_{iter_num}/matrix_{range_name.replace(" ", "_").replace("vs", "vs_")}.png', 
+                os.makedirs(f'viz/viz_iter_{iter_num}', exist_ok=True)
+                plt.savefig(f'viz/viz_iter_{iter_num}/matrix_{range_name.replace(" ", "_").replace("vs", "vs_")}.png', 
                             dpi=300, bbox_inches='tight')
             plt.close()
         
@@ -121,8 +121,8 @@ def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Calla
         if iter_num == 0:
             plt.savefig('viz/matrix_globale.png', dpi=300, bbox_inches='tight')
         else:
-            os.makedirs(f'viz_iter_{iter_num}', exist_ok=True)
-            plt.savefig(f'viz_iter_{iter_num}/matrix_globale.png', dpi=300, bbox_inches='tight')
+            os.makedirs(f'viz/viz_iter_{iter_num}', exist_ok=True)
+            plt.savefig(f'viz/viz_iter_{iter_num}/matrix_globale.png', dpi=300, bbox_inches='tight')
         plt.close()
         
 if __name__ == "__main__":
