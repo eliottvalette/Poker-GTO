@@ -8,3 +8,5 @@ __pycache__/
 *.pywz
 *.pyzw
 *.pyzwz
+files_to_send.py
+code_to_send_full.txt

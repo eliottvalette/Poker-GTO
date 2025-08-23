@@ -1,0 +1,48 @@
+DONNÉES DÉTAILLÉES DES RANGES PUSH/FOLD
+==================================================
+
+BTN shove:
+  Couverture: 100.0%
+  Nombre de combos: 1326
+  Top combos:
+    32o: 12
+    42o: 12
+    43o: 12
+    52o: 12
+    53o: 12
+    54o: 12
+    62o: 12
+    63o: 12
+    64o: 12
+    65o: 12
+
+SB call vs BTN:
+  Couverture: 0.0%
+  Nombre de combos: 0
+  Top combos:
+
+BB call vs BTN:
+  Couverture: 0.0%
+  Nombre de combos: 0
+  Top combos:
+
+SB shove:
+  Couverture: 100.0%
+  Nombre de combos: 1326
+  Top combos:
+    32o: 12
+    42o: 12
+    43o: 12
+    52o: 12
+    53o: 12
+    54o: 12
+    62o: 12
+    63o: 12
+    64o: 12
+    65o: 12
+
+BB call vs SB:
+  Couverture: 0.0%
+  Nombre de combos: 0
+  Top combos:
+

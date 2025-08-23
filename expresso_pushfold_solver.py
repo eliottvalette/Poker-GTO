@@ -35,7 +35,16 @@ from dataclasses import dataclass
 from typing import List, Tuple, Dict, Set, Iterable, Optional
 import tqdm
 import time
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+import os
+import cProfile
 
+# =========================
+# Profiler
+# =========================
+PROFILE = True
 
 # =========================
 # Import des classes et utilitaires
@@ -45,74 +54,9 @@ from classes import (
     card, card_rank, card_suit, combo_to_169, filter_combos_excluding
 )
 
-# ================
-# Éval mains 7->5
-# ================
-def hand_rank_5(cards5: Tuple[int,int,int,int,int]) -> Tuple:
-    # Retourne un tuple comparable (catégorie, bris d’égalité…), cat: 8..0
-    ranks = sorted([card_rank(c) for c in cards5], reverse=True)
-    suits = [card_suit(c) for c in cards5]
-    rank_counts = Counter(ranks)
-    counts_sorted = sorted(rank_counts.items(), key=lambda x: (x[1], x[0]), reverse=True)  # d’abord par multiplicité puis par rang
-    is_flush = max(Counter(suits).values()) == 5
+from utils import hand_rank_5, best5_of7_rank, save_ranges_json, load_ranges_json
 
-    # Détection de la quinte (wheel A-5 gérée)
-    uniq = sorted(set(ranks), reverse=True)
-    def straight_high(uniq_ranks):
-        if 14 in uniq_ranks:
-            uniq_ranks = uniq_ranks + [1]  # A traité aussi comme 1
-        for i in range(len(uniq_ranks)-4):
-            window = uniq_ranks[i:i+5]
-            if all(window[k] - 1 == window[k+1] for k in range(4)):
-                return window[0] if window[0] != 1 else 5
-        return None
-    straight_hi = straight_high(uniq)
-    is_straight = straight_hi is not None
-
-    if is_straight and is_flush:
-        return (8, straight_hi)  # quinte flush
-    # Carré
-    if counts_sorted[0][1] == 4:
-        four = counts_sorted[0][0]
-        kicker = max([r for r in ranks if r != four])
-        return (7, four, kicker)
-    # Full
-    if counts_sorted[0][1] == 3 and counts_sorted[1][1] == 2:
-        trips = counts_sorted[0][0]
-        pair = counts_sorted[1][0]
-        return (6, trips, pair)
-    # Couleur
-    if is_flush:
-        return (5, ) + tuple(ranks)
-    # Quinte
-    if is_straight:
-        return (4, straight_hi)
-    # Brelan
-    if counts_sorted[0][1] == 3:
-        trips = counts_sorted[0][0]
-        kickers = [r for r in ranks if r != trips][:2]
-        return (3, trips) + tuple(kickers)
-    # Deux paires
-    if counts_sorted[0][1] == 2 and counts_sorted[1][1] == 2:
-        hi_pair = max(counts_sorted[0][0], counts_sorted[1][0])
-        lo_pair = min(counts_sorted[0][0], counts_sorted[1][0])
-        kicker = max([r for r in ranks if r != hi_pair and r != lo_pair])
-        return (2, hi_pair, lo_pair, kicker)
-    # Une paire
-    if counts_sorted[0][1] == 2:
-        pair = counts_sorted[0][0]
-        kickers = [r for r in ranks if r != pair][:3]
-        return (1, pair) + tuple(kickers)
-    # Hauteur
-    return (0, ) + tuple(ranks)
-
-def best5_of7_rank(cards7: Tuple[int,...]) -> Tuple:
-    best = None
-    for comb in itertools.combinations(cards7, 5):
-        r = hand_rank_5(comb)
-        if (best is None) or (r > best):
-            best = r
-    return best
+from visualisation import visualise_ranges
 
 # =======================
 # Monte Carlo d’équités
@@ -290,15 +234,17 @@ class NodeEV:
 # Solveur push/fold 3-max
 # ======================
 class SpinGoPushFoldSolver:
-    def __init__(self, cfg: ExpressoConfig):
+    def __init__(self, cfg: ExpressoConfig, saved_ranges: Dict[str, Set[Tuple[int,int]]] = None):
         self.cfg = cfg
         self.node = NodeEV(cfg)
         # Ranges (ensembles de combos)
-        self.BTN_shove: Set[Tuple[int,int]] = set()
-        self.SB_call_vs_BTN: Set[Tuple[int,int]] = set()
-        self.BB_call_vs_BTN: Set[Tuple[int,int]] = set()
-        self.SB_shove: Set[Tuple[int,int]] = set()
-        self.BB_call_vs_SB: Set[Tuple[int,int]] = set()
+        if saved_ranges is None:
+            saved_ranges = {}
+        self.BTN_shove: Set[Tuple[int,int]] = saved_ranges.get("BTN_shove", set())
+        self.SB_call_vs_BTN: Set[Tuple[int,int]] = saved_ranges.get("SB_call_vs_BTN", set())
+        self.BB_call_vs_BTN: Set[Tuple[int,int]] = saved_ranges.get("BB_call_vs_BTN", set())
+        self.SB_shove: Set[Tuple[int,int]] = saved_ranges.get("SB_shove", set())
+        self.BB_call_vs_SB: Set[Tuple[int,int]] = saved_ranges.get("BB_call_vs_SB", set())
 
         self._all = all_combos_set()
         self.rng = random.Random(cfg.seed)
@@ -365,15 +311,21 @@ class SpinGoPushFoldSolver:
 
     def iterate(self, n_iters: int = 8) -> None:
         stacks = self.cfg.stacks_bb
-        print(f"\nDémarrage des itérations ({n_iters})")
+        print(f"\nDÉMARRAGE DES ITÉRATIONS ({n_iters})")
         print(f"Stacks : BTN={stacks[0]}bb, SB={stacks[1]}bb, BB={stacks[2]}bb")
         print(f"Samples Monte Carlo : {self.cfg.mc_samples}")
         print(f"Total des combos évalués : {len(self._all)}")
         
+        # Stocker l'évolution pour le graphique
+        evolution_data = {
+            'BTN_shove': [], 'SB_call_vs_BTN': [], 'BB_call_vs_BTN': [],
+            'SB_shove': [], 'BB_call_vs_SB': []
+        }
+        
         for it in range(1, n_iters+1):
-            print(f"\n{'='*60}")
+            print(f"\n{'='*70}")
             print(f"ITÉRATION {it}/{n_iters}")
-            print(f"{'='*60}")
+            print(f"{'='*70}")
             start_time = time.time()
             
             c1 = self._update_sb_call_vs_btn(stacks)
@@ -384,19 +336,32 @@ class SpinGoPushFoldSolver:
             
             dt = time.time() - start_time
             
-            print(f"\nRésumé itération {it} :")
+            # Stocker les données d'évolution
+            evolution_data['BTN_shove'].append(len(self.BTN_shove))
+            evolution_data['SB_call_vs_BTN'].append(len(self.SB_call_vs_BTN))
+            evolution_data['BB_call_vs_BTN'].append(len(self.BB_call_vs_BTN))
+            evolution_data['SB_shove'].append(len(self.SB_shove))
+            evolution_data['BB_call_vs_SB'].append(len(self.BB_call_vs_SB))
+            
+            print(f"\nRÉSUMÉ ITÉRATION {it} :")
             print(f"Durée : {dt:.2f}s")
-            print(f"Modifs : SB_call_vs_BTN={c1}, BB_call_vs_BTN={c2}, BB_call_vs_SB={c3}, BTN_shove={c4}, SB_shove={c5}")
-            print(f"Tailles actuelles :")
-            print(f"   BTN shove : {len(self.BTN_shove)} combos ({self.coverage_pct(self.BTN_shove):.1f}%)")
-            print(f"   SB call vs BTN : {len(self.SB_call_vs_BTN)} combos ({self.coverage_pct(self.SB_call_vs_BTN):.1f}%)")
-            print(f"   BB call vs BTN : {len(self.BB_call_vs_BTN)} combos ({self.coverage_pct(self.BB_call_vs_BTN):.1f}%)")
-            print(f"   SB shove : {len(self.SB_shove)} combos ({self.coverage_pct(self.SB_shove):.1f}%)")
-            print(f"   BB call vs SB : {len(self.BB_call_vs_SB)} combos ({self.coverage_pct(self.BB_call_vs_SB):.1f}%)")
+            print(f"Modifications :")
+            print(f"   SB_call_vs_BTN: {'OUI' if c1 else 'NON'}")
+            print(f"   BB_call_vs_BTN: {'OUI' if c2 else 'NON'}")
+            print(f"   BB_call_vs_SB:  {'OUI' if c3 else 'NON'}")
+            print(f"   BTN_shove:      {'OUI' if c4 else 'NON'}")
+            print(f"   SB_shove:       {'OUI' if c5 else 'NON'}")
+            
+            print(f"\nTAILLES ACTUELLES :")
+            print(f"   BTN shove      : {len(self.BTN_shove):4d} combos ({self.coverage_pct(self.BTN_shove):5.1f}%)")
+            print(f"   SB call vs BTN : {len(self.SB_call_vs_BTN):4d} combos ({self.coverage_pct(self.SB_call_vs_BTN):5.1f}%)")
+            print(f"   BB call vs BTN : {len(self.BB_call_vs_BTN):4d} combos ({self.coverage_pct(self.BB_call_vs_BTN):5.1f}%)")
+            print(f"   SB shove       : {len(self.SB_shove):4d} combos ({self.coverage_pct(self.SB_shove):5.1f}%)")
+            print(f"   BB call vs SB  : {len(self.BB_call_vs_SB):4d} combos ({self.coverage_pct(self.BB_call_vs_SB):5.1f}%)")
             
             total_changes = sum([c1, c2, c3, c4, c5])
             if total_changes == 0:
-                print(f"\nCONVERGENCE atteinte à l’itération {it}.")
+                print(f"\nCONVERGENCE atteinte à l'itération {it} !")
                 break
 
     # ----- Affichage / résumé en 169 -----
@@ -412,17 +377,55 @@ class SpinGoPushFoldSolver:
     def coverage_pct(combos_set: Set[Tuple[int,int]]) -> float:
         return 100.0 * len(combos_set) / len(ALL_COMBOS)
 
-    def print_summary(self) -> None:
-        def show(name, s):
-            cov = self.coverage_pct(s)
-            top = list(self.summarize_169(s).items())[:20]
-            print(f"\n{name}: {len(s)} combos ({cov:.1f}%)")
-            print("Top (par nombre de combos) :", ", ".join([f"{k}:{v}" for k,v in top]))
-        show("BTN shove", self.BTN_shove)
-        show("SB call vs BTN", self.SB_call_vs_BTN)
-        show("BB call vs BTN", self.BB_call_vs_BTN)
-        show("SB shove", self.SB_shove)
-        show("BB call vs SB", self.BB_call_vs_SB)
+    def display_summary(self) -> None:
+        """Affiche un résumé clair avec visualisations et sauvegarde des PNGs"""
+        # Données pour les graphiques
+        ranges_data = {
+            "BTN shove": self.BTN_shove,
+            "SB call vs BTN": self.SB_call_vs_BTN,
+            "BB call vs BTN": self.BB_call_vs_BTN,
+            "SB shove": self.SB_shove,
+            "BB call vs SB": self.BB_call_vs_SB
+        }
+
+        # Visualisations
+        visualise_ranges(ranges_data, self.coverage_pct)
+
+        # Sauvegarde des ranges
+        save_ranges_json('ranges.json', ranges_data)
+
+        # Print texte clair
+        print("\n" + "="*80)
+        print("RÉSUMÉ FINAL DES RANGES PUSH/FOLD")
+        print("="*80)
+        
+        print(f"\nCOUVERTURES DES RANGES:")
+        print("-" * 50)
+        for name, combo_set in ranges_data.items():
+            coverage = self.coverage_pct(combo_set)
+            print(f"{name:20} : {len(combo_set):4d} combos ({coverage:5.1f}%)")
+        
+        print(f"\nTOP 5 COMBOS PAR RANGE:")
+        print("-" * 50)
+        for name, combo_set in ranges_data.items():
+            top_combos = list(self.summarize_169(combo_set).items())[:5]
+            print(f"\n{name}:")
+            for combo, count in top_combos:
+                print(f"  {combo:4s} : {count:2d} combos")
+        
+        # Créer un fichier de données pour analyse
+        with open('ranges_data.txt', 'w') as f:
+            f.write("DONNÉES DÉTAILLÉES DES RANGES PUSH/FOLD\n")
+            f.write("="*50 + "\n\n")
+            for name, combo_set in ranges_data.items():
+                f.write(f"{name}:\n")
+                f.write(f"  Couverture: {self.coverage_pct(combo_set):.1f}%\n")
+                f.write(f"  Nombre de combos: {len(combo_set)}\n")
+                f.write("  Top combos:\n")
+                top_combos = list(self.summarize_169(combo_set).items())[:10]
+                for combo, count in top_combos:
+                    f.write(f"    {combo}: {count}\n")
+                f.write("\n")
 
 # ======================
 # Démonstration
@@ -432,8 +435,22 @@ if __name__ == "__main__":
         sb=0.5, bb=1.0,
         stacks_bb=(25.0, 25.0, 25.0),  # (BTN, SB, BB)
         mc_samples=400,
-        seed=123
+        seed=42
     )
-    solver = SpinGoPushFoldSolver(cfg)
-    solver.iterate(n_iters=8)  # augmenter pour plus de stabilité (coût CPU ↑)
-    solver.print_summary()
+
+    saved_ranges = load_ranges_json("ranges.json")
+    solver = SpinGoPushFoldSolver(cfg, saved_ranges)
+
+    if PROFILE:
+        profiler = cProfile.Profile()
+        profiler.enable()
+
+    solver.iterate(n_iters=1)
+
+    if PROFILE:
+        profiler.disable()
+        profiler.dump_stats("profiling/training_profile.prof")
+
+    solver.display_summary()
+
+    
