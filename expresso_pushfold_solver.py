@@ -78,16 +78,16 @@ def estimate_equity_vs_range(hero_combo: Tuple[int,int],  # Combo du héros
     Retourne (p_win, p_tie, p_lose) pour hero vs *une* main tirée uniformément de villain_range.
     Monte Carlo sur boards.
     """
-    rng = rng or random.Random(0)  # Utiliser le RNG fourni ou en créer un nouveau
     wins = ties = losses = 0  # Compteurs de victoires, égalités et défaites
     hero_card_1, hero_card_2 = hero_combo  # Extraire les cartes du héros
     blocked = {hero_card_1, hero_card_2}  # Cartes bloquées par le héros
+
     # Pré-sélection pour tenir compte des blockers
-    vill_list = [combo for combo in villain_range if combo[0] not in blocked and combo[1] not in blocked]  # Filtrer les combos compatibles
-    if not vill_list:  # Si aucun combo compatible
-        return (1.0, 0.0, 0.0)  # Personne ne peut call → cas traité dans l'EV macro
+    compatible_villain_combos = fast_filter_range(villain_range, blocked)
+    if not compatible_villain_combos:  # Si aucun combo compatible
+        return (1.0, 0.0, 0.0)  # Personne ne peut call → villain foldera
     for _ in range(mc_samples):  # Pour chaque échantillon Monte Carlo
-        rd_villain_card_1, rd_villain_card_2 = rng.choice(vill_list)  # Tirer un combo adverse aléatoirement
+        rd_villain_card_1, rd_villain_card_2 = rng.choice(compatible_villain_combos)  # Tirer un combo adverse aléatoirement
         used = {hero_card_1, hero_card_2, rd_villain_card_1, rd_villain_card_2}  # Ensemble des cartes utilisées
         board = sample_board(used, rng)  # Tirer le board
         hero_rank = best5_of7_rank((hero_card_1, hero_card_2)+board)  # Évaluer la main du héros
@@ -128,45 +128,40 @@ class NodeEV:
     def __init__(self, config: ExpressoConfig):
         self.config = config
         self.rng = random.Random(config.seed)
-        self._ctx = None
-
-    @lru_cache(maxsize=200_000)
-    def _eq_cached(self, hero_card_1: int, hero_card_2: int, villain_range_set: frozenset) -> Tuple[float,float,float]:
-        # RNG déterministe pour stabilité du cache
-        rng = random.Random(self.config.seed)
-        villain_range_list = list(villain_range_set)
-        return estimate_equity_vs_range((hero_card_1, hero_card_2), villain_range_list, self.config.mc_samples, rng)
+        self.context = None
 
     def set_context(self, stacks: Tuple[float,float,float]):
-        self._ctx = self._pot_and_behind(stacks)
+        self.context = self.pot_and_behind(stacks)
 
-    def _ctx_pot_and_behind(self):
-        return self._ctx
+    def context_pot_and_behind(self):
+        return self.context
 
-    def _pot_and_behind(self, stacks: Tuple[float,float,float]) -> Tuple[float, Tuple[float,float,float]]:  # Calculer le pot et les stacks après blindes
+    def pot_and_behind(self, stacks: Tuple[float,float,float]) -> Tuple[float, Tuple[float,float,float]]:  # Calculer le pot et les stacks après blindes
         # Stacks en BB (avant blindes). On passe en "behind" après blindes postées.
-        BTN, SB, BB = stacks  # Extraire les stacks des trois positions
+        BTN_STACK, SB_STACK, BB_STACK = stacks  # Extraire les stacks des trois positions
         pot = self.config.sb + self.config.bb  # Calculer le pot total (SB + BB)
-        behind = (BTN, SB - self.config.sb, BB - self.config.bb)  # Stacks après avoir posté les blindes
+        behind = (BTN_STACK, SB_STACK - self.config.sb, BB_STACK - self.config.bb)  # Stacks après avoir posté les blindes
+
+        if min(behind) < 0.0:
+            raise ValueError("Stacks négatifs")
+        
         return pot, behind  # Retourner le pot et les stacks "behind"
 
-    @staticmethod
-    def _eff(behind_hero: float, behind_vill: float) -> float:  # Calculer l'effective stack
-        return max(0.0, min(behind_hero, behind_vill))  # Le plus petit des deux stacks, minimum 0
-
-    def _ev_allin_2way(self, hero_combo: Tuple[int,int], villain_list: List[Tuple[int,int]],
+    def ev_allin_heads_up(self, hero_combo: Tuple[int,int], villain_list: List[Tuple[int,int]],
                        behind_hero: float, behind_vill: float, pot: float) -> float:
         """
         cEV pour HERO sur un all-in à 2 joueurs (post-blinds).
         """
-        E = self._eff(behind_hero, behind_vill)
-        if E <= 0.0 or not villain_list:
+        effective_stack = min(behind_hero, behind_vill)
+        if effective_stack <= 0.0 :
+            raise ValueError("Un des deux joueurs a un stack négatif ou nul, ")
+        if not villain_list:
             return 0.0
-        hero_card_1, hero_card_2 = hero_combo
-        p_win, p_tie, p_lose = self._eq_cached(hero_card_1, hero_card_2, frozenset(villain_list))
+        
+        p_win, p_tie, p_lose = estimate_equity_vs_range(hero_combo, villain_list, self.config.mc_samples, self.rng)
         # pot_final = pot + 2E ; EV = p_win*(-E + pot_final) + p_tie*(-E + 0.5*pot_final) + p_lose*(-E)
-        pot_final = pot + 2.0 * E
-        ev = p_win * (-E + pot_final) + p_tie * (-E + 0.5 * pot_final) + p_lose * (-E)
+        pot_final = pot + 2.0 * effective_stack
+        ev = p_win * (-effective_stack + pot_final) + p_tie * (-effective_stack + 0.5 * pot_final) + p_lose * (-effective_stack)
         return ev
 
     # ---- EV des décisions ----
@@ -178,7 +173,7 @@ class NodeEV:
         EV (cEV) du shove BTN. Référence fold=0 (post-blinds).
         Branches : SB call / SB fold & BB call / SB fold & BB fold.
         """
-        pot, (bBTN, bSB, bBB) = self._ctx_pot_and_behind()
+        pot, (bBTN, bSB, bBB) = self.context_pot_and_behind()
         blocked = {hero_combo[0], hero_combo[1]}
         sb_all = fast_filter_range(ALL_COMBOS_SET, blocked)
         sb_call = fast_filter_range(list(sb_call_range), blocked)
@@ -187,8 +182,8 @@ class NodeEV:
         p_sb_call = count_wo_blockers(sb_call_range, blocked) / TOTAL_COMBOS_NO_BLOCKERS
         p_bb_call = count_wo_blockers(bb_call_range, blocked) / TOTAL_COMBOS_NO_BLOCKERS
 
-        ev_vs_sb = self._ev_allin_2way(hero_combo, sb_call, bBTN, bSB, pot)
-        ev_vs_bb = self._ev_allin_2way(hero_combo, bb_call, bBTN, bBB, pot)
+        ev_vs_sb = self.ev_allin_heads_up(hero_combo, sb_call, bBTN, bSB, pot)
+        ev_vs_bb = self.ev_allin_heads_up(hero_combo, bb_call, bBTN, bBB, pot)
         ev_steal = pot
 
         ev = p_sb_call * ev_vs_sb + (1 - p_sb_call) * (p_bb_call * ev_vs_bb + (1 - p_bb_call) * ev_steal)
@@ -200,29 +195,29 @@ class NodeEV:
         EV pour CALL face au shove du BTN (hero_pos ∈ {"SB","BB"}). Fold = 0.
         """
         assert hero_pos in ("SB","BB")
-        pot, (bBTN, bSB, bBB) = self._ctx_pot_and_behind()
+        pot, (bBTN, bSB, bBB) = self.context_pot_and_behind()
         blocked = {hero_combo[0], hero_combo[1]}
         btn_range = fast_filter_range(list(btn_shove_range), blocked)
         if not btn_range:
             return 0.0
         if hero_pos == "SB":
-            return self._ev_allin_2way(hero_combo, btn_range, bSB, bBTN, pot)
+            return self.ev_allin_heads_up(hero_combo, btn_range, bSB, bBTN, pot)
         else:
             # BB : atteint seulement si SB a fold
-            return self._ev_allin_2way(hero_combo, btn_range, bBB, bBTN, pot)
+            return self.ev_allin_heads_up(hero_combo, btn_range, bBB, bBTN, pot)
 
     def ev_sb_shove(self, hero_combo: Tuple[int,int], stacks: Tuple[float,float,float],
                     bb_call_range: Set[Tuple[int,int]]) -> float:
         """
         BTN a fold ; SB décide shove vs BB. Fold = 0.
         """
-        pot, (bBTN, bSB, bBB) = self._ctx_pot_and_behind()
+        pot, (bBTN, bSB, bBB) = self.context_pot_and_behind()
         blocked = {hero_combo[0], hero_combo[1]}
         bb_all = fast_filter_range(ALL_COMBOS_SET, blocked)
         bb_call = fast_filter_range(list(bb_call_range), blocked)
         p_bb_call = count_wo_blockers(bb_call_range, blocked) / TOTAL_COMBOS_NO_BLOCKERS
 
-        ev_vs_bb = self._ev_allin_2way(hero_combo, bb_call, bSB, bBB, pot)
+        ev_vs_bb = self.ev_allin_heads_up(hero_combo, bb_call, bSB, bBB, pot)
         ev_steal = pot
         ev = p_bb_call * ev_vs_bb + (1 - p_bb_call) * ev_steal
         return ev
@@ -232,12 +227,12 @@ class NodeEV:
         """
         BB face au shove du SB (BTN a fold). Fold = 0.
         """
-        pot, (bBTN, bSB, bBB) = self._ctx_pot_and_behind()
+        pot, (bBTN, bSB, bBB) = self.context_pot_and_behind()
         blocked = {hero_combo[0], hero_combo[1]}
         sb_range = fast_filter_range(list(sb_shove_range), blocked)
         if not sb_range:
             return 0.0
-        return self._ev_allin_2way(hero_combo, sb_range, bBB, bSB, pot)
+        return self.ev_allin_heads_up(hero_combo, sb_range, bBB, bSB, pot)
 
 # ======================
 # Solveur push/fold 3-max
