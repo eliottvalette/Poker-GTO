@@ -1,23 +1,20 @@
 # expresso_pushfold_solver.py
 
 from __future__ import annotations
-import random, math, itertools
-from collections import defaultdict, Counter
+from collections import Counter
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Set, Iterable, Optional
-from functools import lru_cache
 import tqdm
 import time
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
 import os
 import cProfile
+import random
+import math
 
 # =========================
 # Profiler
 # =========================
-PROFILE = True
+PROFILE = False
 
 # =========================
 # Import des classes et utilitaires
@@ -85,7 +82,7 @@ def q_adaptive(
     rng: random.Random,
     tau: float,                 # seuil = E / (pot + 2E)
     batch: int = 80,
-    alpha: float = 0.05,        # ~95% de confiance
+    alpha: float = 0.01,        # ~99% de confiance
     max_samples: int = 1600,
 ) -> tuple[float, int, int]:
     """
@@ -151,38 +148,6 @@ def q_adaptive(
     ADAPTIVE_STATS['max_samples_reached'] += 1
     q_hat = (wins + 0.5*ties)/nb_samples
     return q_hat, nb_samples
-
-# Ancienne fonction (gardée pour compatibilité si nécessaire)
-def estimate_equity_vs_range(hero_combo: Tuple[int,int],  # Combo du héros
-                             villain_range: List[Tuple[int,int]],  # Range de l'adversaire
-                             mc_samples: int = 400,  # Nombre d'échantillons Monte Carlo
-                             rng: Optional[random.Random] = None) -> Tuple[float,float,float]:  # Retourne (p_win, p_tie, p_lose)
-    """
-    Retourne (p_win, p_tie, p_lose) pour hero vs *une* main tirée uniformément de villain_range.
-    Monte Carlo sur boards.
-    """
-    wins = ties = losses = 0  # Compteurs de victoires, égalités et défaites
-    hero_card_1, hero_card_2 = hero_combo  # Extraire les cartes du héros
-    blocked = {hero_card_1, hero_card_2}  # Cartes bloquées par le héros
-
-    # Pré-sélection pour tenir compte des blockers
-    compatible_villain_combos = fast_filter_range(villain_range, blocked)
-    if not compatible_villain_combos:  # Si aucun combo compatible
-        return (1.0, 0.0, 0.0)  # Personne ne peut call → villain foldera
-    for _ in range(mc_samples):  # Pour chaque échantillon Monte Carlo
-        rd_villain_card_1, rd_villain_card_2 = rng.choice(compatible_villain_combos)  # Tirer un combo adverse aléatoirement
-        used = {hero_card_1, hero_card_2, rd_villain_card_1, rd_villain_card_2}  # Ensemble des cartes utilisées
-        board = sample_board(used, rng)  # Tirer le board
-        hero_rank = best5_of7_rank((hero_card_1, hero_card_2)+board)  # Évaluer la main du héros
-        villain_rank = best5_of7_rank((rd_villain_card_1, rd_villain_card_2)+board)  # Évaluer la main de l'adversaire
-        if hero_rank > villain_rank:  # Si le héros gagne
-            wins += 1  # Incrémenter les victoires
-        elif hero_rank == villain_rank:  # Si égalité
-            ties += 1  # Incrémenter les égalités
-        else:  # Si l'adversaire gagne
-            losses += 1  # Incrémenter les défaites
-    num_samples = wins+ties+losses  # Total des échantillons
-    return (wins/num_samples, ties/num_samples, losses/num_samples)  # Retourner les probabilités
 
 # ===========================
 # Configuration Expresso
@@ -420,6 +385,16 @@ class SpinGoPushFoldSolver:
             print(f"\n{'='*70}")
             print(f"ITÉRATION {it}/{n_iters}")
             print(f"{'='*70}")
+
+            # Stocker les ranges précédentes
+            self.previous_ranges = {
+                "BTN_shove": self.BTN_shove.copy(),
+                "SB_call_vs_BTN": self.SB_call_vs_BTN.copy(),
+                "BB_call_vs_BTN": self.BB_call_vs_BTN.copy(),
+                "SB_shove": self.SB_shove.copy(),
+                "BB_call_vs_SB": self.BB_call_vs_SB.copy()
+            }
+
             start_time = time.time()
             
             c1 = self._update_sb_call_vs_btn()
@@ -477,11 +452,11 @@ class SpinGoPushFoldSolver:
         """Affiche un résumé clair avec visualisations et sauvegarde des PNGs"""
         # Données pour les graphiques
         ranges_data = {
-            "BTN shove": self.BTN_shove,
-            "SB call vs BTN": self.SB_call_vs_BTN,
-            "BB call vs BTN": self.BB_call_vs_BTN,
-            "SB shove": self.SB_shove,
-            "BB call vs SB": self.BB_call_vs_SB
+            "BTN_shove": self.BTN_shove,
+            "SB_call_vs_BTN": self.SB_call_vs_BTN,
+            "BB_call_vs_BTN": self.BB_call_vs_BTN,
+            "SB_shove": self.SB_shove,
+            "BB_call_vs_SB": self.BB_call_vs_SB
         }
 
         # Visualisations
@@ -506,13 +481,15 @@ class SpinGoPushFoldSolver:
             coverage = self.coverage_pct(combo_set)
             print(f"{name:20} : {len(combo_set):4d} combos ({coverage:5.1f}%)")
         
-        print(f"\nTOP 5 COMBOS PAR RANGE:")
-        print("-" * 50)
-        for name, combo_set in ranges_data.items():
-            top_combos = list(self.summarize_169(combo_set).items())[:5]
-            print(f"\n{name}:")
-            for combo, count in top_combos:
-                print(f"  {combo:4s} : {count:2d} combos")
+        if iter_num > 0:
+            print(f"\nCHANGEMENTS PAR RANGE (vs itération précédente):")
+            print("-" * 50)
+            for name, combo_set in ranges_data.items():
+                prev_set = self.previous_ranges[name]
+                before = len(prev_set)
+                after = len(combo_set)
+                difference = after - before
+                print(f"{name:20} : {before:4d} → {after:4d} ({difference:+4d})")
         
         # Créer un fichier de données pour analyse
         with open('ranges/ranges_data.txt', 'w') as f:
