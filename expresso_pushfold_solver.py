@@ -47,13 +47,6 @@ def fast_filter_range(range_set, blocked: Set[int]) -> List[Tuple[int,int]]:  # 
     range_set_set = set(range_set) if not isinstance(range_set, set) else range_set  # Convertir la range en set si nécessaire
     return list(range_set_set - COMBOS_BY_CARD[card_1] - COMBOS_BY_CARD[card_2])  # Retourner la range filtrée (sans les combos contenant les cartes bloquées) (en soustrayant les sets on est en O(1))
 
-def count_wo_blockers(range_set: Set[Tuple[int,int]], blocked: Set[int]) -> int:  # Compter les combos sans blockers (Moins gourmand que fast_filter_range car on a besoin que de la taille de la range)
-    card_1,card_2 = list(blocked)  # Obtenir les cartes bloquées
-    combos_with_card_1 = range_set & COMBOS_BY_CARD[card_1]  # Intersection avec les combos contenant la carte card_1
-    combos_with_card_2 = range_set & COMBOS_BY_CARD[card_2]  # Intersection avec les combos contenant la carte card_2
-    combos_with_both_cards = combos_with_card_1 & combos_with_card_2  # Intersection des deux (combos contenant card_1 ET card_2)
-    return len(range_set) - len(combos_with_card_1) - len(combos_with_card_2) + len(combos_with_both_cards)  # Principe d'inclusion-exclusion
-
 # =======================
 # Monte Carlo d'équités
 # =======================
@@ -175,64 +168,63 @@ class NodeEV:
         """
         pot, (bBTN, bSB, bBB) = self.context_pot_and_behind()
         blocked = {hero_combo[0], hero_combo[1]}
-        sb_all = fast_filter_range(ALL_COMBOS_SET, blocked)
-        sb_call = fast_filter_range(list(sb_call_range), blocked)
-        bb_call = fast_filter_range(list(bb_call_range), blocked)
 
-        p_sb_call = count_wo_blockers(sb_call_range, blocked) / TOTAL_COMBOS_NO_BLOCKERS
-        p_bb_call = count_wo_blockers(bb_call_range, blocked) / TOTAL_COMBOS_NO_BLOCKERS
+        sb_call = fast_filter_range(list(sb_call_range), blocked) # Liste des combos que la SB pourrait call
+        bb_call = fast_filter_range(list(bb_call_range), blocked) # Liste des combos que la BB pourrait call
 
-        ev_vs_sb = self.ev_allin_heads_up(hero_combo, sb_call, bBTN, bSB, pot)
-        ev_vs_bb = self.ev_allin_heads_up(hero_combo, bb_call, bBTN, bBB, pot)
-        ev_steal = pot
+        p_sb_call = len(sb_call) / TOTAL_COMBOS_NO_BLOCKERS # Probabilité que la SB call
+        p_bb_call = len(bb_call) / TOTAL_COMBOS_NO_BLOCKERS # Probabilité que la BB call
 
+        ev_vs_sb = self.ev_allin_heads_up(hero_combo, sb_call, bBTN, bSB, pot) # EV vs la SB
+        ev_vs_bb = self.ev_allin_heads_up(hero_combo, bb_call, bBTN, bBB, pot) # EV vs la BB
+        ev_steal = pot # EV si le BTN fold
+
+        # EV Total = probabilité que la SB call * EV vs la SB + probabilité que la SB fold * (probabilité que la BB call * EV vs la BB + probabilité que la BB fold * EV si le BTN fold)
         ev = p_sb_call * ev_vs_sb + (1 - p_sb_call) * (p_bb_call * ev_vs_bb + (1 - p_bb_call) * ev_steal)
         return ev
 
-    def ev_call_vs_btn(self, hero_combo: Tuple[int,int], stacks: Tuple[float,float,float],
-                        btn_shove_range: Set[Tuple[int,int]], hero_pos: str) -> float:
+    def ev_call_vs_btn(self, hero_combo: Tuple[int,int], btn_shove_range: Set[Tuple[int,int]], hero_pos: str) -> float:
         """
         EV pour CALL face au shove du BTN (hero_pos ∈ {"SB","BB"}). Fold = 0.
         """
-        assert hero_pos in ("SB","BB")
         pot, (bBTN, bSB, bBB) = self.context_pot_and_behind()
         blocked = {hero_combo[0], hero_combo[1]}
-        btn_range = fast_filter_range(list(btn_shove_range), blocked)
-        if not btn_range:
-            return 0.0
-        if hero_pos == "SB":
-            return self.ev_allin_heads_up(hero_combo, btn_range, bSB, bBTN, pot)
-        else:
-            # BB : atteint seulement si SB a fold
-            return self.ev_allin_heads_up(hero_combo, btn_range, bBB, bBTN, pot)
 
-    def ev_sb_shove(self, hero_combo: Tuple[int,int], stacks: Tuple[float,float,float],
-                    bb_call_range: Set[Tuple[int,int]]) -> float:
+        btn_range = fast_filter_range(list(btn_shove_range), blocked) # Liste des combos que le BTN pourrait shove
+
+        if not btn_range: # Si aucun combo compatible
+            return 0.0
+        
+        hero_stack = bSB if hero_pos == "SB" else bBB
+        return self.ev_allin_heads_up(hero_combo, btn_range, hero_stack, bBTN, pot) # EV vs le BTN
+    
+    def ev_sb_shove(self, hero_combo: Tuple[int,int], bb_call_range: Set[Tuple[int,int]]) -> float:
         """
         BTN a fold ; SB décide shove vs BB. Fold = 0.
         """
-        pot, (bBTN, bSB, bBB) = self.context_pot_and_behind()
+        pot, (_, bSB, bBB) = self.context_pot_and_behind()
         blocked = {hero_combo[0], hero_combo[1]}
-        bb_all = fast_filter_range(ALL_COMBOS_SET, blocked)
-        bb_call = fast_filter_range(list(bb_call_range), blocked)
-        p_bb_call = count_wo_blockers(bb_call_range, blocked) / TOTAL_COMBOS_NO_BLOCKERS
 
-        ev_vs_bb = self.ev_allin_heads_up(hero_combo, bb_call, bSB, bBB, pot)
-        ev_steal = pot
+        bb_call = fast_filter_range(list(bb_call_range), blocked) # Liste des combos que la BB pourrait call
+        p_bb_call = len(bb_call) / TOTAL_COMBOS_NO_BLOCKERS # Probabilité que la BB call
+
+        ev_vs_bb = self.ev_allin_heads_up(hero_combo, bb_call, bSB, bBB, pot) # EV vs la BB
+        ev_steal = pot # EV si le SB fold
+
+        # EV Total = probabilité que la BB call * EV vs la BB + probabilité que la BB fold * EV si le SB fold
         ev = p_bb_call * ev_vs_bb + (1 - p_bb_call) * ev_steal
         return ev
 
-    def ev_call_vs_sb(self, hero_combo: Tuple[int,int], stacks: Tuple[float,float,float],
-                      sb_shove_range: Set[Tuple[int,int]]) -> float:
+    def ev_call_vs_sb(self, hero_combo: Tuple[int,int], sb_shove_range: Set[Tuple[int,int]]) -> float:
         """
         BB face au shove du SB (BTN a fold). Fold = 0.
         """
-        pot, (bBTN, bSB, bBB) = self.context_pot_and_behind()
+        pot, (_, bSB, bBB) = self.context_pot_and_behind()
         blocked = {hero_combo[0], hero_combo[1]}
-        sb_range = fast_filter_range(list(sb_shove_range), blocked)
-        if not sb_range:
+        sb_range = fast_filter_range(list(sb_shove_range), blocked) # Liste des combos que le SB pourrait shove
+        if not sb_range: # Si aucun combo compatible
             return 0.0
-        return self.ev_allin_heads_up(hero_combo, sb_range, bBB, bSB, pot)
+        return self.ev_allin_heads_up(hero_combo, sb_range, bBB, bSB, pot) # EV vs le SB
 
 # ======================
 # Solveur push/fold 3-max
@@ -250,14 +242,14 @@ class SpinGoPushFoldSolver:
         self.SB_shove: Set[Tuple[int,int]] = saved_ranges.get("SB_shove", set())
         self.BB_call_vs_SB: Set[Tuple[int,int]] = saved_ranges.get("BB_call_vs_SB", set())
 
-        self._all = all_combos_set()
+        self.all_combos = all_combos_set()
         self.rng = random.Random(config.seed)
 
-    def _update_btn_shove(self, stacks):
+    def _update_btn_shove(self):
         print(f"\nMise à jour : range BTN shove…")
         new_set = set()
-        for card in tqdm.tqdm(self._all, desc="BTN shove", leave=False):
-            ev = self.node.ev_btn_shove(card, stacks, self.SB_call_vs_BTN, self.BB_call_vs_BTN)
+        for hero_combo in tqdm.tqdm(self.all_combos, desc="BTN shove", leave=False):
+            ev = self.node.ev_btn_shove(hero_combo, self.SB_call_vs_BTN, self.BB_call_vs_BTN)
             if ev > 0.0:
                 new_set.add(card)
         changed = (len(new_set ^ self.BTN_shove) > 0)
@@ -265,11 +257,11 @@ class SpinGoPushFoldSolver:
         print(f"BTN shove : {len(new_set)} combos (modifié : {changed})")
         return changed
 
-    def _update_sb_call_vs_btn(self, stacks):
+    def _update_sb_call_vs_btn(self):
         print(f"\nMise à jour : range SB call vs BTN…")
         new_set = set()
-        for card in tqdm.tqdm(self._all, desc="SB call vs BTN", leave=False):
-            ev_call = self.node.ev_call_vs_btn(card, stacks, self.BTN_shove, "SB")
+        for hero_combo in tqdm.tqdm(self.all_combos, desc="SB call vs BTN", leave=False):
+            ev_call = self.node.ev_call_vs_btn(hero_combo, self.BTN_shove, "SB")
             if ev_call > 0.0:
                 new_set.add(card)
         changed = (len(new_set ^ self.SB_call_vs_BTN) > 0)
@@ -277,11 +269,11 @@ class SpinGoPushFoldSolver:
         print(f"SB call vs BTN : {len(new_set)} combos (modifié : {changed})")
         return changed
 
-    def _update_bb_call_vs_btn(self, stacks):
+    def _update_bb_call_vs_btn(self):
         print(f"\nMise à jour : range BB call vs BTN…")
         new_set = set()
-        for card in tqdm.tqdm(self._all, desc="BB call vs BTN", leave=False):
-            ev_call = self.node.ev_call_vs_btn(card, stacks, self.BTN_shove, "BB")
+        for hero_combo in tqdm.tqdm(self.all_combos, desc="BB call vs BTN", leave=False):
+            ev_call = self.node.ev_call_vs_btn(hero_combo, self.BTN_shove, "BB")
             if ev_call > 0.0:
                 new_set.add(card)
         changed = (len(new_set ^ self.BB_call_vs_BTN) > 0)
@@ -289,11 +281,11 @@ class SpinGoPushFoldSolver:
         print(f"BB call vs BTN : {len(new_set)} combos (modifié : {changed})")
         return changed
 
-    def _update_sb_shove(self, stacks):
+    def _update_sb_shove(self):
         print(f"\nMise à jour : range SB shove…")
         new_set = set()
-        for card in tqdm.tqdm(self._all, desc="SB shove", leave=False):
-            ev = self.node.ev_sb_shove(card, stacks, self.BB_call_vs_SB)
+        for hero_combo in tqdm.tqdm(self.all_combos, desc="SB shove", leave=False):
+            ev = self.node.ev_sb_shove(hero_combo, self.BB_call_vs_SB)
             if ev > 0.0:
                 new_set.add(card)
         changed = (len(new_set ^ self.SB_shove) > 0)
@@ -301,11 +293,11 @@ class SpinGoPushFoldSolver:
         print(f"SB shove : {len(new_set)} combos (modifié : {changed})")
         return changed
 
-    def _update_bb_call_vs_sb(self, stacks):
+    def _update_bb_call_vs_sb(self):
         print(f"\nMise à jour : range BB call vs SB…")
         new_set = set()
-        for card in tqdm.tqdm(self._all, desc="BB call vs SB", leave=False):
-            ev_call = self.node.ev_call_vs_sb(card, stacks, self.SB_shove)
+        for hero_combo in tqdm.tqdm(self.all_combos, desc="BB call vs SB", leave=False):
+            ev_call = self.node.ev_call_vs_sb(hero_combo, self.SB_shove)
             if ev_call > 0.0:
                 new_set.add(card)
         changed = (len(new_set ^ self.BB_call_vs_SB) > 0)
@@ -318,7 +310,7 @@ class SpinGoPushFoldSolver:
         print(f"\nDÉMARRAGE DES ITÉRATIONS ({n_iters})")
         print(f"Stacks : BTN={stacks[0]}bb, SB={stacks[1]}bb, BB={stacks[2]}bb")
         print(f"Samples Monte Carlo : {self.config.mc_samples}")
-        print(f"Total des combos évalués : {len(self._all)}")
+        print(f"Total des combos évalués : {len(self.all_combos)}")
         
         # Stocker l'évolution pour le graphique
         evolution_data = {
