@@ -1,38 +1,11 @@
 # expresso_pushfold_solver.py
-# ------------------------------------------------------------
-# Spin&Go (3-handed) — Solveur PUSH/FOLD
-#
-# Objet : calculer des ranges préflop 3-max en mode push/fold, en cEV
-# (pas d’ICM dans le moteur), sans overcalls (pas de all-in à 3).
-#
-# Positions : BTN (pas de blinde), SB (poste SB), BB (poste BB)
-# Séquence :
-#   - BTN : {FOLD, SHOVE}
-#   - Si BTN shove : SB {FOLD, CALL} ; si SB fold → BB {FOLD, CALL}
-#   - Si BTN fold : SB {FOLD, SHOVE} ; si SB shove → BB {FOLD, CALL}
-#
-# Méthode :
-#   - Itérations de meilleures réponses sur 5 ranges :
-#       BTN_shove, SB_call_vs_BTN, BB_call_vs_BTN, SB_shove, BB_call_vs_SB
-#   - Équités all-in via Monte Carlo (éval 7 cartes -> meilleure main 5 cartes)
-#   - EV en jetons (cEV) en se plaçant "post-blinds" (fold = 0 EV local)
-#
-# Hypothèses/simplifications :
-#   - Pas d’overcall quand BTN shove et SB call (pas de 3-way all-in)
-#   - Échantillonnage uniforme des combos dans les ranges adverses
-#   - Blockers pris en compte en filtrant les combos incompatibles
-#   - cEV uniquement (ICM en post-traitement si souhaité)
-#
-# Sorties :
-#   - Ranges push/call stables pour la profondeur donnée
-#   - Résumés en notation 169 (A2..AKs) et couverture en %
-#
-# ------------------------------------------------------------
+
 from __future__ import annotations
 import random, math, itertools
 from collections import defaultdict, Counter
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Set, Iterable, Optional
+from functools import lru_cache
 import tqdm
 import time
 import matplotlib.pyplot as plt
@@ -44,116 +17,153 @@ import cProfile
 # =========================
 # Profiler
 # =========================
-PROFILE = True
+PROFILE = False
 
 # =========================
 # Import des classes et utilitaires
 # =========================
 from classes import (
-    Card, Deck, DECK, ALL_COMBOS, 
-    card, card_rank, card_suit, combo_to_169, filter_combos_excluding
+    DECK, ALL_COMBOS, combo_to_169
 )
 
-from utils import hand_rank_5, best5_of7_rank, save_ranges_json, load_ranges_json
+from utils import best5_of7_rank, save_ranges_json, load_ranges_json
 
 from visualisation import visualise_ranges
 
+# ==== Précompute pour filtrage et comptage rapide ====
+ALL_COMBOS_SET: Set[Tuple[int,int]] = set(ALL_COMBOS)  # Ensemble de tous les combos possibles
+COMBOS_BY_CARD: Dict[int, frozenset[Tuple[int,int]]] = {}  # Dictionnaire carte -> combos contenant cette carte
+for card in range(52):  # Pour chaque carte du deck
+    list_of_combos_with_card = []  # Liste des combos contenant la carte
+    for card_1,card_2 in ALL_COMBOS:  # Pour chaque combo possible
+        if card_1 == card or card_2 == card:  # Si la carte est dans le combo
+            list_of_combos_with_card.append((card_1,card_2))  # Ajouter le combo à la liste
+    COMBOS_BY_CARD[card] = frozenset((min(card_1,card_2), max(card_1,card_2)) for card_1,card_2 in list_of_combos_with_card)  # Ensemble des combos contenant la carte
+
+TOTAL_COMBOS_NO_BLOCKERS = 1225  # C(50,2) = 1225 combos sans blockers
+
+def fast_filter_range(range_set, blocked: Set[int]) -> List[Tuple[int,int]]:  # Filtrer les combos contenant des cartes bloquées
+    card_1,card_2 = list(blocked)  # Obtenir les cartes bloquées (les deux cartes du hero)
+    range_set_set = set(range_set) if not isinstance(range_set, set) else range_set  # Convertir la range en set si nécessaire
+    return list(range_set_set - COMBOS_BY_CARD[card_1] - COMBOS_BY_CARD[card_2])  # Retourner la range filtrée (sans les combos contenant les cartes bloquées) (en soustrayant les sets on est en O(1))
+
+def count_wo_blockers(range_set: Set[Tuple[int,int]], blocked: Set[int]) -> int:  # Compter les combos sans blockers (Moins gourmand que fast_filter_range car on a besoin que de la taille de la range)
+    card_1,card_2 = list(blocked)  # Obtenir les cartes bloquées
+    combos_with_card_1 = range_set & COMBOS_BY_CARD[card_1]  # Intersection avec les combos contenant la carte card_1
+    combos_with_card_2 = range_set & COMBOS_BY_CARD[card_2]  # Intersection avec les combos contenant la carte card_2
+    combos_with_both_cards = combos_with_card_1 & combos_with_card_2  # Intersection des deux (combos contenant card_1 ET card_2)
+    return len(range_set) - len(combos_with_card_1) - len(combos_with_card_2) + len(combos_with_both_cards)  # Principe d'inclusion-exclusion
+
 # =======================
-# Monte Carlo d’équités
+# Monte Carlo d'équités
 # =======================
-class EquityCache:
+class EquityCache:  # Cache pour les calculs d'équité
     def __init__(self):
-        self.cache2 = {}  # ((h1a,h1b), frozenset(villain_range_ids), eff), mc_samples -> (p_win,p_tie)
+        self.cache2 = {}  # Cache: ((h1a,h1b), frozenset(villain_range_ids), eff), mc_samples -> (p_win,p_tie)
 
     @staticmethod
-    def combo_norm(c):
-        a,b = c
-        return (a,b) if a<b else (b,a)
+    def combo_norm(combo: Tuple[int,int]) -> Tuple[int,int]:  # Normaliser l'ordre des cartes dans un combo
+        card_1,card_2 = combo  # Extraire les deux cartes
+        return (card_1,card_2) if card_1<card_2 else (card_2,card_1)  # Retourner dans l'ordre croissant
 
-def sample_board(excluded: Set[int], rng: random.Random) -> Tuple[int,int,int,int,int]:
-    pool = [c for c in DECK if c not in excluded]
-    rng.shuffle(pool)
-    return tuple(pool[:5])
+def sample_board(excluded: Set[int], rng: random.Random) -> Tuple[int,int,int,int,int]:  # Tirer 5 cartes du board
+    pool = [card for card in DECK if card not in excluded]  # Créer le pool de cartes disponibles
+    return tuple(rng.sample(pool, 5))  # Retourner 5 cartes tirées aléatoirement
 
-def estimate_equity_vs_range(hero_combo: Tuple[int,int],
-                             villain_range: List[Tuple[int,int]],
-                             mc_samples: int = 400,
-                             rng: Optional[random.Random] = None) -> Tuple[float,float,float]:
+def estimate_equity_vs_range(hero_combo: Tuple[int,int],  # Combo du héros
+                             villain_range: List[Tuple[int,int]],  # Range de l'adversaire
+                             mc_samples: int = 400,  # Nombre d'échantillons Monte Carlo
+                             rng: Optional[random.Random] = None) -> Tuple[float,float,float]:  # Retourne (p_win, p_tie, p_lose)
     """
     Retourne (p_win, p_tie, p_lose) pour hero vs *une* main tirée uniformément de villain_range.
     Monte Carlo sur boards.
     """
-    rng = rng or random.Random(0)
-    wins = ties = losses = 0
-    ha, hb = hero_combo
-    blocked = {ha,hb}
+    rng = rng or random.Random(0)  # Utiliser le RNG fourni ou en créer un nouveau
+    wins = ties = losses = 0  # Compteurs de victoires, égalités et défaites
+    hero_card_1, hero_card_2 = hero_combo  # Extraire les cartes du héros
+    blocked = {hero_card_1, hero_card_2}  # Cartes bloquées par le héros
     # Pré-sélection pour tenir compte des blockers
-    vill_list = [c for c in villain_range if c[0] not in blocked and c[1] not in blocked]
-    if not vill_list:
-        return (1.0, 0.0, 0.0)  # Personne ne peut call → cas traité dans l’EV macro
-    for _ in range(mc_samples):
-        va, vb = rng.choice(vill_list)
-        used = {ha,hb,va,vb}
-        board = sample_board(used, rng)
-        hero_rank = best5_of7_rank((ha,hb)+board)
-        vill_rank = best5_of7_rank((va,vb)+board)
-        if hero_rank > vill_rank:
-            wins += 1
-        elif hero_rank == vill_rank:
-            ties += 1
-        else:
-            losses += 1
-    n = wins+ties+losses
-    return (wins/n, ties/n, losses/n)
+    vill_list = [combo for combo in villain_range if combo[0] not in blocked and combo[1] not in blocked]  # Filtrer les combos compatibles
+    if not vill_list:  # Si aucun combo compatible
+        return (1.0, 0.0, 0.0)  # Personne ne peut call → cas traité dans l'EV macro
+    for _ in range(mc_samples):  # Pour chaque échantillon Monte Carlo
+        rd_villain_card_1, rd_villain_card_2 = rng.choice(vill_list)  # Tirer un combo adverse aléatoirement
+        used = {hero_card_1, hero_card_2, rd_villain_card_1, rd_villain_card_2}  # Ensemble des cartes utilisées
+        board = sample_board(used, rng)  # Tirer le board
+        hero_rank = best5_of7_rank((hero_card_1, hero_card_2)+board)  # Évaluer la main du héros
+        villain_rank = best5_of7_rank((rd_villain_card_1, rd_villain_card_2)+board)  # Évaluer la main de l'adversaire
+        if hero_rank > villain_rank:  # Si le héros gagne
+            wins += 1  # Incrémenter les victoires
+        elif hero_rank == villain_rank:  # Si égalité
+            ties += 1  # Incrémenter les égalités
+        else:  # Si l'adversaire gagne
+            losses += 1  # Incrémenter les défaites
+    num_samples = wins+ties+losses  # Total des échantillons
+    return (wins/num_samples, ties/num_samples, losses/num_samples)  # Retourner les probabilités
 
 # ===========================
 # Configuration Expresso
 # ===========================
 @dataclass
-class ExpressoConfig:
-    sb: float = 0.5
-    bb: float = 1.0
-    stacks_bb: Tuple[float,float,float] = (25.0, 25.0, 25.0)  # (BTN,SB,BB) en BB
-    mc_samples: int = 400
-    seed: int = 42
+class ExpressoConfig:  # Configuration du solveur push/fold
+    sb: float = 0.5  # Petite blinde en BB
+    bb: float = 1.0  # Grosse blinde en BB
+    stacks_bb: Tuple[float,float,float] = (25.0, 25.0, 25.0)  # Stacks (BTN,SB,BB) en BB
+    mc_samples: int = 400  # Nombre d'échantillons Monte Carlo
+    seed: int = 42  # Graine pour la reproductibilité
 
 # ===========================
 # Ranges (ensembles de combos)
 # ===========================
-def combos_to_set(combos: Iterable[Tuple[int,int]]) -> Set[Tuple[int,int]]:
-    return set((a,b) if a<b else (b,a) for a,b in combos)
+def combos_to_set(combos: Iterable[Tuple[int,int]]) -> Set[Tuple[int,int]]:  # Convertir une liste de combos en set
+    return set((a,b) if a<b else (b,a) for a,b in combos)  # Normaliser l'ordre des cartes
 
-def all_combos_set() -> Set[Tuple[int,int]]:
-    return combos_to_set(ALL_COMBOS)
+def all_combos_set() -> Set[Tuple[int,int]]:  # Obtenir l'ensemble de tous les combos possibles
+    return combos_to_set(ALL_COMBOS)  # Convertir ALL_COMBOS en set normalisé
 
 # ===========================
 # EV all-in / nœuds de jeu
 # ===========================
 class NodeEV:
-    def __init__(self, cfg: ExpressoConfig):
-        self.cfg = cfg
-        self.rng = random.Random(cfg.seed)
+    def __init__(self, config: ExpressoConfig):
+        self.config = config
+        self.rng = random.Random(config.seed)
+        self._ctx = None
 
-    def _pot_and_behind(self, stacks: Tuple[float,float,float]) -> Tuple[float, Tuple[float,float,float]]:
+    @lru_cache(maxsize=200_000)
+    def _eq_cached(self, hero_card_1: int, hero_card_2: int, villain_range_set: frozenset) -> Tuple[float,float,float]:
+        # RNG déterministe pour stabilité du cache
+        rng = random.Random(self.config.seed)
+        villain_range_list = list(villain_range_set)
+        return estimate_equity_vs_range((hero_card_1, hero_card_2), villain_range_list, self.config.mc_samples, rng)
+
+    def set_context(self, stacks: Tuple[float,float,float]):
+        self._ctx = self._pot_and_behind(stacks)
+
+    def _ctx_pot_and_behind(self):
+        return self._ctx
+
+    def _pot_and_behind(self, stacks: Tuple[float,float,float]) -> Tuple[float, Tuple[float,float,float]]:  # Calculer le pot et les stacks après blindes
         # Stacks en BB (avant blindes). On passe en "behind" après blindes postées.
-        BTN, SB, BB = stacks
-        pot = self.cfg.sb + self.cfg.bb
-        behind = (BTN, SB - self.cfg.sb, BB - self.cfg.bb)
-        return pot, behind
+        BTN, SB, BB = stacks  # Extraire les stacks des trois positions
+        pot = self.config.sb + self.config.bb  # Calculer le pot total (SB + BB)
+        behind = (BTN, SB - self.config.sb, BB - self.config.bb)  # Stacks après avoir posté les blindes
+        return pot, behind  # Retourner le pot et les stacks "behind"
 
     @staticmethod
-    def _eff(behind_hero: float, behind_vill: float) -> float:
-        return max(0.0, min(behind_hero, behind_vill))
+    def _eff(behind_hero: float, behind_vill: float) -> float:  # Calculer l'effective stack
+        return max(0.0, min(behind_hero, behind_vill))  # Le plus petit des deux stacks, minimum 0
 
-    def _ev_allin_2way(self, hero_combo: Tuple[int,int], villain_range: List[Tuple[int,int]],
+    def _ev_allin_2way(self, hero_combo: Tuple[int,int], villain_list: List[Tuple[int,int]],
                        behind_hero: float, behind_vill: float, pot: float) -> float:
         """
         cEV pour HERO sur un all-in à 2 joueurs (post-blinds).
         """
         E = self._eff(behind_hero, behind_vill)
-        if E <= 0.0:
+        if E <= 0.0 or not villain_list:
             return 0.0
-        p_win, p_tie, p_lose = estimate_equity_vs_range(hero_combo, villain_range, self.cfg.mc_samples, self.rng)
+        hero_card_1, hero_card_2 = hero_combo
+        p_win, p_tie, p_lose = self._eq_cached(hero_card_1, hero_card_2, frozenset(villain_list))
         # pot_final = pot + 2E ; EV = p_win*(-E + pot_final) + p_tie*(-E + 0.5*pot_final) + p_lose*(-E)
         pot_final = pot + 2.0 * E
         ev = p_win * (-E + pot_final) + p_tie * (-E + 0.5 * pot_final) + p_lose * (-E)
@@ -168,15 +178,14 @@ class NodeEV:
         EV (cEV) du shove BTN. Référence fold=0 (post-blinds).
         Branches : SB call / SB fold & BB call / SB fold & BB fold.
         """
-        pot, (bBTN, bSB, bBB) = self._pot_and_behind(stacks)
+        pot, (bBTN, bSB, bBB) = self._ctx_pot_and_behind()
         blocked = {hero_combo[0], hero_combo[1]}
-        sb_all = filter_combos_excluding(ALL_COMBOS, blocked)
-        sb_call = filter_combos_excluding(list(sb_call_range), blocked)
-        bb_call = filter_combos_excluding(list(bb_call_range), blocked)
+        sb_all = fast_filter_range(ALL_COMBOS_SET, blocked)
+        sb_call = fast_filter_range(list(sb_call_range), blocked)
+        bb_call = fast_filter_range(list(bb_call_range), blocked)
 
-        p_sb_call = len(sb_call) / len(sb_all) if sb_all else 0.0
-        bb_all = filter_combos_excluding(ALL_COMBOS, blocked)
-        p_bb_call = len(bb_call) / len(bb_all) if bb_all else 0.0
+        p_sb_call = count_wo_blockers(sb_call_range, blocked) / TOTAL_COMBOS_NO_BLOCKERS
+        p_bb_call = count_wo_blockers(bb_call_range, blocked) / TOTAL_COMBOS_NO_BLOCKERS
 
         ev_vs_sb = self._ev_allin_2way(hero_combo, sb_call, bBTN, bSB, pot)
         ev_vs_bb = self._ev_allin_2way(hero_combo, bb_call, bBTN, bBB, pot)
@@ -191,9 +200,9 @@ class NodeEV:
         EV pour CALL face au shove du BTN (hero_pos ∈ {"SB","BB"}). Fold = 0.
         """
         assert hero_pos in ("SB","BB")
-        pot, (bBTN, bSB, bBB) = self._pot_and_behind(stacks)
+        pot, (bBTN, bSB, bBB) = self._ctx_pot_and_behind()
         blocked = {hero_combo[0], hero_combo[1]}
-        btn_range = filter_combos_excluding(list(btn_shove_range), blocked)
+        btn_range = fast_filter_range(list(btn_shove_range), blocked)
         if not btn_range:
             return 0.0
         if hero_pos == "SB":
@@ -207,11 +216,11 @@ class NodeEV:
         """
         BTN a fold ; SB décide shove vs BB. Fold = 0.
         """
-        pot, (bBTN, bSB, bBB) = self._pot_and_behind(stacks)
+        pot, (bBTN, bSB, bBB) = self._ctx_pot_and_behind()
         blocked = {hero_combo[0], hero_combo[1]}
-        bb_all = filter_combos_excluding(ALL_COMBOS, blocked)
-        bb_call = filter_combos_excluding(list(bb_call_range), blocked)
-        p_bb_call = len(bb_call) / len(bb_all) if bb_all else 0.0
+        bb_all = fast_filter_range(ALL_COMBOS_SET, blocked)
+        bb_call = fast_filter_range(list(bb_call_range), blocked)
+        p_bb_call = count_wo_blockers(bb_call_range, blocked) / TOTAL_COMBOS_NO_BLOCKERS
 
         ev_vs_bb = self._ev_allin_2way(hero_combo, bb_call, bSB, bBB, pot)
         ev_steal = pot
@@ -223,9 +232,9 @@ class NodeEV:
         """
         BB face au shove du SB (BTN a fold). Fold = 0.
         """
-        pot, (bBTN, bSB, bBB) = self._pot_and_behind(stacks)
+        pot, (bBTN, bSB, bBB) = self._ctx_pot_and_behind()
         blocked = {hero_combo[0], hero_combo[1]}
-        sb_range = filter_combos_excluding(list(sb_shove_range), blocked)
+        sb_range = fast_filter_range(list(sb_shove_range), blocked)
         if not sb_range:
             return 0.0
         return self._ev_allin_2way(hero_combo, sb_range, bBB, bSB, pot)
@@ -234,9 +243,9 @@ class NodeEV:
 # Solveur push/fold 3-max
 # ======================
 class SpinGoPushFoldSolver:
-    def __init__(self, cfg: ExpressoConfig, saved_ranges: Dict[str, Set[Tuple[int,int]]] = None):
-        self.cfg = cfg
-        self.node = NodeEV(cfg)
+    def __init__(self, config: ExpressoConfig, saved_ranges: Dict[str, Set[Tuple[int,int]]] = None):
+        self.config = config
+        self.node = NodeEV(config)
         # Ranges (ensembles de combos)
         if saved_ranges is None:
             saved_ranges = {}
@@ -247,15 +256,15 @@ class SpinGoPushFoldSolver:
         self.BB_call_vs_SB: Set[Tuple[int,int]] = saved_ranges.get("BB_call_vs_SB", set())
 
         self._all = all_combos_set()
-        self.rng = random.Random(cfg.seed)
+        self.rng = random.Random(config.seed)
 
     def _update_btn_shove(self, stacks):
         print(f"\nMise à jour : range BTN shove…")
         new_set = set()
-        for c in tqdm.tqdm(self._all, desc="BTN shove", leave=False):
-            ev = self.node.ev_btn_shove(c, stacks, self.SB_call_vs_BTN, self.BB_call_vs_BTN)
+        for card in tqdm.tqdm(self._all, desc="BTN shove", leave=False):
+            ev = self.node.ev_btn_shove(card, stacks, self.SB_call_vs_BTN, self.BB_call_vs_BTN)
             if ev > 0.0:
-                new_set.add(c)
+                new_set.add(card)
         changed = (len(new_set ^ self.BTN_shove) > 0)
         self.BTN_shove = new_set
         print(f"BTN shove : {len(new_set)} combos (modifié : {changed})")
@@ -264,10 +273,10 @@ class SpinGoPushFoldSolver:
     def _update_sb_call_vs_btn(self, stacks):
         print(f"\nMise à jour : range SB call vs BTN…")
         new_set = set()
-        for c in tqdm.tqdm(self._all, desc="SB call vs BTN", leave=False):
-            ev_call = self.node.ev_call_vs_btn(c, stacks, self.BTN_shove, "SB")
+        for card in tqdm.tqdm(self._all, desc="SB call vs BTN", leave=False):
+            ev_call = self.node.ev_call_vs_btn(card, stacks, self.BTN_shove, "SB")
             if ev_call > 0.0:
-                new_set.add(c)
+                new_set.add(card)
         changed = (len(new_set ^ self.SB_call_vs_BTN) > 0)
         self.SB_call_vs_BTN = new_set
         print(f"SB call vs BTN : {len(new_set)} combos (modifié : {changed})")
@@ -276,10 +285,10 @@ class SpinGoPushFoldSolver:
     def _update_bb_call_vs_btn(self, stacks):
         print(f"\nMise à jour : range BB call vs BTN…")
         new_set = set()
-        for c in tqdm.tqdm(self._all, desc="BB call vs BTN", leave=False):
-            ev_call = self.node.ev_call_vs_btn(c, stacks, self.BTN_shove, "BB")
+        for card in tqdm.tqdm(self._all, desc="BB call vs BTN", leave=False):
+            ev_call = self.node.ev_call_vs_btn(card, stacks, self.BTN_shove, "BB")
             if ev_call > 0.0:
-                new_set.add(c)
+                new_set.add(card)
         changed = (len(new_set ^ self.BB_call_vs_BTN) > 0)
         self.BB_call_vs_BTN = new_set
         print(f"BB call vs BTN : {len(new_set)} combos (modifié : {changed})")
@@ -288,10 +297,10 @@ class SpinGoPushFoldSolver:
     def _update_sb_shove(self, stacks):
         print(f"\nMise à jour : range SB shove…")
         new_set = set()
-        for c in tqdm.tqdm(self._all, desc="SB shove", leave=False):
-            ev = self.node.ev_sb_shove(c, stacks, self.BB_call_vs_SB)
+        for card in tqdm.tqdm(self._all, desc="SB shove", leave=False):
+            ev = self.node.ev_sb_shove(card, stacks, self.BB_call_vs_SB)
             if ev > 0.0:
-                new_set.add(c)
+                new_set.add(card)
         changed = (len(new_set ^ self.SB_shove) > 0)
         self.SB_shove = new_set
         print(f"SB shove : {len(new_set)} combos (modifié : {changed})")
@@ -300,20 +309,20 @@ class SpinGoPushFoldSolver:
     def _update_bb_call_vs_sb(self, stacks):
         print(f"\nMise à jour : range BB call vs SB…")
         new_set = set()
-        for c in tqdm.tqdm(self._all, desc="BB call vs SB", leave=False):
-            ev_call = self.node.ev_call_vs_sb(c, stacks, self.SB_shove)
+        for card in tqdm.tqdm(self._all, desc="BB call vs SB", leave=False):
+            ev_call = self.node.ev_call_vs_sb(card, stacks, self.SB_shove)
             if ev_call > 0.0:
-                new_set.add(c)
+                new_set.add(card)
         changed = (len(new_set ^ self.BB_call_vs_SB) > 0)
         self.BB_call_vs_SB = new_set
         print(f"BB call vs SB : {len(new_set)} combos (modifié : {changed})")
         return changed
 
     def iterate(self, n_iters: int = 8) -> None:
-        stacks = self.cfg.stacks_bb
+        stacks = self.config.stacks_bb
         print(f"\nDÉMARRAGE DES ITÉRATIONS ({n_iters})")
         print(f"Stacks : BTN={stacks[0]}bb, SB={stacks[1]}bb, BB={stacks[2]}bb")
-        print(f"Samples Monte Carlo : {self.cfg.mc_samples}")
+        print(f"Samples Monte Carlo : {self.config.mc_samples}")
         print(f"Total des combos évalués : {len(self._all)}")
         
         # Stocker l'évolution pour le graphique
@@ -321,6 +330,9 @@ class SpinGoPushFoldSolver:
             'BTN_shove': [], 'SB_call_vs_BTN': [], 'BB_call_vs_BTN': [],
             'SB_shove': [], 'BB_call_vs_SB': []
         }
+        
+        # Définir le contexte une seule fois par itération
+        self.node.set_context(stacks)
         
         for it in range(1, n_iters+1):
             print(f"\n{'='*70}")
@@ -364,6 +376,8 @@ class SpinGoPushFoldSolver:
                 print(f"\nCONVERGENCE atteinte à l'itération {it} !")
                 break
 
+            self.display_summary(iter_num=it)
+
     # ----- Affichage / résumé en 169 -----
     @staticmethod
     def summarize_169(combos_set: Set[Tuple[int,int]]) -> Dict[str, int]:
@@ -377,7 +391,7 @@ class SpinGoPushFoldSolver:
     def coverage_pct(combos_set: Set[Tuple[int,int]]) -> float:
         return 100.0 * len(combos_set) / len(ALL_COMBOS)
 
-    def display_summary(self) -> None:
+    def display_summary(self, iter_num: int) -> None:
         """Affiche un résumé clair avec visualisations et sauvegarde des PNGs"""
         # Données pour les graphiques
         ranges_data = {
@@ -389,10 +403,15 @@ class SpinGoPushFoldSolver:
         }
 
         # Visualisations
-        visualise_ranges(ranges_data, self.coverage_pct)
+        visualise_ranges(ranges_data, self.coverage_pct, iter_num)
 
         # Sauvegarde des ranges
-        save_ranges_json('ranges.json', ranges_data)
+        if iter_num == 0:
+            os.makedirs('ranges', exist_ok=True)
+            save_ranges_json('ranges/ranges.json', ranges_data)
+        else:
+            os.makedirs(f'ranges', exist_ok=True)
+            save_ranges_json(f'ranges/ranges_{iter_num}.json', ranges_data)
 
         # Print texte clair
         print("\n" + "="*80)
@@ -414,7 +433,7 @@ class SpinGoPushFoldSolver:
                 print(f"  {combo:4s} : {count:2d} combos")
         
         # Créer un fichier de données pour analyse
-        with open('ranges_data.txt', 'w') as f:
+        with open('ranges/ranges_data.txt', 'w') as f:
             f.write("DONNÉES DÉTAILLÉES DES RANGES PUSH/FOLD\n")
             f.write("="*50 + "\n\n")
             for name, combo_set in ranges_data.items():
@@ -431,26 +450,26 @@ class SpinGoPushFoldSolver:
 # Démonstration
 # ======================
 if __name__ == "__main__":
-    cfg = ExpressoConfig(
+    config = ExpressoConfig(
         sb=0.5, bb=1.0,
         stacks_bb=(25.0, 25.0, 25.0),  # (BTN, SB, BB)
         mc_samples=400,
         seed=42
     )
 
-    saved_ranges = load_ranges_json("ranges.json")
-    solver = SpinGoPushFoldSolver(cfg, saved_ranges)
+    saved_ranges = load_ranges_json("ranges/ranges.json")
+    solver = SpinGoPushFoldSolver(config, saved_ranges)
 
     if PROFILE:
         profiler = cProfile.Profile()
         profiler.enable()
 
-    solver.iterate(n_iters=1)
+    solver.iterate(n_iters=8)
 
     if PROFILE:
         profiler.disable()
         profiler.dump_stats("profiling/training_profile.prof")
 
-    solver.display_summary()
+    solver.display_summary(iter_num=0)
 
     

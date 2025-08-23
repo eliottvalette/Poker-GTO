@@ -6,7 +6,7 @@ from typing import Dict, Set, Tuple, Callable
 from classes import card_rank, card_suit
 from utils import load_ranges_json
 
-def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Callable[[Set[Tuple[int,int]]], float]):
+def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Callable[[Set[Tuple[int,int]]], float], iter_num: int):
     # Créer le dossier viz s'il n'existe pas
         os.makedirs("viz", exist_ok=True)
         
@@ -75,11 +75,16 @@ def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Calla
             
             # Sauvegarder individuellement
             plt.tight_layout()
-            plt.savefig(f'viz/matrix_{range_name.replace(" ", "_").replace("vs", "vs_")}.png', 
-                       dpi=300, bbox_inches='tight')
+            if iter_num == 0:
+                plt.savefig(f'viz/matrix_{range_name.replace(" ", "_").replace("vs", "vs_")}.png', 
+                            dpi=300, bbox_inches='tight')
+            else:
+                os.makedirs(f'viz_iter_{iter_num}', exist_ok=True)
+                plt.savefig(f'viz_iter_{iter_num}/matrix_{range_name.replace(" ", "_").replace("vs", "vs_")}.png', 
+                            dpi=300, bbox_inches='tight')
             plt.close()
         
-        # 3. Créer la matrice globale combinée
+        # 3. Créer la matrice globale combinée sur 5 ranges
         global_matrix = np.zeros((13, 13))
         for combo_set in ranges.values():
             for combo in combo_set:
@@ -94,11 +99,11 @@ def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Calla
                 j = 12 - (lo - 2)  # 2 en bas
                 
                 if hi == lo:
-                    global_matrix[i, i] += 1/6                 # Paires
+                    global_matrix[i, i] += 1/6/5                 # Paires
                 elif s1 == s2:
-                    global_matrix[i, j] += 1/4                 # Suited
+                    global_matrix[i, j] += 1/4/5                 # Suited
                 else:
-                    global_matrix[j, i] += 1/12                 # Offsuit
+                    global_matrix[j, i] += 1/12/5                 # Offsuit
         
         # Limiter le nombre de décimales à 2
         global_matrix = np.round(global_matrix, 2)
@@ -113,7 +118,11 @@ def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Calla
         plt.ylabel("Rang 1", fontsize=12)
         
         plt.tight_layout()
-        plt.savefig('viz/matrix_globale.png', dpi=300, bbox_inches='tight')
+        if iter_num == 0:
+            plt.savefig('viz/matrix_globale.png', dpi=300, bbox_inches='tight')
+        else:
+            os.makedirs(f'viz_iter_{iter_num}', exist_ok=True)
+            plt.savefig(f'viz_iter_{iter_num}/matrix_globale.png', dpi=300, bbox_inches='tight')
         plt.close()
         
 if __name__ == "__main__":
@@ -123,5 +132,5 @@ if __name__ == "__main__":
     def coverage_pct(combos_set: Set[Tuple[int,int]]) -> float:
         return 100.0 * len(combos_set) / len(ALL_COMBOS)
     
-    ranges = load_ranges_json("ranges.json")
-    visualise_ranges(ranges, coverage_pct)
+    ranges = load_ranges_json("ranges/ranges.json")
+    visualise_ranges(ranges, coverage_pct, iter_num=0)
