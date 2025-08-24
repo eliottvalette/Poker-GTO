@@ -2,11 +2,12 @@ import os
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Dict, Set, Tuple, Callable
+from typing import Dict, Set, Tuple, Callable, List
 from classes import card_rank, card_suit
 from utils import load_ranges_json
+from classes import ALL_COMBOS
 
-def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Callable[[Set[Tuple[int,int]]], float], iter_num: int):
+def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Callable[[Set[Tuple[int,int]]], float], iter_num: int, evolution_data: Dict[str, List[float]] = None):
     # Créer le dossier viz s'il n'existe pas
         os.makedirs("viz", exist_ok=True)
         
@@ -125,9 +126,56 @@ def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Calla
             plt.savefig(f'viz/viz_iter_{iter_num}/matrix_globale.png', dpi=300, bbox_inches='tight')
         plt.close()
         
+        # 4. Créer le graphique des courbes d'évolution des couvertures
+        if evolution_data and len(evolution_data.get('BTN_shove', [])) > 1:
+            plt.figure(figsize=(14, 8))
+            
+            # Convertir les données d'évolution en pourcentages
+            iterations = list(range(1, len(evolution_data['BTN_shove']) + 1))
+            
+            # Mapper les noms des ranges pour l'affichage
+            range_names = {
+                'BTN_shove': 'BTN shove',
+                'SB_call_vs_BTN': 'SB call vs BTN',
+                'BB_call_vs_BTN': 'BB call vs BTN',
+                'SB_shove': 'SB shove',
+                'BB_call_vs_SB': 'BB call vs SB'
+            }
+            
+            colors = sns.color_palette("husl", 5)
+            for i, (key, display_name) in enumerate(range_names.items()):
+                if key in evolution_data and len(evolution_data[key]) > 1:
+                    # Convertir en pourcentages
+                    percentages = [100.0 * count / len(ALL_COMBOS) for count in evolution_data[key]]
+                    plt.plot(iterations, percentages, marker='o', linewidth=2, markersize=6, 
+                           label=display_name, color=colors[i])
+            
+            plt.title("Évolution des Couvertures par Itération", fontsize=16, fontweight='bold')
+            plt.xlabel("Itération", fontsize=12)
+            plt.ylabel("Couverture (%)", fontsize=12)
+            plt.ylim(0, 100)
+            plt.grid(True, alpha=0.3)
+            plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            plt.xticks(iterations)
+            
+            # Ajuster les limites Y pour une meilleure visualisation
+            all_percentages = []
+            for key in evolution_data.keys():
+                if key in evolution_data and len(evolution_data[key]) > 1:
+                    percentages = [100.0 * count / len(ALL_COMBOS) for count in evolution_data[key]]
+                    all_percentages.extend(percentages)
+            
+            if all_percentages:
+                plt.ylim(0, max(all_percentages) * 1.1)
+            
+            plt.tight_layout()
+            if iter_num == 0:
+                plt.savefig('viz/courbes_evolution.png', dpi=300, bbox_inches='tight')
+            else:
+                plt.savefig(f'viz/viz_iter_{iter_num}/courbes_evolution.png', dpi=300, bbox_inches='tight')
+            plt.close()
+        
 if __name__ == "__main__":
-
-    from classes import ALL_COMBOS
 
     def coverage_pct(combos_set: Set[Tuple[int,int]]) -> float:
         return 100.0 * len(combos_set) / len(ALL_COMBOS)

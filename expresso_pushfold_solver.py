@@ -1,5 +1,9 @@
 # expresso_pushfold_solver.py
 
+"""
+Final Goal : GTO of 3-handed No Limit Texas Hold'em
+"""
+
 from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
@@ -48,6 +52,16 @@ ADAPTIVE_STATS = {
     'max_samples_reached': 0
 }
 
+# Paramètres d'hystérésis pour stabilité
+ADD_EPS = 0.02   # ajoute si EV > +0.02 bb
+DROP_EPS = 0.01  # retire si EV < -0.01 bb
+
+def keep_or_flip(prev_has: bool, ev: float) -> bool:
+    """Hystérésis pour éviter les changements dus au bruit Monte-Carlo"""
+    if ev > ADD_EPS:  return True
+    if ev < -DROP_EPS: return False
+    return prev_has
+
 def fast_filter_range(range_set, blocked: Set[int]) -> List[Tuple[int,int]]:  # Filtrer les combos contenant des cartes bloquées
     card_1,card_2 = list(blocked)  # Obtenir les cartes bloquées (les deux cartes du hero)
     range_set = set(range_set) if not isinstance(range_set, set) else range_set  # Convertir la range en set si nécessaire
@@ -81,10 +95,10 @@ def q_adaptive(
     villain_list: list[tuple[int,int]],
     rng: random.Random,
     tau: float,                 # seuil = E / (pot + 2E)
-    batch: int = 80,
-    alpha: float = 0.01,        # ~99% de confiance
-    max_samples: int = 1600,
-) -> tuple[float, int, int]:
+    batch: int,
+    alpha: float,        # ~99% de confiance
+    max_samples: int,
+) -> tuple[float, int]:
     """
     Monte-Carlo adaptatif (early-stop) pour estimer si l'EV d'un all-in 2-way est positive ou négative.
 
@@ -102,7 +116,7 @@ def q_adaptive(
         |q_hat - q| <= sqrt(ln(2/alpha)/(2n))
     Dès que [q_hat - eps_n, q_hat + eps_n] ne recoupe plus tau, on a la décision à confiance >= 1-alpha.
 
-    Retourne (q_hat, n, decision)
+    Retourne (q_hat, n)
         - q_hat : estimation empirique de q
         - n     : nombre d'échantillons utilisés
     """
@@ -157,8 +171,10 @@ class ExpressoConfig:  # Configuration du solveur push/fold
     sb: float = 0.5  # Petite blinde en BB
     bb: float = 1.0  # Grosse blinde en BB
     stacks_bb: Tuple[float,float,float] = (25.0, 25.0, 25.0)  # Stacks (BTN,SB,BB) en BB
-    mc_samples: int = 400  # Nombre d'échantillons Monte Carlo
+    mc_samples: int = 1600  # Nombre d'échantillons Monte Carlo
     seed: int = 42  # Graine pour la reproductibilité
+    mc_batch: int = 80  # Nombre de boards par échantillon
+    mc_alpha: float = 0.01  # Seuil de confiance pour l'arrêt précoce
 
 # ===========================
 # Ranges (ensembles de combos)
@@ -211,7 +227,15 @@ class NodeEV:
         tau = effective_stack / pot_final  # Seuil critique q = E/(pot + 2E)
         
         # Utiliser l'estimateur adaptatif au lieu de Monte Carlo fixe
-        q_hat, nb_samples = q_adaptive(hero_combo, villain_list, self.rng, tau)
+        q_hat, nb_samples = q_adaptive(
+            hero_combo=hero_combo,
+            villain_list=villain_list,
+            rng=self.rng,
+            tau=tau,
+            batch=self.config.mc_batch,
+            alpha=self.config.mc_alpha,
+            max_samples=self.config.mc_samples,
+        )
         
         # Collecter les statistiques
         ADAPTIVE_STATS['total_ev_calculations'] += 1
@@ -305,66 +329,6 @@ class SpinGoPushFoldSolver:
         self.all_combos = all_combos_set()
         self.rng = random.Random(config.seed)
 
-    def _update_btn_shove(self):
-        print(f"\nMise à jour : range BTN shove…")
-        new_set = set()
-        for hero_combo in tqdm.tqdm(self.all_combos, desc="BTN shove", leave=False):
-            ev = self.node.ev_btn_shove(hero_combo, self.SB_call_vs_BTN, self.BB_call_vs_BTN)
-            if ev > 0.0:
-                new_set.add(hero_combo)
-        changed = (len(new_set ^ self.BTN_shove) > 0)
-        self.BTN_shove = new_set
-        print(f"BTN shove : {len(new_set)} combos (modifié : {changed})")
-        return changed
-
-    def _update_sb_call_vs_btn(self):
-        print(f"\nMise à jour : range SB call vs BTN…")
-        new_set = set()
-        for hero_combo in tqdm.tqdm(self.all_combos, desc="SB call vs BTN", leave=False):
-            ev_call = self.node.ev_call_vs_btn(hero_combo, self.BTN_shove, "SB")
-            if ev_call > 0.0:
-                new_set.add(hero_combo)
-        changed = (len(new_set ^ self.SB_call_vs_BTN) > 0)
-        self.SB_call_vs_BTN = new_set
-        print(f"SB call vs BTN : {len(new_set)} combos (modifié : {changed})")
-        return changed
-
-    def _update_bb_call_vs_btn(self):
-        print(f"\nMise à jour : range BB call vs BTN…")
-        new_set = set()
-        for hero_combo in tqdm.tqdm(self.all_combos, desc="BB call vs BTN", leave=False):
-            ev_call = self.node.ev_call_vs_btn(hero_combo, self.BTN_shove, "BB")
-            if ev_call > 0.0:
-                new_set.add(hero_combo)
-        changed = (len(new_set ^ self.BB_call_vs_BTN) > 0)
-        self.BB_call_vs_BTN = new_set
-        print(f"BB call vs BTN : {len(new_set)} combos (modifié : {changed})")
-        return changed
-
-    def _update_sb_shove(self):
-        print(f"\nMise à jour : range SB shove…")
-        new_set = set()
-        for hero_combo in tqdm.tqdm(self.all_combos, desc="SB shove", leave=False):
-            ev = self.node.ev_sb_shove(hero_combo, self.BB_call_vs_SB)
-            if ev > 0.0:
-                new_set.add(hero_combo)
-        changed = (len(new_set ^ self.SB_shove) > 0)
-        self.SB_shove = new_set
-        print(f"SB shove : {len(new_set)} combos (modifié : {changed})")
-        return changed
-
-    def _update_bb_call_vs_sb(self):
-        print(f"\nMise à jour : range BB call vs SB…")
-        new_set = set()
-        for hero_combo in tqdm.tqdm(self.all_combos, desc="BB call vs SB", leave=False):
-            ev_call = self.node.ev_call_vs_sb(hero_combo, self.SB_shove)
-            if ev_call > 0.0:
-                new_set.add(hero_combo) 
-        changed = (len(new_set ^ self.BB_call_vs_SB) > 0)
-        self.BB_call_vs_SB = new_set
-        print(f"BB call vs SB : {len(new_set)} combos (modifié : {changed})")
-        return changed
-
     def iterate(self, n_iters: int = 8) -> None:
         stacks = self.config.stacks_bb
         print(f"\nDÉMARRAGE DES ITÉRATIONS ({n_iters})")
@@ -373,10 +337,17 @@ class SpinGoPushFoldSolver:
         print(f"Total des combos évalués : {len(self.all_combos)}")
         
         # Stocker l'évolution pour le graphique
-        evolution_data = {
+        self.evolution_data = {
             'BTN_shove': [], 'SB_call_vs_BTN': [], 'BB_call_vs_BTN': [],
             'SB_shove': [], 'BB_call_vs_SB': []
         }
+        
+        # Ajouter l'état initial (itération 0)
+        self.evolution_data['BTN_shove'].append(len(self.BTN_shove))
+        self.evolution_data['SB_call_vs_BTN'].append(len(self.SB_call_vs_BTN))
+        self.evolution_data['BB_call_vs_BTN'].append(len(self.BB_call_vs_BTN))
+        self.evolution_data['SB_shove'].append(len(self.SB_shove))
+        self.evolution_data['BB_call_vs_SB'].append(len(self.BB_call_vs_SB))
         
         # Définir le contexte une seule fois par itération
         self.node.set_context(stacks)
@@ -386,35 +357,57 @@ class SpinGoPushFoldSolver:
             print(f"ITÉRATION {it}/{n_iters}")
             print(f"{'='*70}")
 
-            # Stocker les ranges précédentes
+            start_time = time.time()
+
+            # Snapshot de départ (état avant modifications)
+            snap_BTN = self.BTN_shove.copy()
+            snap_SBc = self.SB_call_vs_BTN.copy()
+            snap_BBc = self.BB_call_vs_BTN.copy()
+            snap_SBs = self.SB_shove.copy()
+            snap_BBvsSB = self.BB_call_vs_SB.copy()
+
+            # Garde pour l'affichage des changements
             self.previous_ranges = {
-                "BTN_shove": self.BTN_shove.copy(),
-                "SB_call_vs_BTN": self.SB_call_vs_BTN.copy(),
-                "BB_call_vs_BTN": self.BB_call_vs_BTN.copy(),
-                "SB_shove": self.SB_shove.copy(),
-                "BB_call_vs_SB": self.BB_call_vs_SB.copy()
+                "BTN_shove": snap_BTN,
+                "SB_call_vs_BTN": snap_SBc,
+                "BB_call_vs_BTN": snap_BBc,
+                "SB_shove": snap_SBs,
+                "BB_call_vs_SB": snap_BBvsSB,
             }
 
-            start_time = time.time()
-            
-            c1 = self._update_sb_call_vs_btn()
-            c2 = self._update_bb_call_vs_btn()
-            c3 = self._update_bb_call_vs_sb()
-            c4 = self._update_btn_shove()
-            c5 = self._update_sb_shove()
+            # Compute-only depuis le snapshot (pas d'écriture pendant le calcul)
+            print(f"\nCalcul des nouvelles ranges...")
+            new_SBc = self._compute_sb_call_vs_btn(snap_BTN)
+            new_BBc = self._compute_bb_call_vs_btn(snap_BTN)
+            new_BBvsSB = self._compute_bb_call_vs_sb(snap_SBs)
+            new_BTN = self._compute_btn_shove(snap_SBc, snap_BBc)
+            new_SBs = self._compute_sb_shove(snap_BBvsSB)
+
+            # Commit en bloc (mises à jour synchrones)
+            print(f"Application des changements...")
+            self.SB_call_vs_BTN = new_SBc
+            self.BB_call_vs_BTN = new_BBc
+            self.BB_call_vs_SB = new_BBvsSB
+            self.BTN_shove = new_BTN
+            self.SB_shove = new_SBs
             
             dt = time.time() - start_time
             
             # Stocker les données d'évolution
-            evolution_data['BTN_shove'].append(len(self.BTN_shove))
-            evolution_data['SB_call_vs_BTN'].append(len(self.SB_call_vs_BTN))
-            evolution_data['BB_call_vs_BTN'].append(len(self.BB_call_vs_BTN))
-            evolution_data['SB_shove'].append(len(self.SB_shove))
-            evolution_data['BB_call_vs_SB'].append(len(self.BB_call_vs_SB))
+            self.evolution_data['BTN_shove'].append(len(self.BTN_shove))
+            self.evolution_data['SB_call_vs_BTN'].append(len(self.SB_call_vs_BTN))
+            self.evolution_data['BB_call_vs_BTN'].append(len(self.BB_call_vs_BTN))
+            self.evolution_data['SB_shove'].append(len(self.SB_shove))
+            self.evolution_data['BB_call_vs_SB'].append(len(self.BB_call_vs_SB))
             
             print(f"\nRÉSUMÉ ITÉRATION {it} :")
             print(f"Durée : {dt:.2f}s")
             print(f"Modifications :")
+            c1 = len(new_SBc) != len(snap_SBc)
+            c2 = len(new_BBc) != len(snap_BBc)
+            c3 = len(new_BBvsSB) != len(snap_BBvsSB)
+            c4 = len(new_BTN) != len(snap_BTN)
+            c5 = len(new_SBs) != len(snap_SBs)
             print(f"   SB_call_vs_BTN: {'OUI' if c1 else 'NON'}")
             print(f"   BB_call_vs_BTN: {'OUI' if c2 else 'NON'}")
             print(f"   BB_call_vs_SB:  {'OUI' if c3 else 'NON'}")
@@ -448,6 +441,57 @@ class SpinGoPushFoldSolver:
     def coverage_pct(combos_set: Set[Tuple[int,int]]) -> float:
         return 100.0 * len(combos_set) / len(ALL_COMBOS)
 
+    # Méthodes compute-only pour mises à jour synchrones
+    def _compute_sb_call_vs_btn(self, prev_BTN: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+        """Calcule la nouvelle range SB call vs BTN sans modifier l'état"""
+        new_set = set()
+        for hero_combo in tqdm.tqdm(self.all_combos, desc="SB call vs BTN", leave=False):
+            ev = self.node.ev_call_vs_btn(hero_combo, prev_BTN, "SB")
+            has = hero_combo in self.SB_call_vs_BTN
+            if keep_or_flip(has, ev):
+                new_set.add(hero_combo)
+        return new_set
+
+    def _compute_bb_call_vs_btn(self, prev_BTN: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+        """Calcule la nouvelle range BB call vs BTN sans modifier l'état"""
+        new_set = set()
+        for hero_combo in tqdm.tqdm(self.all_combos, desc="BB call vs BTN", leave=False):
+            ev = self.node.ev_call_vs_btn(hero_combo, prev_BTN, "BB")
+            has = hero_combo in self.BB_call_vs_BTN
+            if keep_or_flip(has, ev):
+                new_set.add(hero_combo)
+        return new_set
+
+    def _compute_bb_call_vs_sb(self, prev_SB: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+        """Calcule la nouvelle range BB call vs SB sans modifier l'état"""
+        new_set = set()
+        for hero_combo in tqdm.tqdm(self.all_combos, desc="BB call vs SB", leave=False):
+            ev = self.node.ev_call_vs_sb(hero_combo, prev_SB)
+            has = hero_combo in self.BB_call_vs_SB
+            if keep_or_flip(has, ev):
+                new_set.add(hero_combo)
+        return new_set
+
+    def _compute_btn_shove(self, prev_SBc: Set[Tuple[int, int]], prev_BBc: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+        """Calcule la nouvelle range BTN shove sans modifier l'état"""
+        new_set = set()
+        for hero_combo in tqdm.tqdm(self.all_combos, desc="BTN shove", leave=False):
+            ev = self.node.ev_btn_shove(hero_combo, prev_SBc, prev_BBc)
+            has = hero_combo in self.BTN_shove
+            if keep_or_flip(has, ev):
+                new_set.add(hero_combo)
+        return new_set
+
+    def _compute_sb_shove(self, prev_BB: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+        """Calcule la nouvelle range SB shove sans modifier l'état"""
+        new_set = set()
+        for hero_combo in tqdm.tqdm(self.all_combos, desc="SB shove", leave=False):
+            ev = self.node.ev_sb_shove(hero_combo, prev_BB)
+            has = hero_combo in self.SB_shove
+            if keep_or_flip(has, ev):
+                new_set.add(hero_combo)
+        return new_set
+
     def display_summary(self, iter_num: int) -> None:
         """Affiche un résumé clair avec visualisations et sauvegarde des PNGs"""
         # Données pour les graphiques
@@ -460,7 +504,7 @@ class SpinGoPushFoldSolver:
         }
 
         # Visualisations
-        visualise_ranges(ranges_data, self.coverage_pct, iter_num)
+        visualise_ranges(ranges_data, self.coverage_pct, iter_num, self.evolution_data)
 
         # Sauvegarde des ranges
         if iter_num == 0:
@@ -509,7 +553,7 @@ class SpinGoPushFoldSolver:
         if ADAPTIVE_STATS['total_ev_calculations'] > 0:
             print(f"\nSTATISTIQUES APPROCHE ADAPTATIVE:")
             print("-" * 50)
-            total_fixed_samples = ADAPTIVE_STATS['total_ev_calculations'] * 400  # Ancien nombre fixe
+            total_fixed_samples = ADAPTIVE_STATS['total_ev_calculations'] * self.config.mc_samples
             efficiency = 100.0 * ADAPTIVE_STATS['total_samples_used'] / total_fixed_samples
             print(f"Calculs EV effectués     : {ADAPTIVE_STATS['total_ev_calculations']}")
             print(f"Échantillons utilisés    : {ADAPTIVE_STATS['total_samples_used']}")
@@ -537,7 +581,7 @@ if __name__ == "__main__":
         profiler = cProfile.Profile()
         profiler.enable()
 
-    solver.iterate(n_iters=10)
+    solver.iterate(n_iters=15)
 
     if PROFILE:
         profiler.disable()
