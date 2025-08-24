@@ -537,7 +537,7 @@ if __name__ == "__main__":
         profiler = cProfile.Profile()
         profiler.enable()
 
-    solver.iterate(n_iters=2)
+    solver.iterate(n_iters=10)
 
     if PROFILE:
         profiler.disable()
