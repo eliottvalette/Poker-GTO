@@ -1,7 +1,7 @@
 # expresso_pushfold_solver.py
 
 """
-Final Goal : GTO of 3-handed No Limit Texas Hold'em
+GTO : Expresso Push/Fold Solver
 """
 
 from __future__ import annotations
