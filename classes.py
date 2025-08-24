@@ -203,51 +203,36 @@ class SidePot:
         self.sum_of_contributions = 0 # Montant total dans le side pot
 
 class ActionValidator:
-    """
-    Store pour chaque joueur les actions possibles en fonction de l'état du jeu.
-    """
     def __init__(self, players: List[Player], big_blind: float):
         self.players = players
         self.big_blind = big_blind
         self.masks = {0: {a: False for a in PlayerAction}, 1: {a: False for a in PlayerAction}, 2: {a: False for a in PlayerAction}}
 
     def update_available_actions(self, player: Player, current_maximum_bet: float, number_raise_this_game_phase: int, main_pot: float, phase: GamePhase):
-        """
-        Met à jour l'état activé/désactivé des boutons d'action.
-        Prend en compte la phase de jeu et les règles du poker.
-        """   
         player_role = player.role
 
-        # Désactiver tous les boutons si le joueur est all-in
         if player.is_all_in:
             for action in PlayerAction:
                 self.masks[player_role][action] = False
-            return
-        
-        # ---- Activer tous les boutons par défaut ----
+            return []
+
         for action in PlayerAction:
             self.masks[player_role][action] = True
         
-        # ---- CHECK ----
-        if player.current_player_bet < current_maximum_bet:  # Si le joueur n'a pas égalisé la mise maximale, il ne peut pas check
+        if player.current_player_bet < current_maximum_bet:
             self.masks[player_role][PlayerAction.CHECK] = False
         
-        # ---- FOLD ----
-        if self.masks[player_role][PlayerAction.CHECK]:  # Si le joueur peut check, il ne peut pas fold
+        if self.masks[player_role][PlayerAction.CHECK]:
             self.masks[player_role][PlayerAction.FOLD] = False
         
-        # ---- CALL ----
-        # Désactiver call si pas de mise à suivre ou pas assez de jetons
-        if player.current_player_bet == current_maximum_bet:  # Si le joueur a égalisé la mise maximale, il ne peut pas call
+        if player.current_player_bet == current_maximum_bet:
             self.masks[player_role][PlayerAction.CALL] = False
-        elif player.stack < (current_maximum_bet - player.current_player_bet): # Si le joueur n'a pas assez de jetons pour suivre la mise maximale, il ne peut pas call
+        elif player.stack < (current_maximum_bet - player.current_player_bet):
             self.masks[player_role][PlayerAction.CALL] = False
-            # Activer all-in si le joueur a des jetons même si insuffisants pour call
             if player.stack > 0:
                 self.masks[player_role][PlayerAction.ALL_IN] = True
             self.masks[player_role][PlayerAction.RAISE] = False
         
-        # ---- RAISE standard ----
         if current_maximum_bet == 0:
             min_raise = self.big_blind
         else:
@@ -256,11 +241,9 @@ class ActionValidator:
         if player.stack < min_raise:
             self.masks[player_role][PlayerAction.RAISE] = False
 
-        # Désactiver raise si déjà 4 relances dans le tour
         if number_raise_this_game_phase >= 4:
             self.masks[player_role][PlayerAction.RAISE] = False
         
-        # ---- Raises pot-based (custom) ----
         pot_raise_actions = [
             PlayerAction.RAISE_25_POT,
             PlayerAction.RAISE_50_POT,
@@ -280,21 +263,18 @@ class ActionValidator:
             PlayerAction.RAISE_3X_POT: 3.00
         }
         for action in pot_raise_actions:
-            # Si le nombre de raises dans la phase est déjà atteint, désactiver la raise pot-based
             if number_raise_this_game_phase >= 4:
                 self.masks[player_role][action] = False
             else:
                 percentage = raise_percentages[action]
-                # Calcul du montant d'augmentation requis via le pourcentage du pot
                 required_increase = main_pot * percentage
-                # Si le joueur n'a pas suffisamment de jetons pour augmenter d'au moins "required_increase" ou si le required_increase est inférieur à min_raise, désactiver le bouton
                 if player.stack < required_increase or required_increase < min_raise:
                     self.masks[player_role][action] = False
         
-        # ---- ALL-IN ----
-        # All-in disponible si le joueur a des jetons, qu'il soit le premier à agir ou non
         self.masks[player_role][PlayerAction.ALL_IN] = player.stack > 0
         
         if phase == GamePhase.SHOWDOWN:
             for action in PlayerAction:
                 self.masks[player_role][action] = False
+
+        return [a for a, enabled in self.masks[player_role].items() if enabled]
