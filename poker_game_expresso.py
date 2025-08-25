@@ -191,7 +191,7 @@ class PokerGameExpresso:
         # Cas particulier, au PREFLOP, si la BB est limpée, elle doit avoir un droit de parole
         # Vérification d'un cas particulier en phase préflop :
         # En phase préflop, l'ordre d'action est particulier car après avoir posté les blinds
-        # l'action se prolonge jusqu'à ce que le joueur en petite blinde (role_position == 0) puisse agir.
+        # l'action se prolonge jusqu'à ce que le joueur en petite blinde (role == 0) puisse agir.
         # Même si, en apparence, tous les joueurs ont déjà joué et égalisé la mise maximale,
         # il est nécessaire de laisser le temps au joueur en small blind d'intervenir.
         # C'est pourquoi, si le joueur actif est en position 0 durant le préflop,
@@ -276,25 +276,6 @@ class PokerGameExpresso:
 
         if DEBUG_OPTI:
             print(f"[GAME_OPTI] [DISTRIBUTION] Board: {self.community_cards}")
-
-
-    def deal_cards(self):
-        """
-        Distribue deux cartes à chaque joueur actif.
-        Réinitialise et mélange le jeu avant la distribution.
-        """
-        # Deal two cards to each active player
-        for player in self.players:
-            if not player.is_active:
-                continue
-            elif player.role == self.hero_role_position:
-                player.cards = self.hero_cards
-            else:
-                player.cards = self.rd_opponents_cards.pop()
-
-        if DEBUG_OPTI:
-            for player in self.players:
-                print(f"[GAME_OPTI] [CARDS] player : {player.name}, cards : {[card.rank for card in player.cards]} {[card.suit for card in player.cards]}")
 
     def advance_phase(self):
         """
@@ -450,64 +431,6 @@ class PokerGameExpresso:
             if DEBUG_OPTI_ULTIMATE : 
                 print(f"[GAME_OPTI] {player.name} a raise {bet_amount}BB")
         
-        # --- Nouvelles actions pot-based ---
-        elif action.value in {
-            PlayerAction.RAISE_25_POT.value,
-            PlayerAction.RAISE_50_POT.value,
-            PlayerAction.RAISE_75_POT.value,
-            PlayerAction.RAISE_100_POT.value,
-            PlayerAction.RAISE_150_POT.value,
-            PlayerAction.RAISE_2X_POT.value,
-            PlayerAction.RAISE_3X_POT.value
-        }:
-            raise_percentages = {
-                PlayerAction.RAISE_25_POT.value: 0.25,
-                PlayerAction.RAISE_50_POT.value: 0.50,
-                PlayerAction.RAISE_75_POT.value: 0.75,
-                PlayerAction.RAISE_100_POT.value: 1.00,
-                PlayerAction.RAISE_150_POT.value: 1.50,
-                PlayerAction.RAISE_2X_POT.value: 2.00,
-                PlayerAction.RAISE_3X_POT.value: 3.00
-            }
-            percentage = raise_percentages[action.value]
-            # Calcul de la raise additionnelle basée sur le pourcentage du pot
-            custom_raise_amount = self.main_pot * percentage
-            # La nouvelle mise est : la mise actuelle + montant pour caller + raise additionnel
-            computed_bet = player.current_player_bet + custom_raise_amount
-        
-            if self.current_maximum_bet == 0:
-                min_raise = self.big_blind
-            else:
-                min_raise = (self.current_maximum_bet - player.current_player_bet) * 2
-        
-            # Vérifier que le montant additionnel respecte le minimum exigé
-            if computed_bet - player.current_player_bet < min_raise:
-                computed_bet = player.current_player_bet + min_raise
-        
-            bet_amount = computed_bet
-        
-            # Vérifier que le joueur a suffisamment de jetons pour cette raise
-            if player.stack < (bet_amount - player.current_player_bet):
-                raise ValueError(
-                    f"[GAME_OPTI] Fonds insuffisants pour raise : {player.name} a {player.stack}BB tandis que le montant "
-                    f"additionnel requis est {bet_amount - player.current_player_bet}BB. Mise minimum requise : {min_raise}BB."
-                )
-        
-            # Traitement de la raise pot-based
-            actual_bet = bet_amount - player.current_player_bet  # Calcul du supplément à miser
-            player.stack -= actual_bet
-            player.current_player_bet = bet_amount
-            self.main_pot += actual_bet
-            player.total_bet += actual_bet
-            self.current_maximum_bet = bet_amount
-            self.number_raise_this_game_phase += 1
-            self.last_raiser = self.current_role
-            player.is_all_in = player.is_active and (player.stack == 0)
-        
-            if DEBUG_OPTI_ULTIMATE : 
-                print(f"[GAME_OPTI] {player.name} a raise (pot-based {percentage*100:.0f}%) à {bet_amount}BB")
-        
-        
         elif action.value == PlayerAction.ALL_IN.value:
             if DEBUG_OPTI_ULTIMATE : 
                 print(f"[GAME_OPTI] {player.name} all-in.")
@@ -536,12 +459,64 @@ class PokerGameExpresso:
         else:
             raise ValueError(f"[GAME_OPTI] Action invalide : {action}")
         
+        # --- Nouvelles actions pot-based ---
+        """
+        elif action.value in {
+            PlayerAction.RAISE_25_POT.value,
+            PlayerAction.RAISE_50_POT.value,
+            PlayerAction.RAISE_75_POT.value,
+            PlayerAction.RAISE_100_POT.value,
+            PlayerAction.RAISE_150_POT.value,
+            PlayerAction.RAISE_2X_POT.value,
+            PlayerAction.RAISE_3X_POT.value
+        }:
+            raise_percentages = {
+                PlayerAction.RAISE_25_POT.value: 0.25,
+                PlayerAction.RAISE_50_POT.value: 0.50,
+                PlayerAction.RAISE_75_POT.value: 0.75,
+                PlayerAction.RAISE_100_POT.value: 1.00,
+                PlayerAction.RAISE_150_POT.value: 1.50,
+                PlayerAction.RAISE_2X_POT.value: 2.00,
+                PlayerAction.RAISE_3X_POT.value: 3.00
+            }
+            percentage = raise_percentages[action.value]
+
+            call_amt = max(0.0, self.current_maximum_bet - player.current_player_bet)
+            target_to = self.current_maximum_bet + percentage * (self.main_pot + call_amt)
+
+            # min raise ≈ 2× le gap à caller si une mise existe, sinon BB
+            min_raise = self.big_blind if self.current_maximum_bet == 0 else 2 * call_amt
+            if target_to - player.current_player_bet < min_raise:
+                target_to = player.current_player_bet + min_raise
+
+            bet_amount = target_to
+
+            if player.stack < (bet_amount - player.current_player_bet):
+                raise ValueError(
+                    f"[GAME_OPTI] Fonds insuffisants pour raise : {player.name} a {player.stack}BB, "
+                    f"requis {bet_amount - player.current_player_bet}BB."
+                )
+
+            actual_bet = bet_amount - player.current_player_bet
+            player.stack -= actual_bet
+            player.current_player_bet = bet_amount
+            self.main_pot += actual_bet
+            player.total_bet += actual_bet
+            self.current_maximum_bet = bet_amount
+            self.number_raise_this_game_phase += 1
+            self.last_raiser = self.current_role
+            player.is_all_in = player.is_active and (player.stack == 0)
+
+            if DEBUG_OPTI_ULTIMATE:
+                print(f"[GAME_OPTI] {player.name} a raise (pot-based {percentage*100:.0f}%) à {bet_amount}BB")
+        """
+        
         player.has_acted = True
         self.check_phase_completion()
         
         # Mise à jour de l'historique des actions du joueur
-        action_text = f"{action.value}"
-        if action in [PlayerAction.RAISE, PlayerAction.ALL_IN] or action in {
+        """
+        elif action in {
             PlayerAction.RAISE_25_POT,
             PlayerAction.RAISE_50_POT,
             PlayerAction.RAISE_75_POT,
@@ -550,6 +525,10 @@ class PokerGameExpresso:
             PlayerAction.RAISE_2X_POT,
             PlayerAction.RAISE_3X_POT
         }:
+            action_text += f" {bet_amount}BB"
+        """
+        action_text = f"{action.value}"
+        if action in [PlayerAction.RAISE, PlayerAction.ALL_IN] :
             action_text += f" {bet_amount}BB"
         elif action == PlayerAction.CALL:
             call_amount = self.current_maximum_bet - player.current_player_bet
@@ -899,4 +878,3 @@ if __name__ == "__main__":
         delta = pl.stack - game.initial_stacks[pl.name]
         sign = "+" if delta >= 0 else ""
         print(f"{pl.name} (role {pl.role}) stack: {pl.stack}BB ({sign}{delta}BB)")
-    print(f"Pot final: {game.main_pot}BB\n")

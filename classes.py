@@ -136,13 +136,13 @@ class PlayerAction(Enum):
     CALL = "call"
     # -----------------------------------------------------
     RAISE = "raise" # Raise minimum (2x la mise précédente)
-    RAISE_25_POT = "raise-25%"     # Raise de 25% du pot
-    RAISE_50_POT = "raise-50%"     # Raise de 50% du pot
-    RAISE_75_POT = "raise-75%"     # Raise de 75% du pot
-    RAISE_100_POT = "raise-100%"   # Raise égal au pot
-    RAISE_150_POT = "raise-150%"   # Raise de 150% du pot
-    RAISE_2X_POT = "raise-200%"    # Raise de 2x le pot
-    RAISE_3X_POT = "raise-300%"    # Raise de 3x le pot
+    # RAISE_25_POT = "raise-25%"     # Raise de 25% du pot
+    # RAISE_50_POT = "raise-50%"     # Raise de 50% du pot
+    # RAISE_75_POT = "raise-75%"     # Raise de 75% du pot
+    # RAISE_100_POT = "raise-100%"   # Raise égal au pot
+    # RAISE_150_POT = "raise-150%"   # Raise de 150% du pot
+    # RAISE_2X_POT = "raise-200%"    # Raise de 2x le pot
+    # RAISE_3X_POT = "raise-300%"    # Raise de 3x le pot
     # -----------------------------------------------------
     ALL_IN = "all-in"
 
@@ -171,7 +171,7 @@ class Player:
         """
         self.name = name
         self.stack = stack
-        self.role_position = None # 0-2 (0 = SB, 1 = BB, 2 = BTN)
+        self.role = None # 0-2 (0 = SB, 1 = BB, 2 = BTN)
         self.cards: List[Card] = []
         self.is_active = True # True si le joueur a assez de fonds pour jouer (stack > big_blind)
         self.has_folded = False
@@ -183,9 +183,7 @@ class Player:
         self.has_acted = False # True si le joueur a fait une action dans la phase courante (nécessaire pour savoir si le tour est terminé, car si le premier joueur de la phase check, tous les jouers sont a bet égal et ca déclencherait la phase suivante)
     
     def __str__(self):
-        role_map = {0: "SB", 1: "BB", 2: "BTN"}
-        role = role_map.get(self.role_position, "?")
-        return (f"Player(name={self.name}, role={role}, stack={self.stack}, cards={self.cards}, "
+        return (f"Player(name={self.name}, role={self.role}, stack={self.stack}, cards={self.cards}, "
                 f"is_active={self.is_active}, has_folded={self.has_folded}, is_all_in={self.is_all_in}, "
                 f"current_bet={self.current_player_bet}, total_bet={self.total_bet}, has_acted={self.has_acted})")
 
@@ -244,6 +242,7 @@ class ActionValidator:
         if number_raise_this_game_phase >= 4:
             self.masks[player_role][PlayerAction.RAISE] = False
         
+        """
         pot_raise_actions = [
             PlayerAction.RAISE_25_POT,
             PlayerAction.RAISE_50_POT,
@@ -262,14 +261,26 @@ class ActionValidator:
             PlayerAction.RAISE_2X_POT: 2.00,
             PlayerAction.RAISE_3X_POT: 3.00
         }
+
+        def pot_to_amount(main_pot, current_max_bet, player_cur_bet, pct):
+            call_amt = max(0.0, current_max_bet - player_cur_bet)
+            target_to = current_max_bet + pct * (main_pot + call_amt)
+            return target_to
+
         for action in pot_raise_actions:
             if number_raise_this_game_phase >= 4:
                 self.masks[player_role][action] = False
             else:
                 percentage = raise_percentages[action]
-                required_increase = main_pot * percentage
-                if player.stack < required_increase or required_increase < min_raise:
+                target_to = pot_to_amount(main_pot, current_maximum_bet, player.current_player_bet, percentage)
+                add_required = target_to - player.current_player_bet
+
+                # min raise ≈ 2× le gap à caller si une mise existe, sinon BB
+                min_raise = self.big_blind if current_maximum_bet == 0 else 2 * max(0.0, current_maximum_bet - player.current_player_bet)
+
+                if add_required < min_raise or player.stack < add_required:
                     self.masks[player_role][action] = False
+        """
         
         self.masks[player_role][PlayerAction.ALL_IN] = player.stack > 0
         
