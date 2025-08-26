@@ -49,6 +49,7 @@ class PokerGameExpresso:
         self.current_phase = init.phase
         self.number_raise_this_game_phase = 0
         self.last_raiser = None
+        self.last_raise_amount = self.big_blind
 
         self.players = self._initialize_simulated_players(init)
 
@@ -61,14 +62,28 @@ class PokerGameExpresso:
         self.initial_stacks = {p.name: p.stack for p in self.players}
         self.net_stack_changes = {p.name: 0.0 for p in self.players}
         self.final_stacks = {p.name: p.stack for p in self.players}
+
+        self.deal_cards()
         
         # Affichage des joueurs et leurs stacks
         for player in self.players:
             player_status = "actif" if player.is_active else "fold"
             if DEBUG_OPTI:
-                print(f"[GAME_OPTI] [INIT] Joueur {player.name} (role {player.role}): {player.stack}BB - {player_status}")        
+                print(f"[GAME_OPTI] [INIT] Joueur {player.name} (role {player.role}): {player.stack}BB - {player_status}")      
         if DEBUG_OPTI:
             print("========== FIN INITIALISATION ==========\n")
+
+    def deal_cards(self):
+        """
+        Distribue les cartes aux joueurs actifs qui n'en ont pas
+        """
+        if DEBUG_OPTI:
+            print("[GAME_OPTI] Distribution des cartes privées")
+        for player in self.players:
+            if player.is_active and not player.has_folded and not player.cards:
+                player.cards = [self.remaining_deck.pop(0), self.remaining_deck.pop(0)]
+                if DEBUG_OPTI:
+                    print(f"[GAME_OPTI] {player.name} reçoit: {player.cards[0]} {player.cards[1]}")
 
 
     def _next_player(self):
@@ -130,6 +145,9 @@ class PokerGameExpresso:
 
         self.current_maximum_bet = self.small_blind
         self._next_player()
+        
+        # MAJ du montant de la dernière relance légale
+        self.last_raise_amount = self.big_blind
 
         # BB
         if bb_player.stack >= self.big_blind:
@@ -297,6 +315,9 @@ class PokerGameExpresso:
         # Increment round number when moving to a new phase
         self.number_raise_this_game_phase = 0
         
+        # Reset last raise amount for new phase
+        self.last_raise_amount = self.big_blind
+        
         # Deal community cards for the new phase
         self.deal_community_cards()
         
@@ -398,39 +419,52 @@ class PokerGameExpresso:
                 print(f"[GAME_OPTI] {player.name} a call {call_amount}BB")
 
         elif action.value == PlayerAction.RAISE.value:
-            if DEBUG_OPTI_ULTIMATE : 
+            if DEBUG_OPTI_ULTIMATE:
                 print(f"[GAME_OPTI] {player.name} raise.")
-            # Si aucune mise n'a encore été faite, fixer un minimum raise basé sur la big blind.
-            if self.current_maximum_bet == 0:
-                min_raise = self.big_blind
+
+            prev_max = self.current_maximum_bet
+            gap = max(0.0, prev_max - player.current_player_bet)
+
+            # min raise-to (valeur ABSOLUE à atteindre)
+            if prev_max == 0:
+                min_raise_to = self.big_blind
             else:
-                min_raise = (self.current_maximum_bet - player.current_player_bet) * 2
-        
-            # Si aucune valeur n'est fournie ou si elle est inférieure au minimum, utiliser le minimum raise.
-            if bet_amount is None or (bet_amount < min_raise and action != PlayerAction.ALL_IN):
-                bet_amount = min_raise
-        
-            # Vérifier si le joueur a assez de jetons pour couvrir le montant de raise.
-            if player.stack < (bet_amount - player.current_player_bet):
-                raise ValueError(
-                    f"[GAME_OPTI] Fonds insuffisants pour raise : {player.name} a {player.stack}BB tandis que le montant "
-                    f"additionnel requis est {bet_amount - player.current_player_bet}BB. Mise minimum requise : {min_raise}BB."
-                )
-        
-            # Traitement du raise standard
-            actual_bet = bet_amount - player.current_player_bet  # Calculer combien de jetons le joueur doit ajouter
-            player.stack -= actual_bet
+                # au moins la dernière taille de relance légale (classique NLHE)
+                min_raise_to = prev_max + max(self.last_raise_amount, self.big_blind)
+
+            # si aucun montant fourni ⇒ min-raise, sinon on assainit
+            bet_amount = min_raise_to if bet_amount is None else bet_amount
+
+            # impossible de « descendre » sous sa mise actuelle
+            bet_amount = max(bet_amount, player.current_player_bet)
+
+            # si on ne dépasse pas le minimum requis, on force au minimum
+            if prev_max == 0 and bet_amount < min_raise_to:
+                bet_amount = min_raise_to
+            if prev_max > 0 and bet_amount < min_raise_to:
+                bet_amount = min_raise_to
+
+            add_required = bet_amount - player.current_player_bet
+            if add_required <= 0:
+                raise ValueError("[GAME_OPTI] Raise invalide (montant non positif).")
+            if add_required > player.stack:
+                raise ValueError("[GAME_OPTI] Fonds insuffisants pour raise.")
+
+            player.stack -= add_required
             player.current_player_bet = bet_amount
-            self.main_pot += actual_bet
-            player.total_bet += actual_bet
-            self.current_maximum_bet = bet_amount
+            self.main_pot += add_required
+
+            # MAJ des compteurs de la phase
             self.number_raise_this_game_phase += 1
             self.last_raiser = self.current_role
-            player.is_all_in = player.is_active and (player.stack == 0)
-        
-            if DEBUG_OPTI_ULTIMATE : 
-                print(f"[GAME_OPTI] {player.name} a raise {bet_amount}BB")
-        
+            self.last_raise_amount = bet_amount - prev_max
+            self.current_maximum_bet = bet_amount
+            player.total_bet += add_required
+            player.is_all_in = (player.stack == 0)
+
+            if DEBUG_OPTI_ULTIMATE:
+                print(f"[GAME_OPTI] {player.name} a raise à {bet_amount}BB")
+
         elif action.value == PlayerAction.ALL_IN.value:
             if DEBUG_OPTI_ULTIMATE : 
                 print(f"[GAME_OPTI] {player.name} all-in.")
@@ -553,115 +587,6 @@ class PokerGameExpresso:
             print(f"[GAME_OPTI] Stack du joueur avant action : {player.stack}BB")
             print(f"[GAME_OPTI] Mise actuelle du joueur : {player.current_player_bet}BB")
 
-    def evaluate_final_hand(self, player: Player) -> Tuple[HandRank, List[int]]:
-        if not player.cards:
-            raise ValueError(
-                f"[GAME_OPTI] Erreur d'évaluation : le joueur {player.name} n'a pas de cartes pour évaluer sa main. "
-                "Assurez-vous que les cartes ont été distribuées correctement."
-            )
-        """
-        Évalue la meilleure main possible d'un joueur.
-        """
-        if not player.cards:
-            raise ValueError("[GAME_OPTI] Cannot evaluate hand - player has no cards")
-        
-        # Combine les cartes du joueur avec les cartes communes
-        all_cards = player.cards + self.community_cards
-        # Extrait les valeurs et couleurs de toutes les cartes
-        values = [card.rank for card in all_cards]
-        suits = [card.suit for card in all_cards]
-        
-        # Vérifie si une couleur est possible (5+ cartes de même couleur)
-        suit_counts = Counter(suits)
-        # Trouve la première couleur qui apparaît 5 fois ou plus, sinon None
-        flush_suit = next((suit for suit, count in suit_counts.items() if count >= 5), None)
-        
-        # Si une couleur est possible, on vérifie d'abord les mains les plus fortes
-        if flush_suit:
-            # Trie les cartes de la couleur par valeur décroissante
-            flush_cards = sorted([card for card in all_cards if card.suit == flush_suit], key=lambda x: x.rank, reverse=True)
-            flush_values = [card.rank for card in flush_cards]
-            
-            # Vérifie si on a une quinte flush
-            for i in range(len(flush_values) - 4):
-                # Vérifie si 5 cartes consécutives de même couleur
-                if flush_values[i] - flush_values[i+4] == 4:
-                    # Si la plus haute carte est un As, c'est une quinte flush royale
-                    if flush_values[i] == 14 and flush_values[i+4] == 10:
-                        return (HandRank.ROYAL_FLUSH, [14])
-                    # Sinon c'est une quinte flush normale
-                    return (HandRank.STRAIGHT_FLUSH, [flush_values[i]])
-            
-            # Vérifie la quinte flush basse (As-5)
-            if set([14,2,3,4,5]).issubset(set(flush_values)):
-                return (HandRank.STRAIGHT_FLUSH, [5])
-        
-        # Compte les occurrences de chaque valeur
-        value_counts = Counter(values)
-        
-        # Vérifie le carré (4 cartes de même valeur)
-        if 4 in value_counts.values():
-            quads = [v for v, count in value_counts.items() if count == 4][0]
-            # Trouve la plus haute carte restante comme kicker
-            kicker = max(v for v in values if v != quads)
-            return (HandRank.FOUR_OF_A_KIND, [quads, kicker])
-        
-        # Vérifie le full house (brelan + paire)
-        if 3 in value_counts.values():
-            # Trouve tous les brelans, triés par valeur décroissante
-            trips = sorted([v for v, count in value_counts.items() if count >= 3], reverse=True)
-            # Trouve toutes les paires potentielles, y compris les brelans qui peuvent servir de paire
-            pairs = []
-            for value, count in value_counts.items():
-                if count >= 2:  # La carte peut former une paire
-                    if count >= 3 and value != trips[0]:  # C'est un second brelan
-                        pairs.append(value)
-                    elif count == 2:  # C'est une paire simple
-                        pairs.append(value)
-            
-            if pairs:  # Si on a au moins une paire ou un second brelan utilisable comme paire
-                return (HandRank.FULL_HOUSE, [trips[0], max(pairs)])
-        
-        # Vérifie la couleur simple
-        if flush_suit:
-            flush_cards = sorted([card.rank for card in all_cards if card.suit == flush_suit], reverse=True)
-            return (HandRank.FLUSH, flush_cards[:5])
-        
-        # Vérifie la quinte (5 cartes consécutives)
-        unique_values = sorted(set(values), reverse=True)
-        for i in range(len(unique_values) - 4):
-            if unique_values[i] - unique_values[i+4] == 4:
-                return (HandRank.STRAIGHT, [unique_values[i]])
-                
-        # Vérifie la quinte basse (As-5)
-        if set([14,2,3,4,5]).issubset(set(values)):
-            return (HandRank.STRAIGHT, [5])
-        
-        # Vérifie le brelan
-        if 3 in value_counts.values():
-            # Trouve tous les brelans et sélectionne le plus haut
-            trips = max(v for v, count in value_counts.items() if count >= 3)
-            # Garde les 2 meilleures cartes restantes comme kickers
-            kickers = sorted([v for v in values if v != trips], reverse=True)[:2]
-            return (HandRank.THREE_OF_A_KIND, [trips] + kickers)
-        
-        # Vérifie la double paire
-        pairs = sorted([v for v, count in value_counts.items() if count >= 2], reverse=True)
-        if len(pairs) >= 2:
-            # Garde la meilleure carte restante comme kicker
-            kickers = [v for v in values if v not in pairs[:2]]
-            kicker = max(kickers) if kickers else 0
-            return (HandRank.TWO_PAIR, pairs[:2] + [kicker])
-        
-        # Vérifie la paire simple
-        if pairs:
-            # Garde les 3 meilleures cartes restantes comme kickers
-            kickers = sorted([v for v in values if v != pairs[0]], reverse=True)[:3]
-            return (HandRank.PAIR, [pairs[0]] + kickers)
-        
-        # Si aucune combinaison, retourne la carte haute avec les 5 meilleures cartes
-        return (HandRank.HIGH_CARD, sorted(values, reverse=True)[:5])
-
     def handle_showdown(self):
         if DEBUG_OPTI_ULTIMATE:
             print("\n=== DÉBUT SHOWDOWN SIMULATION ===")
@@ -688,13 +613,6 @@ class PokerGameExpresso:
                 known = {c.to_int() for p in self.players for c in getattr(p, "cards", [])} | {c.to_int() for c in self.community_cards}
                 self.remaining_deck = [c for c in self.remaining_deck if c.to_int() not in known]
             self.community_cards.append(self.remaining_deck.pop(0))
-
-        # Donne 2 cartes aux joueurs actifs qui n'en ont pas
-        for p in active_players:
-            if not p.cards:
-                p.cards = [self.remaining_deck.pop(0), self.remaining_deck.pop(0)]
-                if DEBUG_OPTI_ULTIMATE:
-                    print(f"[GAME_OPTI] [SHOWDOWN] {p.name} reçoit: {p.cards[0]} {p.cards[1]}")
 
         # Victoire par fold
         if len(active_players) == 1:
@@ -874,7 +792,14 @@ if __name__ == "__main__":
         game.process_action(p, action)
 
     print("\n=== Showdown (main terminée) ===")
-    for pl in game.players:
-        delta = pl.stack - game.initial_stacks[pl.name]
+    for player in game.players:
+        delta = player.stack - game.initial_stacks[player.name]
         sign = "+" if delta >= 0 else ""
-        print(f"{pl.name} (role {pl.role}) stack: {pl.stack}BB ({sign}{delta}BB)")
+        print(f"{player.name} (role {player.role}) stack: {player.stack}BB ({sign}{delta}BB)")
+    
+    for player in game.players:
+        print(f"Cartes du joueur {player.name} : [{player.cards[0]}, {player.cards[1]}]")
+
+    print(f"Cartes communes : ")
+    for card in game.community_cards:
+        print(f"[{card}] ")
