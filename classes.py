@@ -3,6 +3,9 @@
 # Classes simplifiées pour la gestion des cartes et du deck
 # ------------------------------------------------------------
 
+from typing import Tuple, List
+from typing import Dict
+
 class Card:
     """Représente une carte avec son rang et sa couleur"""
     def __init__(self, rank, suit):
@@ -98,63 +101,9 @@ def filter_combos_excluding(combos, blocked):
 DECK = [card(r, s) for r in range(2, 15) for s in range(4)]
 ALL_COMBOS = all_starting_combos()
 
-
-
-
-
-
-
-
 # ------------------------------------------------------------
 # Classes de poker_game
 # ------------------------------------------------------------
-from enum import Enum
-from typing import Tuple, List
-from typing import Dict
-
-class HandRank(Enum):
-    """
-    Énumération des combinaisons possibles au poker, de la plus faible à la plus forte.
-    """
-    HIGH_CARD = 0
-    PAIR = 1
-    TWO_PAIR = 2
-    THREE_OF_A_KIND = 3
-    STRAIGHT = 4
-    FLUSH = 5
-    FULL_HOUSE = 6
-    FOUR_OF_A_KIND = 7
-    STRAIGHT_FLUSH = 8
-    ROYAL_FLUSH = 9
-
-class PlayerAction(Enum):
-    """
-    Énumération des actions possibles pour un joueur pendant son tour.
-    """
-    FOLD = "fold"
-    CHECK = "check"
-    CALL = "call"
-    # -----------------------------------------------------
-    RAISE = "raise" # Raise minimum (2x la mise précédente)
-    # RAISE_25_POT = "raise-25%"     # Raise de 25% du pot
-    # RAISE_50_POT = "raise-50%"     # Raise de 50% du pot
-    # RAISE_75_POT = "raise-75%"     # Raise de 75% du pot
-    # RAISE_100_POT = "raise-100%"   # Raise égal au pot
-    # RAISE_150_POT = "raise-150%"   # Raise de 150% du pot
-    # RAISE_2X_POT = "raise-200%"    # Raise de 2x le pot
-    # RAISE_3X_POT = "raise-300%"    # Raise de 3x le pot
-    # -----------------------------------------------------
-    ALL_IN = "all-in"
-
-class GamePhase(Enum):
-    """
-    Énumération des phases d'une partie de poker, de la distribution au showdown.
-    """
-    PREFLOP = "preflop"
-    FLOP = "flop"
-    TURN = "turn"
-    RIVER = "river"
-    SHOWDOWN = "showdown"
 
 class Player:
     """
@@ -199,93 +148,3 @@ class SidePot:
         self.players = []
         self.contributions_dict = {} # Dictionnaire des contributions de chaque joueur dans le side pot
         self.sum_of_contributions = 0 # Montant total dans le side pot
-
-class ActionValidator:
-    def __init__(self, players: List[Player], big_blind: float):
-        self.players = players
-        self.big_blind = big_blind
-        self.masks = {0: {a: False for a in PlayerAction}, 1: {a: False for a in PlayerAction}, 2: {a: False for a in PlayerAction}}
-
-    def update_available_actions(self, player: Player, current_maximum_bet: float, number_raise_this_game_phase: int, main_pot: float, phase: GamePhase):
-        player_role = player.role
-
-        if player.is_all_in:
-            for action in PlayerAction:
-                self.masks[player_role][action] = False
-            return []
-
-        for action in PlayerAction:
-            self.masks[player_role][action] = True
-        
-        if player.current_player_bet < current_maximum_bet:
-            self.masks[player_role][PlayerAction.CHECK] = False
-        
-        if self.masks[player_role][PlayerAction.CHECK]:
-            self.masks[player_role][PlayerAction.FOLD] = False
-        
-        if player.current_player_bet == current_maximum_bet:
-            self.masks[player_role][PlayerAction.CALL] = False
-        elif player.stack < (current_maximum_bet - player.current_player_bet):
-            self.masks[player_role][PlayerAction.CALL] = False
-            if player.stack > 0:
-                self.masks[player_role][PlayerAction.ALL_IN] = True
-            self.masks[player_role][PlayerAction.RAISE] = False
-        
-        if current_maximum_bet == 0:
-            min_raise = self.big_blind
-        else:
-            min_raise = (current_maximum_bet - player.current_player_bet) * 2
-        
-        if player.stack < min_raise:
-            self.masks[player_role][PlayerAction.RAISE] = False
-
-        if number_raise_this_game_phase >= 4:
-            self.masks[player_role][PlayerAction.RAISE] = False
-        
-        """
-        pot_raise_actions = [
-            PlayerAction.RAISE_25_POT,
-            PlayerAction.RAISE_50_POT,
-            PlayerAction.RAISE_75_POT,
-            PlayerAction.RAISE_100_POT,
-            PlayerAction.RAISE_150_POT,
-            PlayerAction.RAISE_2X_POT,
-            PlayerAction.RAISE_3X_POT
-        ]
-        raise_percentages = {
-            PlayerAction.RAISE_25_POT: 0.25,
-            PlayerAction.RAISE_50_POT: 0.50,
-            PlayerAction.RAISE_75_POT: 0.75,
-            PlayerAction.RAISE_100_POT: 1.00,
-            PlayerAction.RAISE_150_POT: 1.50,
-            PlayerAction.RAISE_2X_POT: 2.00,
-            PlayerAction.RAISE_3X_POT: 3.00
-        }
-
-        def pot_to_amount(main_pot, current_max_bet, player_cur_bet, pct):
-            call_amt = max(0.0, current_max_bet - player_cur_bet)
-            target_to = current_max_bet + pct * (main_pot + call_amt)
-            return target_to
-
-        for action in pot_raise_actions:
-            if number_raise_this_game_phase >= 4:
-                self.masks[player_role][action] = False
-            else:
-                percentage = raise_percentages[action]
-                target_to = pot_to_amount(main_pot, current_maximum_bet, player.current_player_bet, percentage)
-                add_required = target_to - player.current_player_bet
-
-                # min raise ≈ 2× le gap à caller si une mise existe, sinon BB
-                min_raise = self.big_blind if current_maximum_bet == 0 else 2 * max(0.0, current_maximum_bet - player.current_player_bet)
-
-                if add_required < min_raise or player.stack < add_required:
-                    self.masks[player_role][action] = False
-        """
-        
-        self.masks[player_role][PlayerAction.ALL_IN] = player.stack > 0
-        
-        if phase == GamePhase.SHOWDOWN:
-            for action in PlayerAction:
-                self.masks[player_role][action] = False
-
-        return [a for a, enabled in self.masks[player_role].items() if enabled]

@@ -9,11 +9,31 @@ import random as rd
 from typing import List, Dict, Optional, Tuple
 from collections import Counter
 import numpy as np
-from classes import Player, PlayerAction, GamePhase, Card, SidePot, HandRank, ActionValidator, DECK, card_rank, card_suit
-from utils import rank7, rank7_info
+from classes import Player, Card, SidePot
+from utils import rank7
 
 DEBUG_OPTI = True
 DEBUG_OPTI_ULTIMATE = True
+
+# Remplacement des Enum par vecteurs ordonnés
+HAND_RANKS = [
+    "HIGH_CARD", "PAIR", "TWO_PAIR", "THREE_OF_A_KIND",
+    "STRAIGHT", "FLUSH", "FULL_HOUSE", "FOUR_OF_A_KIND",
+    "STRAIGHT_FLUSH", "ROYAL_FLUSH"
+]
+
+PLAYER_ACTIONS = [
+    "FOLD", "CHECK", "CALL", "RAISE", "ALL-IN"
+]
+
+GAME_PHASES = [
+    "PREFLOP", "FLOP", "TURN", "RIVER", "SHOWDOWN"
+]
+
+# Pour lookup rapide
+HAND_RANKS_IDX = {name: i for i, name in enumerate(HAND_RANKS)}
+PLAYER_ACTIONS_IDX = {name: i for i, name in enumerate(PLAYER_ACTIONS)}
+GAME_PHASES_IDX = {name: i for i, name in enumerate(GAME_PHASES)}
 
 class GameInit:
     stacks_init: List[int]                   # ex: [25, 25, 25]
@@ -22,7 +42,7 @@ class GameInit:
     active_init: List[bool]                  # état actif des joueurs (par rôle)
     has_acted_init: List[bool]                # état agi des joueurs (par rôle)
     main_pot: float                                   # pot courant
-    phase: GamePhase                                  # PREFLOP/FLOP/TURN/RIVER
+    phase: str                                  # "PREFLOP"/"FLOP"/"TURN"/"RIVER"/"SHOWDOWN"
     community_cards: list[Card]                       # visibles
 
 class PokerGameExpresso:
@@ -54,7 +74,8 @@ class PokerGameExpresso:
         self.players = self._initialize_simulated_players(init)
 
         self.current_maximum_bet = max(p.current_player_bet for p in self.players)
-        self.action_validator = ActionValidator(self.players, self.big_blind)
+        self.action_masks = {0: {a: False for a in PLAYER_ACTIONS}, 1: {a: False for a in PLAYER_ACTIONS}, 2: {a: False for a in PLAYER_ACTIONS}}
+        
         self.action_history = {p.name: [] for p in self.players}
 
         self.current_role = 0 # SB
@@ -67,11 +88,95 @@ class PokerGameExpresso:
         
         # Affichage des joueurs et leurs stacks
         for player in self.players:
-            player_status = "actif" if player.is_active else "fold"
+            player_status = "actif" if player.is_active else "FOLD"
             if DEBUG_OPTI:
                 print(f"[GAME_OPTI] [INIT] Joueur {player.name} (role {player.role}): {player.stack}BB - {player_status}")      
         if DEBUG_OPTI:
             print("========== FIN INITIALISATION ==========\n")
+
+    def update_available_actions(self, player: Player, current_maximum_bet: float, number_raise_this_game_phase: int, main_pot: float, phase: str):
+        player_role = player.role
+
+        if player.is_all_in:
+            for action in PLAYER_ACTIONS:
+                self.action_masks[player_role][action] = False
+            return []
+
+        for action in PLAYER_ACTIONS:
+            self.action_masks[player_role][action] = True
+        
+        if player.current_player_bet < current_maximum_bet:
+            self.action_masks[player_role]["CHECK"] = False
+        
+        if self.action_masks[player_role]["CHECK"]:
+            self.action_masks[player_role]["FOLD"] = False
+        
+        if player.current_player_bet == current_maximum_bet:
+            self.action_masks[player_role]["CALL"] = False
+        elif player.stack < (current_maximum_bet - player.current_player_bet):
+            self.action_masks[player_role]["CALL"] = False
+            if player.stack > 0:
+                self.action_masks[player_role]["ALL-IN"] = True
+            self.action_masks[player_role]["RAISE"] = False
+        
+        if current_maximum_bet == 0:
+            min_raise = self.big_blind
+        else:
+            min_raise = (current_maximum_bet - player.current_player_bet) * 2
+        
+        if player.stack < min_raise:
+            self.action_masks[player_role]["RAISE"] = False
+
+        if number_raise_this_game_phase >= 4:
+            self.action_masks[player_role]["RAISE"] = False
+        
+        """
+        pot_raise_actions = [
+            PlayerAction.RAISE_25_POT,
+            PlayerAction.RAISE_50_POT,
+            PlayerAction.RAISE_75_POT,
+            PlayerAction.RAISE_100_POT,
+            PlayerAction.RAISE_150_POT,
+            PlayerAction.RAISE_2X_POT,
+            PlayerAction.RAISE_3X_POT
+        ]
+        raise_percentages = {
+            PlayerAction.RAISE_25_POT: 0.25,
+            PlayerAction.RAISE_50_POT: 0.50,
+            PlayerAction.RAISE_75_POT: 0.75,
+            PlayerAction.RAISE_100_POT: 1.00,
+            PlayerAction.RAISE_150_POT: 1.50,
+            PlayerAction.RAISE_2X_POT: 2.00,
+            PlayerAction.RAISE_3X_POT: 3.00
+        }
+
+        def pot_to_amount(main_pot, current_max_bet, player_cur_bet, pct):
+            call_amt = max(0.0, current_max_bet - player_cur_bet)
+            target_to = current_max_bet + pct * (main_pot + call_amt)
+            return target_to
+
+        for action in pot_raise_actions:
+            if number_raise_this_game_phase >= 4:
+                self.masks[player_role][action] = False
+            else:
+                percentage = raise_percentages[action]
+                target_to = pot_to_amount(main_pot, current_maximum_bet, player.current_player_bet, percentage)
+                add_required = target_to - player.current_player_bet
+
+                # min raise ≈ 2× le gap à caller si une mise existe, sinon BB
+                min_raise = self.big_blind if current_maximum_bet == 0 else 2 * max(0.0, current_maximum_bet - player.current_player_bet)
+
+                if add_required < min_raise or player.stack < add_required:
+                    self.masks[player_role][action] = False
+        """
+        
+        self.action_masks[player_role]["ALL-IN"] = player.stack > 0
+        
+        if phase == "SHOWDOWN":
+            for action in PLAYER_ACTIONS:
+                self.action_masks[player_role][action] = False
+
+        return [a for a, enabled in self.action_masks[player_role].items() if enabled]
 
     def deal_cards(self):
         """
@@ -176,22 +281,19 @@ class PokerGameExpresso:
         2. Tous les joueurs ont égalisé la mise maximale (ou sont all-in)
         3. Cas particuliers : un seul joueur reste, tous all-in, ou BB preflop
         """
-        
-        # Récupérer les joueurs actifs et all-in
+
+        # Récupérer les joueurs actifs
         in_game_players = [p for p in self.players if p.is_active and not p.has_folded]
         all_in_players = [p for p in in_game_players if p.is_all_in]
-        
-        # Vérifier s'il ne reste qu'un seul joueur actif
+
+        # Victoire directe si un seul joueur actif
         if len(in_game_players) == 1:
             if DEBUG_OPTI_ULTIMATE:
                 print("Moving to showdown (only one player remains)")
             self.handle_showdown()
             return
 
-        current_player = self.players[self.current_role]
-
-        # Si au moins un joueur est all-in et qu'au plus un joueur reste non all-in,
-        # et que tous les non all-in ont égalisé la mise max, on court-circuite vers le showdown.
+        # Cas all-in : showdown forcé si plus de mise possible
         if any(p.is_all_in for p in in_game_players):
             everyone_capped = all(
                 p.is_all_in or p.current_player_bet == self.current_maximum_bet
@@ -206,88 +308,58 @@ class PokerGameExpresso:
                 self.handle_showdown()
                 return
 
-        # Cas particulier, au PREFLOP, si la BB est limpée, elle doit avoir un droit de parole
-        # Vérification d'un cas particulier en phase préflop :
-        # En phase préflop, l'ordre d'action est particulier car après avoir posté les blinds
-        # l'action se prolonge jusqu'à ce que le joueur en petite blinde (role == 0) puisse agir.
-        # Même si, en apparence, tous les joueurs ont déjà joué et égalisé la mise maximale,
-        # il est nécessaire de laisser le temps au joueur en small blind d'intervenir.
-        # C'est pourquoi, si le joueur actif est en position 0 durant le préflop,
-        # la méthode retourne False et indique que la phase d'enchères ne peut pas encore être terminée
-
-        # Si tous les joueurs actifs sont all-in, la partie est terminée, on va vers le showdown pour déterminer le vainqueur
+        # Tous les joueurs restants sont all-in
         if (len(all_in_players) == len(in_game_players)) and (len(in_game_players) > 1):
             if DEBUG_OPTI_ULTIMATE:
                 print("Moving to showdown (all remaining players are all-in)")
             while len(self.community_cards) < 5 and self.remaining_deck:
                 self.community_cards.append(self.remaining_deck.pop(0))
             self.handle_showdown()
-            return # Ne rien faire d'autre, la partie est terminée
-        
+            return
+
+        # Vérification des actions des joueurs
         for player in in_game_players:
-            # Si le joueur n'a pas encore agi dans la phase, le tour n'est pas terminé
             if not player.has_acted:
                 if DEBUG_OPTI_ULTIMATE:
-                    print(f'{player.name} n\'a pas encore agi')
+                    print(f"{player.name} n'a pas encore agi")
                 self._next_player()
-                return # Ne rien faire de plus, la phase ne peut pas encore être terminée
-
-            # Si le joueur n'a pas égalisé la mise maximale et n'est pas all-in, le tour n'est pas terminé
+                return
             if player.current_player_bet < self.current_maximum_bet and not player.is_all_in:
                 if DEBUG_OPTI:
-                    print('Un des joueurs en jeu n\'a pas égalisé la mise maximale')
+                    print("Un des joueurs en jeu n'a pas égalisé la mise maximale")
                 self._next_player()
-                return # Ne rien faire de plus, la phase ne peut pas encore être terminée
-        
-        # Atteindre cette partie du code signifie que la phase est terminée
-        if self.current_phase == GamePhase.RIVER:
+                return
+
+        # Ici, toutes les conditions pour avancer la phase sont remplies
+        if self.current_phase == "RIVER":
             if DEBUG_OPTI_ULTIMATE:
                 print("River complete - going to showdown")
             self.handle_showdown()
-            return # Ne rien faire de plus, la phase ne peut pas encore être terminée
         else:
             self.advance_phase()
             if DEBUG_OPTI_ULTIMATE:
                 print(f"[GAME_OPTI] Advanced to {self.current_phase}")
-            # Réinitialiser has_acted pour tous les joueurs actifs et non fold au début d'une nouvelle phase
             for p in self.players:
                 if p.is_active and not p.has_folded and not p.is_all_in:
                     p.has_acted = False
 
-        # Si l'action revient au dernier raiser, terminer le tour d'enchères
-        if self.last_raiser is not None and self.current_role == self.last_raiser:
-            if not (self.current_phase == GamePhase.PREFLOP and
-                    (current_player.role == 1) and
-                    (current_player.current_player_bet == self.big_blind)):
-                if self.current_phase == GamePhase.RIVER:
-                    if DEBUG_OPTI_ULTIMATE:
-                        print("River complete - going to showdown")
-                    self.handle_showdown()
-                else:
-                    self.advance_phase()
-                    if DEBUG_OPTI_ULTIMATE:
-                        print(f"[GAME_OPTI] Advanced to {self.current_phase}")
-                    for p in self.players:
-                        if p.is_active and not p.has_folded and not p.is_all_in:
-                            p.has_acted = False
-                return
         
     def deal_community_cards(self):
         if DEBUG_OPTI:
             print(f"[GAME_OPTI] \n[DISTRIBUTION] Distribution des cartes communes pour phase {self.current_phase}")
 
-        if self.current_phase == GamePhase.PREFLOP:
+        if self.current_phase == "PREFLOP":
             raise ValueError(
                 "[GAME_OPTI] Erreur d'état : Distribution des community cards pendant le pré-flop."
             )
 
-        if self.current_phase == GamePhase.FLOP:
+        if self.current_phase == "FLOP":
             if len(self.remaining_deck) < 3:
                 raise ValueError("[GAME_OPTI] Deck épuisé pour le flop")
             for _ in range(3):
                 self.community_cards.append(self.remaining_deck.pop(0))
 
-        elif self.current_phase in [GamePhase.TURN, GamePhase.RIVER]:
+        elif self.current_phase in ["TURN", "RIVER"]:
             if not self.remaining_deck:
                 raise ValueError(f"[GAME_OPTI] Deck épuisé pour {self.current_phase}")
             self.community_cards.append(self.remaining_deck.pop(0))
@@ -305,12 +377,12 @@ class PokerGameExpresso:
         self.last_raiser = None  # Réinitialiser le dernier raiser pour la nouvelle phase
         
         # Normal phase progression
-        if self.current_phase == GamePhase.PREFLOP:
-            self.current_phase = GamePhase.FLOP
-        elif self.current_phase == GamePhase.FLOP:
-            self.current_phase = GamePhase.TURN
-        elif self.current_phase == GamePhase.TURN:
-            self.current_phase = GamePhase.RIVER
+        if self.current_phase == "PREFLOP":
+            self.current_phase = "FLOP"
+        elif self.current_phase == "FLOP":
+            self.current_phase = "TURN"
+        elif self.current_phase == "TURN":
+            self.current_phase = "RIVER"
         
         # Increment round number when moving to a new phase
         self.number_raise_this_game_phase = 0
@@ -340,7 +412,7 @@ class PokerGameExpresso:
             print(f"[GAME_OPTI] [PHASE] Premier joueur à agir: {self.players[self.current_role].name} (role : {self.current_role})")
             print("========== FIN CHANGEMENT PHASE ==========\n")
 
-    def process_action(self, player: Player, action: PlayerAction, bet_amount: Optional[int] = None):
+    def process_action(self, player: Player, action: str, bet_amount: Optional[int] = None):
         """
         Traite l'action d'un joueur, met à jour l'état du jeu et gère la progression du tour.
 
@@ -353,6 +425,8 @@ class PokerGameExpresso:
         - Traiter les situations d'all-in et créer des side pots le cas échéant.
         - Déterminer, à l'issue de l'action, si le tour d'enchères est clôturé ou s'il faut passer au joueur suivant.
         
+        - bet_amount n'est pas utilisé pour le momentcar la raise est systématiquement la min-raise.
+
         Returns:
             PlayerAction: L'action traitée (pour garder une cohérence dans le type de retour).
         """
@@ -362,24 +436,24 @@ class PokerGameExpresso:
             raise ValueError(f"[GAME_OPTI] Erreur d'action : Ce n'est pas le tour de {player.name}. "
                              f"C'est au tour de {current_turn_player} d'agir.")
 
-        if not player.is_active or player.is_all_in or player.has_folded or self.current_phase == GamePhase.SHOWDOWN:
+        if not player.is_active or player.is_all_in or player.has_folded or self.current_phase == "SHOWDOWN":
             raise ValueError(f"[GAME_OPTI] {player.name} n'était pas censé pouvoir faire une action, ...")
 
-        available_actions = self.action_validator.update_available_actions(player, self.current_maximum_bet, self.number_raise_this_game_phase, self.main_pot, self.current_phase)
-        if not any(valid_action.value == action.value for valid_action in available_actions):
+        available_actions = self.update_available_actions(player, self.current_maximum_bet, self.number_raise_this_game_phase, self.main_pot, self.current_phase)
+        if not any(valid_action == action for valid_action in available_actions):
             raise ValueError(f"[GAME_OPTI] {player.name} n'a pas le droit de faire cette action, actions valides : {available_actions}")
         #----- Vérification des fonds disponibles -----
-        if not player.is_active or player.is_all_in or player.has_folded or self.current_phase == GamePhase.SHOWDOWN:
+        if not player.is_active or player.is_all_in or player.has_folded or self.current_phase == "SHOWDOWN":
             raise ValueError(f"[GAME_OPTI] {player.name} n'était pas censé pouvoir faire une action, Raisons : actif = {player.is_active}, all-in = {player.is_all_in}, folded = {player.has_folded}")
         
-        if not any(valid_action.value == action.value for valid_action in available_actions):
+        if not any(valid_action == action for valid_action in available_actions):
             raise ValueError(f"[GAME_OPTI] {player.name} n'a pas le droit de faire cette action, actions valides : {available_actions}")
         
         #----- Affichage de débogage (pour le suivi durant l'exécution) -----
         if DEBUG_OPTI_ULTIMATE:
             print(f"[GAME_OPTI] \n=== Action qui va etre effectuée par {player.name} ===")
             print(f"[GAME_OPTI] Joueur actif : {player.is_active}")
-            print(f"[GAME_OPTI] Action choisie : {action.value}")
+            print(f"[GAME_OPTI] Action choisie : {action}")
             print(f"[GAME_OPTI] Phase actuelle : {self.current_phase}")
             print(f"[GAME_OPTI] Pot actuel : {self.main_pot}BB")
             print(f"[GAME_OPTI] A agi : {player.has_acted}")
@@ -390,17 +464,17 @@ class PokerGameExpresso:
             print(f"[GAME_OPTI] Mise actuelle du joueur : {player.current_player_bet}BB")
         
         #----- Traitement de l'action en fonction de son type -----
-        if action.value == PlayerAction.FOLD.value:
+        if action == "FOLD":
             # Le joueur se couche il n'est plus actif pour ce tour.
             player.has_folded = True
             if DEBUG_OPTI_ULTIMATE : 
                 print(f"[GAME_OPTI] {player.name} se couche (Fold).")
         
-        elif action.value == PlayerAction.CHECK.value:
+        elif action == "CHECK":
             if DEBUG_OPTI_ULTIMATE : 
                 print(f"[GAME_OPTI] {player.name} check.")
         
-        elif action.value == PlayerAction.CALL.value:
+        elif action == "CALL":
             if DEBUG_OPTI_ULTIMATE : 
                 print(f"[GAME_OPTI] {player.name} call.")
             call_amount = self.current_maximum_bet - player.current_player_bet
@@ -418,7 +492,7 @@ class PokerGameExpresso:
             if DEBUG_OPTI_ULTIMATE : 
                 print(f"[GAME_OPTI] {player.name} a call {call_amount}BB")
 
-        elif action.value == PlayerAction.RAISE.value:
+        elif action == "RAISE":
             if DEBUG_OPTI_ULTIMATE:
                 print(f"[GAME_OPTI] {player.name} raise.")
 
@@ -427,68 +501,53 @@ class PokerGameExpresso:
 
             # min raise-to (valeur ABSOLUE à atteindre)
             if prev_max == 0:
-                min_raise_to = self.big_blind
+                raise_amount = self.big_blind
             else:
                 # au moins la dernière taille de relance légale (classique NLHE)
-                min_raise_to = prev_max + max(self.last_raise_amount, self.big_blind)
-
-            # si aucun montant fourni ⇒ min-raise, sinon on assainit
-            bet_amount = min_raise_to if bet_amount is None else bet_amount
+                raise_amount = prev_max + max(self.last_raise_amount, self.big_blind)
 
             # impossible de « descendre » sous sa mise actuelle
-            bet_amount = max(bet_amount, player.current_player_bet)
+            raise_amount = max(raise_amount, player.current_player_bet)
 
-            # si on ne dépasse pas le minimum requis, on force au minimum
-            if prev_max == 0 and bet_amount < min_raise_to:
-                bet_amount = min_raise_to
-            if prev_max > 0 and bet_amount < min_raise_to:
-                bet_amount = min_raise_to
-
-            add_required = bet_amount - player.current_player_bet
+            add_required = raise_amount - player.current_player_bet
             if add_required <= 0:
                 raise ValueError("[GAME_OPTI] Raise invalide (montant non positif).")
             if add_required > player.stack:
                 raise ValueError("[GAME_OPTI] Fonds insuffisants pour raise.")
 
             player.stack -= add_required
-            player.current_player_bet = bet_amount
+            player.current_player_bet = raise_amount
             self.main_pot += add_required
 
             # MAJ des compteurs de la phase
             self.number_raise_this_game_phase += 1
             self.last_raiser = self.current_role
-            self.last_raise_amount = bet_amount - prev_max
-            self.current_maximum_bet = bet_amount
+            self.last_raise_amount = raise_amount - prev_max
+            self.current_maximum_bet = raise_amount
             player.total_bet += add_required
             player.is_all_in = (player.stack == 0)
 
             if DEBUG_OPTI_ULTIMATE:
-                print(f"[GAME_OPTI] {player.name} a raise à {bet_amount}BB")
+                print(f"[GAME_OPTI] {player.name} a raise à {raise_amount}BB")
 
-        elif action.value == PlayerAction.ALL_IN.value:
+        elif action == "ALL-IN":
             if DEBUG_OPTI_ULTIMATE : 
                 print(f"[GAME_OPTI] {player.name} all-in.")
-            # Si aucune valeur n'est passée pour bet_amount, on assigne automatiquement tout le stack
-            if bet_amount is None:
-                bet_amount = player.stack
-            elif bet_amount != player.stack:
-                raise ValueError(
-                    f"[GAME_OPTI] Erreur ALL-IN : {player.name} doit miser exactement tout son stack ({player.stack}BB)."
-                )
+            all_in_amount = player.stack
             
             # Mise à jour de la mise maximale seulement si l'all-in est supérieur
-            if bet_amount + player.current_player_bet > self.current_maximum_bet:  # Si le all-in est supérieur à la mise maximale, on met à jour la mise maximale
-                self.current_maximum_bet = bet_amount + player.current_player_bet  # On met à jour la mise maximale
+            if all_in_amount + player.current_player_bet > self.current_maximum_bet:  # Si le all-in est supérieur à la mise maximale, on met à jour la mise maximale
+                self.current_maximum_bet = all_in_amount + player.current_player_bet  # On met à jour la mise maximale
                 self.number_raise_this_game_phase += 1  # On incrémente le nombre de raise dans la phase
                 self.last_raiser = self.current_role  # Enregistrer le all-in comme raise
             
-            player.stack -= bet_amount  # On retire le all-in du stack du joueur
-            player.current_player_bet += bet_amount  # On ajoute le all-in à la mise du joueur
-            self.main_pot += bet_amount  # On ajoute le all-in au pot de la phase
-            player.total_bet += bet_amount  # On ajoute le all-in à la mise totale du joueur
+            player.stack -= all_in_amount  # On retire le all-in du stack du joueur
+            player.current_player_bet += all_in_amount  # On ajoute le all-in à la mise du joueur
+            self.main_pot += all_in_amount  # On ajoute le all-in au pot de la phase
+            player.total_bet += all_in_amount  # On ajoute le all-in à la mise totale du joueur
             player.is_all_in = True  # On indique que le joueur est all-in
             if DEBUG_OPTI_ULTIMATE : 
-                print(f"[GAME_OPTI] {player.name} a all-in {bet_amount}BB")
+                print(f"[GAME_OPTI] {player.name} a all-in {all_in_amount}BB")
         
         else:
             raise ValueError(f"[GAME_OPTI] Action invalide : {action}")
@@ -561,10 +620,12 @@ class PokerGameExpresso:
         }:
             action_text += f" {bet_amount}BB"
         """
-        action_text = f"{action.value}"
-        if action in [PlayerAction.RAISE, PlayerAction.ALL_IN] :
-            action_text += f" {bet_amount}BB"
-        elif action == PlayerAction.CALL:
+        action_text = f"{action}"
+        if action == "RAISE":
+            action_text += f" {raise_amount}BB"
+        elif action == "ALL-IN":
+            action_text += f" {all_in_amount}BB"
+        elif action == "CALL":
             call_amount = self.current_maximum_bet - player.current_player_bet
             action_text += f" {call_amount}BB"
         
@@ -577,7 +638,7 @@ class PokerGameExpresso:
         if DEBUG_OPTI_ULTIMATE:
             print(f"[GAME_OPTI] \n=== Etat de la partie après action de {player.name} ===")
             print(f"[GAME_OPTI] Joueur actif : {player.is_active}")
-            print(f"[GAME_OPTI] Action choisie : {action.value}")
+            print(f"[GAME_OPTI] Action choisie : {action}")
             print(f"[GAME_OPTI] Phase actuelle : {self.current_phase}")
             print(f"[GAME_OPTI] Pot actuel : {self.main_pot}BB")
             print(f"[GAME_OPTI] A agi : {player.has_acted}")
@@ -591,12 +652,12 @@ class PokerGameExpresso:
         if DEBUG_OPTI_ULTIMATE:
             print("\n=== DÉBUT SHOWDOWN SIMULATION ===")
 
-        self.current_phase = GamePhase.SHOWDOWN
+        self.current_phase = "SHOWDOWN"
         self.current_maximum_bet = 0
 
         # Figer les actions
         for player in self.players:
-            self.action_validator.update_available_actions(
+            self.update_available_actions(
                 player, self.current_maximum_bet, self.number_raise_this_game_phase, self.main_pot, self.current_phase
             )
 
@@ -665,7 +726,7 @@ class PokerGameExpresso:
         """
 
         side_pots = []
-        for i in range(6):
+        for i in range(2):
             side_pots.append(SidePot(id=i))
 
         return side_pots
@@ -757,7 +818,7 @@ if __name__ == "__main__":
     init.active_init = [True, True, True]
     init.has_acted_init = [False, False, False]
     init.main_pot = 0
-    init.phase = GamePhase.PREFLOP
+    init.phase = "PREFLOP"
     init.community_cards = []
 
     game = PokerGameExpresso(init)
@@ -770,10 +831,10 @@ if __name__ == "__main__":
 
     # Politique ultra simple pour démontrer l'exécution :
     # BTN open 3BB si possible, puis SB et BB foldent => fin de main par fold.
-    while game.current_phase != GamePhase.SHOWDOWN:
+    while game.current_phase != "SHOWDOWN":
         p = game.players[game.current_role]
 
-        allowed = game.action_validator.update_available_actions(
+        allowed = game.update_available_actions(
             p,
             game.current_maximum_bet,
             game.number_raise_this_game_phase,
@@ -782,12 +843,12 @@ if __name__ == "__main__":
         )
 
         if DEBUG_OPTI:
-            print(f"[GAME_OPTI] les actions valides sont : {[a.name for a in allowed]}")
+            print(f"[GAME_OPTI] les actions valides sont : {[a for a in allowed]}")
 
         action = rd.choice(allowed)
 
         if DEBUG_OPTI:
-            print(f"[GAME_OPTI] {p.name} fait l'action {action.name}")
+            print(f"[GAME_OPTI] {p.name} fait l'action {action}")
 
         game.process_action(p, action)
 
@@ -801,5 +862,8 @@ if __name__ == "__main__":
         print(f"Cartes du joueur {player.name} : [{player.cards[0]}, {player.cards[1]}]")
 
     print(f"Cartes communes : ")
+    community_cards_str = "["
     for card in game.community_cards:
-        print(f"[{card}] ")
+        community_cards_str += f"{card} "
+    community_cards_str += "]"
+    print(community_cards_str)

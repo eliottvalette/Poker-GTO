@@ -45,20 +45,6 @@ def rank7(cards7: tuple[int, ...]) -> int:
     score = _TREYS_EVAL.evaluate(t_board, t_hand)
     return -score
 
-def rank7_info(cards7: tuple[int, ...]) -> tuple[int, int, str]:
-    """
-    Retourne (-score_treys, class_idx, class_str).
-    class_idx ∈ [1..9] Treys, class_str ∈ {"High Card", "Pair", ...}.
-    """
-    h1, h2, b0, b1, b2, b3, b4 = cards7
-    t_hand  = [TREYS_INT_LUT[h1], TREYS_INT_LUT[h2]]
-    t_board = [TREYS_INT_LUT[b0], TREYS_INT_LUT[b1], TREYS_INT_LUT[b2],
-               TREYS_INT_LUT[b3], TREYS_INT_LUT[b4]]
-    raw = _TREYS_EVAL.evaluate(t_board, t_hand)
-    cls = _TREYS_EVAL.get_rank_class(raw)
-    cls_name = TEvaluator.class_to_string(cls)
-    return -raw, cls, cls_name
-
 
 
 # --------- Sauvegarde / chargement des ranges ----------
