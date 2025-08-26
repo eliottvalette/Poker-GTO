@@ -3,8 +3,7 @@
 # Classes simplifiées pour la gestion des cartes et du deck
 # ------------------------------------------------------------
 
-from typing import Tuple, List
-from typing import Dict
+from typing import List
 
 class Card:
     __slots__ = ("rank", "suit", "id")

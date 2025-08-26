@@ -35,7 +35,7 @@ def main():
             game.current_phase
         )
         # Politique aléatoire pour faire tourner la partie
-        action = rd.choice(allowed) if allowed else "CHECK"
+        action = "CHECK" if "CHECK" in allowed else "CALL" if "CALL" in allowed else rd.choice(allowed)
         game.process_action(hero, action)
         step += 1
 

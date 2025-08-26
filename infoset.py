@@ -16,14 +16,16 @@ def _combo_label_169(c1: Card, c2: Card) -> str:
 
 # 13x13 labels: diagonale = paires, triangle haut = suited, triangle bas = offsuit
 _LABELS_169 = []
-for i, hi in enumerate(_RANKS_DESC):
-    for j, lo in enumerate(_RANKS_DESC):
+for i, r1 in enumerate(_RANKS_DESC):
+    for j, r2 in enumerate(_RANKS_DESC):
         if i == j:
-            _LABELS_169.append(f"{_R2S[hi]}{_R2S[lo]}")
+            _LABELS_169.append(f"{_R2S[r1]}{_R2S[r2]}")
         elif i < j:
-            _LABELS_169.append(f"{_R2S[hi]}{_R2S[lo]}s")
+            # top-right: r1 > r2
+            _LABELS_169.append(f"{_R2S[r1]}{_R2S[r2]}s")
         else:
-            _LABELS_169.append(f"{_R2S[hi]}{_R2S[lo]}o")
+            # bottom-left: garder la haute d’abord
+            _LABELS_169.append(f"{_R2S[r2]}{_R2S[r1]}o")
 
 LABEL_TO_169IDX = {lab: i for i, lab in enumerate(_LABELS_169)}
 
@@ -83,24 +85,23 @@ def _board_bucket(board: List[Card]) -> Tuple[int, str]:
     return idx, name
 
 # -------- pack/unpack (uint64) --------
-# Layout (38 bits utilisés, sans IP/OOP):
-# [ phase:3 | role:2 | hand169:8 | board:5 | pot½:6 | tocall½:6 | last½:6 | raises:2 ]
-# bit positions (LSB -> MSB):
+# Layout (44 bits, en BB entiers):
+# [ phase:3 | role:2 | hand169:8 | board:5 | potBB:8 | tocallBB:8 | lastBB:8 | raises:2 ]
 _POS = {
     "RAISES": 0,
-    "LASTH":  2,
-    "TOCALL": 8,
-    "POT":   14,
-    "BOARD": 20,
-    "HAND":  25,
-    "ROLE":  33,
-    "PHASE": 35,
+    "LASTH":  2,   # 8 bits
+    "TOCALL": 10,  # 8 bits
+    "POT":    18,  # 8 bits
+    "BOARD":  26,  # 5 bits
+    "HAND":   31,  # 8 bits
+    "ROLE":   39,  # 2 bits
+    "PHASE":  41,  # 3 bits
 }
 _MASK = {
     "RAISES": (1<<2)-1,
-    "LASTH":  (1<<6)-1,
-    "TOCALL": (1<<6)-1,
-    "POT":    (1<<6)-1,
+    "LASTH":  (1<<8)-1,
+    "TOCALL": (1<<8)-1,
+    "POT":    (1<<8)-1,
     "BOARD":  (1<<5)-1,
     "HAND":   (1<<8)-1,
     "ROLE":   (1<<2)-1,
@@ -125,9 +126,9 @@ def unpack_infoset_key_dense(k: int) -> dict:
         "role":   (k >> _POS["ROLE"])   & _MASK["ROLE"],
         "hand":   (k >> _POS["HAND"])   & _MASK["HAND"],
         "board":  (k >> _POS["BOARD"])  & _MASK["BOARD"],
-        "pot½":   (k >> _POS["POT"])    & _MASK["POT"],
-        "tocall½":(k >> _POS["TOCALL"]) & _MASK["TOCALL"],
-        "last½":  (k >> _POS["LASTH"])  & _MASK["LASTH"],
+        "pot":    (k >> _POS["POT"])    & _MASK["POT"],     # BB entiers
+        "tocall": (k >> _POS["TOCALL"]) & _MASK["TOCALL"],  # BB entiers
+        "last":   (k >> _POS["LASTH"])  & _MASK["LASTH"],   # BB entiers
         "raises": (k >> _POS["RAISES"]) & _MASK["RAISES"],
     }
 
@@ -147,22 +148,26 @@ def build_infoset_key(game, hero: Player) -> Tuple[str, int]:
     # board bucket
     bidx, bname = _board_bucket(game.community_cards)
 
-    # sizing (en BB) -> 1/2BB
-    pot_h     = game.main_pot
-    tocall_bb = max(0.0, game.current_maximum_bet - hero.current_player_bet)
-    tocall_h  = tocall_bb
-    last_h    = getattr(game, "last_raise_amount", 0.0)
-    raises    = min(3, int(getattr(game, "number_raise_this_game_phase", 0)))
+    # sizing en BB entiers
+    pot_bb     = int(round(game.main_pot))
+    tocall_bb  = int(round(max(0.0, game.current_maximum_bet - hero.current_player_bet)))
+    last_bb    = int(round(getattr(game, "last_raise_amount", 0.0)))
+    raises     = min(3, int(getattr(game, "number_raise_this_game_phase", 0)))
+
+    # clamp 8 bits
+    pot_bb    = min(pot_bb, _MASK["POT"])
+    tocall_bb = min(tocall_bb, _MASK["TOCALL"])
+    last_bb   = min(last_bb, _MASK["LASTH"])
 
     dense = _pack_u64(
         phase=phase_id, role=role_id, hand=hidx, board=bidx,
-        pot=pot_h, tocall=tocall_h, last_h=last_h, raises=raises
+        pot=pot_bb, tocall=tocall_bb, last_h=last_bb, raises=raises
     )
 
     readable = (
         f"ph={game.current_phase} role={hero.role} "
         f"hand={hlab} bkt={bname} "
-        f"pot={pot_h/2:.1f} tocall={tocall_h/2:.1f} last={last_h/2:.1f} "
+        f"pot={pot_bb} tocall={tocall_bb} last={last_bb} "
         f"raises={raises}"
     )
     return readable, dense

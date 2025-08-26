@@ -6,9 +6,7 @@ Cette classe est optimisée pour intiliser une partie de poker en cours.
 Dans le but d'effectuer des simulations de jeu pour l'algorithme MCCFR.
 """
 import random as rd
-from typing import List, Dict, Optional, Tuple
-from collections import Counter
-import numpy as np
+from typing import List, Optional
 from classes import Player, Card, SidePot
 from utils import rank7
 
@@ -52,8 +50,8 @@ class PokerGameExpresso:
     # poker_game_expresso.py (remplace __init__)
     def __init__(self, init: GameInit):
         self.num_players = 3
-        self.small_blind = 0.5
-        self.big_blind = 1
+        self.small_blind = 1
+        self.big_blind = 2
         self.starting_stack = 100
 
         self.main_pot = float(init.main_pot)
@@ -227,8 +225,8 @@ class PokerGameExpresso:
                     f"[GAME_OPTI] Détails des joueurs : {details}"
                 )
 
-        if DEBUG_OPTI_ULTIMATE:
-            print(f"[GAME_OPTI] [NEXT_PLAYER] On passe du joueur {self.players[initial_role_playing].name} au joueur {self.players[self.current_role].name}")
+        if DEBUG_OPTI:
+            print(f"\n[GAME_OPTI] [NEXT_PLAYER] On passe du joueur {self.players[initial_role_playing].name} au joueur {self.players[self.current_role].name}\n")
 
     def deal_small_and_big_blind(self):
         """
@@ -253,6 +251,9 @@ class PokerGameExpresso:
             sb_player.stack = 0
             sb_player.has_acted = True
 
+        if DEBUG_OPTI:
+            print(f"[GAME_OPTI] {sb_player.name} a deal la SB : {self.small_blind}BB")
+
         self.current_maximum_bet = self.small_blind
         self._next_player()
         
@@ -273,6 +274,9 @@ class PokerGameExpresso:
             bb_player.total_bet = bb_player.stack
             bb_player.stack = 0
             bb_player.has_acted = True
+
+        if DEBUG_OPTI:
+            print(f"[GAME_OPTI] {bb_player.name} a deal la BB : {self.big_blind}BB")
 
         self.current_maximum_bet = self.big_blind
         self._next_player()
@@ -330,7 +334,7 @@ class PokerGameExpresso:
                 self._next_player()
                 return
             if player.current_player_bet < self.current_maximum_bet and not player.is_all_in:
-                if DEBUG_OPTI:
+                if DEBUG_OPTI_ULTIMATE:
                     print("Un des joueurs en jeu n'a pas égalisé la mise maximale")
                 self._next_player()
                 return
@@ -447,13 +451,7 @@ class PokerGameExpresso:
         available_actions = self.update_available_actions(player, self.current_maximum_bet, self.number_raise_this_game_phase, self.main_pot, self.current_phase)
         if not any(valid_action == action for valid_action in available_actions):
             raise ValueError(f"[GAME_OPTI] {player.name} n'a pas le droit de faire cette action, actions valides : {available_actions}")
-        #----- Vérification des fonds disponibles -----
-        if not player.is_active or player.is_all_in or player.has_folded or self.current_phase == "SHOWDOWN":
-            raise ValueError(f"[GAME_OPTI] {player.name} n'était pas censé pouvoir faire une action, Raisons : actif = {player.is_active}, all-in = {player.is_all_in}, folded = {player.has_folded}")
-        
-        if not any(valid_action == action for valid_action in available_actions):
-            raise ValueError(f"[GAME_OPTI] {player.name} n'a pas le droit de faire cette action, actions valides : {available_actions}")
-        
+           
         #----- Affichage de débogage (pour le suivi durant l'exécution) -----
         if DEBUG_OPTI_ULTIMATE:
             print(f"[GAME_OPTI] \n=== Action qui va etre effectuée par {player.name} ===")

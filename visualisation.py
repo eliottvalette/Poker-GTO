@@ -3,9 +3,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Dict, Set, Tuple, Callable, List
-from classes import card_rank, card_suit
 from utils import load_ranges_json
-from classes import ALL_COMBOS
 
 def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Callable[[Set[Tuple[int,int]]], float], iter_num: int, evolution_data: Dict[str, List[float]] = None):
     # Créer le dossier viz s'il n'existe pas
