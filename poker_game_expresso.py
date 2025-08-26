@@ -13,7 +13,7 @@ from classes import Player, Card, SidePot
 from utils import rank7
 
 DEBUG_OPTI = True
-DEBUG_OPTI_ULTIMATE = True
+DEBUG_OPTI_ULTIMATE = False
 
 # Remplacement des Enum par vecteurs ordonnés
 HAND_RANKS = [
@@ -63,8 +63,8 @@ class PokerGameExpresso:
         self.remaining_deck = [Card(r, s) for r in range(2, 15) for s in range(4)]
         rd.shuffle(self.remaining_deck)
         # Retire d'éventuelles cartes déjà au board
-        known_board = {c.to_int() for c in self.community_cards}
-        self.remaining_deck = [c for c in self.remaining_deck if c.to_int() not in known_board]
+        known_board = {c.id for c in self.community_cards}
+        self.remaining_deck = [c for c in self.remaining_deck if c.id not in known_board]
 
         self.current_phase = init.phase
         self.number_raise_this_game_phase = 0
@@ -111,14 +111,20 @@ class PokerGameExpresso:
         if self.action_masks[player_role]["CHECK"]:
             self.action_masks[player_role]["FOLD"] = False
         
-        if player.current_player_bet == current_maximum_bet:
+        # Gestion de CALL / ALL-IN
+        call_amount = current_maximum_bet - player.current_player_bet
+        if call_amount <= 0:
+            # Pas de mise à suivre → CALL désactivé
             self.action_masks[player_role]["CALL"] = False
-        elif player.stack < (current_maximum_bet - player.current_player_bet):
+        elif call_amount >= player.stack:
+            # Le joueur ne peut que faire tapis (ALL-IN est en réalité un call avec tout son stack)
             self.action_masks[player_role]["CALL"] = False
-            if player.stack > 0:
-                self.action_masks[player_role]["ALL-IN"] = True
-            self.action_masks[player_role]["RAISE"] = False
+            self.action_masks[player_role]["ALL-IN"] = True
+        else:
+            # Le joueur peut payer normalement
+            self.action_masks[player_role]["CALL"] = True
         
+        # Si le joueur ne peut pas couvrir le min-raise, on désactive RAISE plus bas
         if current_maximum_bet == 0:
             min_raise = self.big_blind
         else:
@@ -170,7 +176,6 @@ class PokerGameExpresso:
                     self.masks[player_role][action] = False
         """
         
-        self.action_masks[player_role]["ALL-IN"] = player.stack > 0
         
         if phase == "SHOWDOWN":
             for action in PLAYER_ACTIONS:
@@ -222,7 +227,7 @@ class PokerGameExpresso:
                     f"[GAME_OPTI] Détails des joueurs : {details}"
                 )
 
-        if DEBUG_OPTI:
+        if DEBUG_OPTI_ULTIMATE:
             print(f"[GAME_OPTI] [NEXT_PLAYER] On passe du joueur {self.players[initial_role_playing].name} au joueur {self.players[self.current_role].name}")
 
     def deal_small_and_big_blind(self):
@@ -372,7 +377,7 @@ class PokerGameExpresso:
         Passe à la phase suivante du jeu (préflop -> flop -> turn -> river).
         Distribue les cartes communes appropriées et réinitialise les mises.
         """
-        if DEBUG_OPTI_ULTIMATE:
+        if DEBUG_OPTI:
             print(f"[GAME_OPTI] current_phase {self.current_phase}")
         self.last_raiser = None  # Réinitialiser le dernier raiser pour la nouvelle phase
         
@@ -408,7 +413,7 @@ class PokerGameExpresso:
                self.players[self.current_role].is_all_in):
             self.current_role = (self.current_role + 1) % self.num_players
         
-        if DEBUG_OPTI_ULTIMATE:
+        if DEBUG_OPTI:
             print(f"[GAME_OPTI] [PHASE] Premier joueur à agir: {self.players[self.current_role].name} (role : {self.current_role})")
             print("========== FIN CHANGEMENT PHASE ==========\n")
 
@@ -467,15 +472,15 @@ class PokerGameExpresso:
         if action == "FOLD":
             # Le joueur se couche il n'est plus actif pour ce tour.
             player.has_folded = True
-            if DEBUG_OPTI_ULTIMATE : 
+            if DEBUG_OPTI : 
                 print(f"[GAME_OPTI] {player.name} se couche (Fold).")
         
         elif action == "CHECK":
-            if DEBUG_OPTI_ULTIMATE : 
+            if DEBUG_OPTI : 
                 print(f"[GAME_OPTI] {player.name} check.")
         
         elif action == "CALL":
-            if DEBUG_OPTI_ULTIMATE : 
+            if DEBUG_OPTI : 
                 print(f"[GAME_OPTI] {player.name} call.")
             call_amount = self.current_maximum_bet - player.current_player_bet
             if call_amount > player.stack: 
@@ -489,11 +494,11 @@ class PokerGameExpresso:
             player.total_bet += call_amount
             if player.stack == 0:
                 player.is_all_in = True
-            if DEBUG_OPTI_ULTIMATE : 
+            if DEBUG_OPTI : 
                 print(f"[GAME_OPTI] {player.name} a call {call_amount}BB")
 
         elif action == "RAISE":
-            if DEBUG_OPTI_ULTIMATE:
+            if DEBUG_OPTI:
                 print(f"[GAME_OPTI] {player.name} raise.")
 
             prev_max = self.current_maximum_bet
@@ -527,11 +532,11 @@ class PokerGameExpresso:
             player.total_bet += add_required
             player.is_all_in = (player.stack == 0)
 
-            if DEBUG_OPTI_ULTIMATE:
+            if DEBUG_OPTI:
                 print(f"[GAME_OPTI] {player.name} a raise à {raise_amount}BB")
 
         elif action == "ALL-IN":
-            if DEBUG_OPTI_ULTIMATE : 
+            if DEBUG_OPTI : 
                 print(f"[GAME_OPTI] {player.name} all-in.")
             all_in_amount = player.stack
             
@@ -546,7 +551,7 @@ class PokerGameExpresso:
             self.main_pot += all_in_amount  # On ajoute le all-in au pot de la phase
             player.total_bet += all_in_amount  # On ajoute le all-in à la mise totale du joueur
             player.is_all_in = True  # On indique que le joueur est all-in
-            if DEBUG_OPTI_ULTIMATE : 
+            if DEBUG_OPTI : 
                 print(f"[GAME_OPTI] {player.name} a all-in {all_in_amount}BB")
         
         else:
@@ -626,7 +631,6 @@ class PokerGameExpresso:
         elif action == "ALL-IN":
             action_text += f" {all_in_amount}BB"
         elif action == "CALL":
-            call_amount = self.current_maximum_bet - player.current_player_bet
             action_text += f" {call_amount}BB"
         
         # Add action to player's history
@@ -649,7 +653,7 @@ class PokerGameExpresso:
             print(f"[GAME_OPTI] Mise actuelle du joueur : {player.current_player_bet}BB")
 
     def handle_showdown(self):
-        if DEBUG_OPTI_ULTIMATE:
+        if DEBUG_OPTI:
             print("\n=== DÉBUT SHOWDOWN SIMULATION ===")
 
         self.current_phase = "SHOWDOWN"
@@ -662,7 +666,7 @@ class PokerGameExpresso:
             )
 
         active_players = [p for p in self.players if p.is_active and not p.has_folded]
-        if DEBUG_OPTI_ULTIMATE:
+        if DEBUG_OPTI:
             print(f"[GAME_OPTI] [SHOWDOWN] Joueurs actifs: {len(active_players)}")
 
         # Complète le board à 5 cartes
@@ -671,24 +675,24 @@ class PokerGameExpresso:
                 # Reconstruit un pack si besoin (sécurité)
                 self.remaining_deck = [Card(r, s) for r in range(2, 15) for s in range(4)]
                 rd.shuffle(self.remaining_deck)
-                known = {c.to_int() for p in self.players for c in getattr(p, "cards", [])} | {c.to_int() for c in self.community_cards}
-                self.remaining_deck = [c for c in self.remaining_deck if c.to_int() not in known]
+                known = {c.id for p in self.players for c in getattr(p, "cards", [])} | {c.id for c in self.community_cards}
+                self.remaining_deck = [c for c in self.remaining_deck if c.id not in known]
             self.community_cards.append(self.remaining_deck.pop(0))
 
         # Victoire par fold
         if len(active_players) == 1:
             winner = active_players[0]
             winner.stack += self.main_pot
-            if DEBUG_OPTI_ULTIMATE:
+            if DEBUG_OPTI:
                 print(f"[GAME_OPTI] Victoire par fold - {winner.name} gagne {self.main_pot:.2f}BB")
             self.main_pot = 0
         else:
             # Évaluation Treys: plus GRAND = meilleur (rank7 renvoie -score Treys)
-            b0, b1, b2, b3, b4 = [c.to_int() for c in self.community_cards[:5]]
+            b0, b1, b2, b3, b4 = [c.id for c in self.community_cards[:5]]
             best = None
             winners = []
             for p in active_players:
-                h0, h1 = p.cards[0].to_int(), p.cards[1].to_int()
+                h0, h1 = p.cards[0].id, p.cards[1].id
                 s = rank7((h0, h1, b0, b1, b2, b3, b4))
                 if best is None or s > best:
                     best = s
@@ -700,7 +704,7 @@ class PokerGameExpresso:
                 share = self.main_pot / len(winners)
                 for w in winners:
                     w.stack += share
-                    if DEBUG_OPTI_ULTIMATE:
+                    if DEBUG_OPTI:
                         print(f"[GAME_OPTI] [SHOWDOWN] {w.name} gagne {share:.2f}BB")
                 self.main_pot = 0
             else:
@@ -709,7 +713,7 @@ class PokerGameExpresso:
         self.net_stack_changes = {p.name: (p.stack - self.initial_stacks.get(p.name, 0)) for p in self.players}
         self.final_stacks = {p.name: p.stack for p in self.players}
 
-        if DEBUG_OPTI_ULTIMATE:
+        if DEBUG_OPTI:
             print("[SHOWDOWN] Stacks finaux:")
             for p in self.players:
                 delta = self.net_stack_changes[p.name]
