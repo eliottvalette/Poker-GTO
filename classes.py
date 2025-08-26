@@ -36,7 +36,7 @@ class Deck:
     
     def get_card(self, rank, suit):
         """Retourne la carte avec le rang et la couleur spécifiés"""
-        return Card(rank, suit)
+        return self.cards[(rank - 2) * 4 + suit]
     
     def all_starting_combos(self):
         """Retourne tous les combos de départ possibles (1326 combos)"""

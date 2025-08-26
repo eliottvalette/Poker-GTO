@@ -1,9 +1,13 @@
+# visualisation_PF.py
 import os
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Dict, Set, Tuple, Callable, List
 from utils import load_ranges_json
+from classes import Deck
+
+ALL_COMBOS = Deck().all_starting_combos()
 
 def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Callable[[Set[Tuple[int,int]]], float], iter_num: int, evolution_data: Dict[str, List[float]] = None):
     # Créer le dossier viz s'il n'existe pas
@@ -43,8 +47,8 @@ def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Calla
             
             # Compter les combos par case (rang1, rang2)
             for combo in combo_set:
-                r1, r2 = card_rank(combo[0]), card_rank(combo[1])
-                s1, s2 = card_suit(combo[0]), card_suit(combo[1])
+                r1, r2 = combo[0].rank, combo[1].rank
+                s1, s2 = combo[0].suit, combo[1].suit
                 
                 # Déterminer le rang haut et bas
                 hi, lo = (r1, r2) if r1 >= r2 else (r2, r1)
@@ -87,8 +91,8 @@ def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Calla
         global_matrix = np.zeros((13, 13))
         for combo_set in ranges.values():
             for combo in combo_set:
-                r1, r2 = card_rank(combo[0]), card_rank(combo[1])
-                s1, s2 = card_suit(combo[0]), card_suit(combo[1])
+                r1, r2 = combo[0].rank, combo[1].rank
+                s1, s2 = combo[0].suit, combo[1].suit
                 
                 # Déterminer le rang haut et bas
                 hi, lo = (r1, r2) if r1 >= r2 else (r2, r1)

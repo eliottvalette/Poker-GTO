@@ -10,7 +10,7 @@ from typing import List, Optional
 from classes import Player, Card, SidePot
 from utils import rank7
 
-DEBUG_OPTI = True
+DEBUG_OPTI = False
 DEBUG_OPTI_ULTIMATE = False
 
 # Remplacement des Enum par vecteurs ordonnés
