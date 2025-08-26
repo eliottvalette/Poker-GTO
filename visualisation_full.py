@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 from infoset import unpack_infoset_key_dense
 
-# actions qu’on s’attend à voir
+# actions qu'on s'attend à voir
 ACTIONS = ["FOLD","CHECK","CALL","RAISE","ALL-IN"]
 ROLE_NAMES = ["SB","BB","BTN"]
 PHASES = ["PREFLOP","FLOP","TURN","RIVER","SHOWDOWN"]
@@ -69,7 +69,7 @@ def bar_mix_by_phase_role(pol: Dict[int, Dict[str,float]], outdir: str):
             plt.bar(x + (i-2)*width, data[:,i], width, label=a)
         plt.xticks(x, labels)
         plt.ylim(0,1)
-        plt.title(f"Mix d’actions moyens — phase={PHASES[ph]}")
+        plt.title(f"Mix d'actions moyens — phase={PHASES[ph]}")
         plt.legend(ncol=5, fontsize=8, frameon=False)
         plt.ylabel("proba moyenne")
         plt.tight_layout()
@@ -78,7 +78,7 @@ def bar_mix_by_phase_role(pol: Dict[int, Dict[str,float]], outdir: str):
         plt.close()
 
 def hand169_heatmaps_preflop(pol: Dict[int, Dict[str,float]], outdir: str):
-    # 13x13 = ordre row-major identique à l’encodage (idx = i*13 + j)
+    # 13x13 = ordre row-major identique à l'encodage (idx = i*13 + j)
     # On calcule, pour PREFLOP et par rôle, la proba M-O-Y-E-N-N-E de chaque action pour chaque hand169.
     PHASE_PREFLOP = 0
     grids = {role: {a: np.zeros((13,13), dtype=np.float64) for a in ACTIONS} for role in range(3)}
@@ -99,14 +99,14 @@ def hand169_heatmaps_preflop(pol: Dict[int, Dict[str,float]], outdir: str):
 
     ensure_dir(outdir)
     for role in range(3):
-        # moyenne sur les occurrences de l’infoset (si 0, on laisse 0)
+        # moyenne sur les occurrences de l'infoset (si 0, on laisse 0)
         C = counts[role]
         denom = np.where(C==0, 1, C)
         for a in ACTIONS:
             M = grids[role][a] / denom
             plt.figure(figsize=(6,5))
             plt.imshow(M, origin="upper", interpolation="nearest")
-            plt.title(f"Préflop {ROLE_NAMES[role]} — P({a}) moyen (13×13)")
+            plt.title(f"Préflop {ROLE_NAMES[role]} — P({a}) moyen (13x13)")
             plt.xlabel("r2 (A→2)")
             plt.ylabel("r1 (A→2)")
             plt.colorbar(fraction=0.046, pad=0.04)
@@ -118,16 +118,16 @@ def hand169_heatmaps_preflop(pol: Dict[int, Dict[str,float]], outdir: str):
 def main():
     path = "policy/avg_policy.json"
     if not os.path.exists(path):
-        print(f"[ERR] {path} introuvable. Entraîne d’abord cfr_solver.py")
+        print(f"[ERR] {path} introuvable. Entraîne d'abord cfr_solver.py")
         return
     pol = load_policy(path)
     print(f"[LOAD] policy: {len(pol)} infosets")
     ensure_dir("viz_full")
 
-    print("[VIZ] mix d’actions par phase×rôle …")
+    print("[VIZ] mix d'actions par phasexrôle …")
     bar_mix_by_phase_role(pol, "viz_full")
 
-    print("[VIZ] heatmaps 13×13 préflop …")
+    print("[VIZ] heatmaps 13x13 préflop …")
     hand169_heatmaps_preflop(pol, "viz_full")
 
     print("[OK] PNG écrits dans ./viz_full")

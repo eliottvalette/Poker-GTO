@@ -133,6 +133,66 @@ def unpack_infoset_key_dense(k: int) -> dict:
     }
 
 # -------- public API --------
+def build_infoset_key_fast(game, hero) -> int:
+    phase_id = PHASE_TO_ID[game.current_phase]
+    role_id  = hero.role
+
+    # hand 169 id sans label
+    c1, c2 = hero.cards
+    # calcule l'index 169 sans string:
+    # mapping rangs A..2 -> 12..0
+    rmap = {14:12,13:11,12:10,11:9,10:8,9:7,8:6,7:5,6:4,5:3,4:2,3:1,2:0}
+    i = rmap[c1.rank]; j = rmap[c2.rank]
+    if c1.rank == c2.rank:
+        hidx = i*13 + j
+    elif c1.rank > c2.rank:
+        hidx = i*13 + j  # suited / offsuit se gère par suit :
+        if c1.suit == c2.suit:  # top-right triangle
+            hidx = i*13 + j
+        else:
+            # bottom-left triangle index: swap to canonical (row=max, col=min)
+            hidx = j*13 + i
+    else:
+        # c2 > c1
+        if c1.suit == c2.suit:
+            hidx = j*13 + i
+        else:
+            hidx = i*13 + j  # canonical
+
+    # board bucket (reprends _board_bucket sans construire le nom)
+    b = game.community_cards
+    n = len(b)
+    if n == 0:
+        bidx = 0
+    else:
+        ranks = [c.rank for c in b]
+        suits = [c.suit for c in b]
+        max_suit = max(suits.count(s) for s in set(suits))
+        if   (n == 3 and max_suit == 3) or (n == 4 and max_suit >= 4) or (n == 5 and max_suit >= 5):
+            suit_tex = 2
+        elif (n >= 3 and max_suit == n-1):
+            suit_tex = 1
+        else:
+            suit_tex = 0
+        paired = 1 if any(ranks.count(r) >= 2 for r in set(ranks)) else 0
+        hi = max(ranks)
+        hi_cls = 2 if hi >= 12 else (1 if hi >= 10 else 0)
+        bidx = suit_tex*6 + paired*3 + hi_cls
+
+    pot_bb     = int(round(game.main_pot))
+    tocall_bb  = int(round(max(0.0, game.current_maximum_bet - hero.current_player_bet)))
+    last_bb    = int(round(getattr(game, "last_raise_amount", 0.0)))
+    raises     = min(3, int(getattr(game, "number_raise_this_game_phase", 0)))
+
+    pot_bb    = min(pot_bb, _MASK["POT"])
+    tocall_bb = min(tocall_bb, _MASK["TOCALL"])
+    last_bb   = min(last_bb, _MASK["LASTH"])
+
+    return _pack_u64(
+        phase=phase_id, role=role_id, hand=hidx, board=bidx,
+        pot=pot_bb, tocall=tocall_bb, last_h=last_bb, raises=raises
+    )
+
 def build_infoset_key(game, hero: Player) -> Tuple[str, int]:
     """
     Retourne (lisible, dense_uint64)

@@ -10,8 +10,9 @@ from typing import List, Optional
 from classes import Player, Card, SidePot
 from utils import rank7
 
-DEBUG_OPTI = False
-DEBUG_OPTI_ULTIMATE = False
+FAST_TRAINING = True
+DEBUG_OPTI = False or not FAST_TRAINING
+DEBUG_OPTI_ULTIMATE = False or not FAST_TRAINING
 
 # Remplacement des Enum par vecteurs ordonnés
 HAND_RANKS = [
@@ -623,19 +624,17 @@ class PokerGameExpresso:
         }:
             action_text += f" {bet_amount}BB"
         """
-        action_text = f"{action}"
-        if action == "RAISE":
-            action_text += f" {raise_amount}BB"
-        elif action == "ALL-IN":
-            action_text += f" {all_in_amount}BB"
-        elif action == "CALL":
-            action_text += f" {call_amount}BB"
-        
-        # Add action to player's history
-        self.action_history[player.name].append(action_text)
-        # Keep only last 5 actions per player
-        if len(self.action_history[player.name]) > 5:
-            self.action_history[player.name].pop(0)
+        if not FAST_TRAINING:
+            action_text = f"{action}"
+            if action == "RAISE":
+                action_text += f" {raise_amount}BB"
+            elif action == "ALL-IN":
+                action_text += f" {all_in_amount}BB"
+            elif action == "CALL":
+                action_text += f" {call_amount}BB"
+            self.action_history[player.name].append(action_text)
+            if len(self.action_history[player.name]) > 5:
+                self.action_history[player.name].pop(0)
         
         if DEBUG_OPTI_ULTIMATE:
             print(f"[GAME_OPTI] \n=== Etat de la partie après action de {player.name} ===")
@@ -810,6 +809,44 @@ class PokerGameExpresso:
         """Arrondit une valeur à un nombre spécifié de décimales pour éviter les erreurs de précision."""
         return round(value, decimals)
     
+    def snapshot(self):
+        # Copie *légère* des champs mutés par process_action/phase/showdown
+        players_state = [
+            (p.stack, p.current_player_bet, p.total_bet,
+             p.is_active, p.has_folded, p.is_all_in, p.has_acted)
+            for p in self.players
+        ]
+        return {
+            "current_phase": self.current_phase,
+            "number_raise_this_game_phase": self.number_raise_this_game_phase,
+            "last_raiser": self.last_raiser,
+            "last_raise_amount": self.last_raise_amount,
+            "current_role": self.current_role,
+            "current_maximum_bet": self.current_maximum_bet,
+            "main_pot": self.main_pot,
+            "players": players_state,
+            "community_cards": list(self.community_cards),   # copie rapide (≤5)
+            "remaining_deck": list(self.remaining_deck),     # 52 max
+            "net_stack_changes": dict(self.net_stack_changes),
+            "final_stacks": dict(self.final_stacks),
+        }
+
+    def restore(self, snap):
+        self.current_phase = snap["current_phase"]
+        self.number_raise_this_game_phase = snap["number_raise_this_game_phase"]
+        self.last_raiser = snap["last_raiser"]
+        self.last_raise_amount = snap["last_raise_amount"]
+        self.current_role = snap["current_role"]
+        self.current_maximum_bet = snap["current_maximum_bet"]
+        self.main_pot = snap["main_pot"]
+        for p, st in zip(self.players, snap["players"]):
+            (p.stack, p.current_player_bet, p.total_bet,
+             p.is_active, p.has_folded, p.is_all_in, p.has_acted) = st
+        self.community_cards = snap["community_cards"]
+        self.remaining_deck = snap["remaining_deck"]
+        self.net_stack_changes = snap["net_stack_changes"]
+        self.final_stacks = snap["final_stacks"]
+
 
 if __name__ == "__main__":
     # Setup d'une main très simple (3-handed, stacks even, aucun board au départ)

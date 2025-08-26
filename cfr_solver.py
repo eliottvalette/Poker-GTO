@@ -6,22 +6,23 @@
 
 from __future__ import annotations
 import random
-import copy
 import json
 import os
 import time
 from collections import defaultdict
 from typing import Dict, List, Tuple
+import cProfile
 
 from tqdm import tqdm, trange
 from poker_game_expresso import PokerGameExpresso, GameInit
-from infoset import build_infoset_key
+from infoset import build_infoset_key_fast
 
 # =========================
 # Configuration et constantes
 # =========================
 DEBUG_CFR = True
-SAVE_EVERY = 100  # Sauvegarde tous les N itérations
+PROFILE = False
+SAVE_EVERY = 10000  # Sauvegarde tous les N itérations
 
 # =========================
 # Types et utilitaires
@@ -95,14 +96,13 @@ class CFRPlusSolver:
             game.current_phase
         )
 
-    @staticmethod
-    def _step_clone(game: PokerGameExpresso, action: Action) -> PokerGameExpresso:
-        """Clone le jeu, applique l'action et retourne le nouvel état"""
-        g2 = copy.deepcopy(game)
-        p2 = g2.players[g2.current_role]
-        # process_action mutera et avancera la partie, y compris tirage du board via l'env
-        g2.process_action(p2, action)
-        return g2
+    def _apply_and_eval(self, game, action, hero_role, reach_others):
+        snap = game.snapshot()
+        p = game.players[game.current_role]
+        game.process_action(p, action)
+        val = self._traverse(game, hero_role, reach_others)
+        game.restore(snap)
+        return val
 
     @staticmethod
     def _terminal_cev(game: PokerGameExpresso, hero_role: int) -> float:
@@ -148,33 +148,33 @@ class CFRPlusSolver:
 
         cur = game.current_role
         player = game.players[cur]
-        _, key = build_infoset_key(game, player)
+        # UTILISE LA CLÉ FAST
+        key = build_infoset_key_fast(game, player)
 
         legal = self._legal_actions(game)
 
         # Cas rare: aucun move légal (skip via progression de phase)
         if not legal:
-            # On force l'env à vérifier la phase, puis on continue
-            g2 = copy.deepcopy(game)
-            g2.check_phase_completion()
-            if g2.current_phase == "SHOWDOWN":
-                return self._terminal_cev(g2, hero_role)
-            return self._traverse(g2, hero_role, reach_others)
+            # petit fallback sans clone
+            snap = game.snapshot()
+            game.check_phase_completion()
+            if game.current_phase == "SHOWDOWN":
+                val = self._terminal_cev(game, hero_role)
+            else:
+                val = self._traverse(game, hero_role, reach_others)
+            game.restore(snap)
+            return val
 
         if cur != hero_role:
             # Joueur "autre" → on échantillonne une seule action selon la stratégie courante
             sigma = self._strategy_from_regret(key, legal)
             a = self._sample_from(sigma)
-            g2 = self._step_clone(game, a)
-            return self._traverse(g2, hero_role, reach_others * sigma[a])
+            # apply/undo au lieu de deepcopy
+            return self._apply_and_eval(game, a, hero_role, reach_others * sigma[a])
 
-        # Joueur "héros" → on évalue toutes les actions pour le calcul de regret
+        # héros: on évalue toutes les actions
         sigma = self._strategy_from_regret(key, legal)
-        util_a = {}
-        for a in legal:
-            g2 = self._step_clone(game, a)
-            util_a[a] = self._traverse(g2, hero_role, reach_others)
-
+        util_a = {a: self._apply_and_eval(game, a, hero_role, reach_others) for a in legal}
         u_node = sum(sigma[a] * util_a[a] for a in legal)
 
         # CFR+ update (regrets cumulés, tronqués à 0)
@@ -345,10 +345,10 @@ if __name__ == "__main__":
     print("=" * 50)
     
     # Configuration
-    seed = 7
+    seed = 42
     stacks = (100, 100, 100)  # SB, BB, BTN
     hands_per_iter = 1
-    iterations = 200
+    iterations = 100_000
     
     print(f"Configuration:")
     print(f"  Seed: {seed}")
@@ -364,8 +364,16 @@ if __name__ == "__main__":
         hands_per_iter=hands_per_iter
     )
     
+    if PROFILE:
+        profiler = cProfile.Profile()
+        profiler.enable()
+
     # Entraînement
     solver.train(iterations=iterations)
+
+    if PROFILE:
+        profiler.disable()
+        profiler.dump_stats("profiling/cfr_solver_profile.prof")
     
     # Statistiques finales
     solver.print_policy_stats()

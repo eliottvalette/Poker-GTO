@@ -29,7 +29,7 @@ from classes import (
 
 from utils import rank7, save_ranges_json, load_ranges_json
 
-from visualisation_PF import visualise_ranges
+from visualisation_push_fold import visualise_ranges
 
 # ==== Précompute pour filtrage et comptage rapide ====
 ALL_COMBOS_SET: Set[Tuple[int,int]] = set(ALL_COMBOS)  # Ensemble de tous les combos possibles
