@@ -871,10 +871,10 @@ if __name__ == "__main__":
     # Politique ultra simple pour démontrer l'exécution :
     # BTN open 3BB si possible, puis SB et BB foldent => fin de main par fold.
     while game.current_phase != "SHOWDOWN":
-        p = game.players[game.current_role]
+        current_player = game.players[game.current_role]
 
-        allowed = game.update_available_actions(
-            p,
+        actions_allowed = game.update_available_actions(
+            current_player,
             game.current_maximum_bet,
             game.number_raise_this_game_phase,
             game.main_pot,
@@ -882,14 +882,14 @@ if __name__ == "__main__":
         )
 
         if DEBUG_OPTI:
-            print(f"[GAME_OPTI] les actions valides sont : {[a for a in allowed]}")
+            print(f"[GAME_OPTI] les actions valides sont : {[a for a in actions_allowed]}")
 
-        action = rd.choice(allowed)
+        action = rd.choice(actions_allowed)
 
         if DEBUG_OPTI:
-            print(f"[GAME_OPTI] {p.name} fait l'action {action}")
+            print(f"[GAME_OPTI] {current_player.name} fait l'action {action}")
 
-        game.process_action(p, action)
+        game.process_action(current_player, action)
 
     print("\n=== Showdown (main terminée) ===")
     for player in game.players:
