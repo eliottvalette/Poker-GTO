@@ -16,3 +16,10 @@ policy_temp_jsons = [f for f in os.listdir("policy") if "avg_policy_iter" in f]
 
 for file in policy_temp_jsons:
     os.remove(f"policy/{file}")
+
+viz_full_files = [f for f in os.listdir("viz_full")]
+
+for file in viz_full_files:
+    os.remove(f"viz_full/{file}")
+
+os.rmdir("viz_full")
