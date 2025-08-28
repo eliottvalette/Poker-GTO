@@ -32,7 +32,7 @@ class AveragePolicy:
             game.current_phase
         )
 
-    def _sample(self, dist: Dict[str, float]) -> str:
+    def sample(self, dist: Dict[str, float]) -> str:
         x = self.rng.random()
         c = 0.0
         last = None
@@ -66,4 +66,4 @@ class AveragePolicy:
             else:
                 dist = {a: v / s for a, v in dist.items()}
 
-        return self._sample(dist)
+        return self.sample(dist)

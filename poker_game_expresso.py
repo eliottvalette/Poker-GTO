@@ -7,7 +7,7 @@ Dans le but d'effectuer des simulations de jeu pour l'algorithme MCCFR.
 """
 import random as rd
 from typing import List, Optional
-from classes import Player, Card, SidePot
+from classes import Player, Card
 from utils import rank7
 
 FAST_TRAINING = True
@@ -58,7 +58,6 @@ class PokerGameExpresso:
         self.main_pot = float(init.main_pot)
 
         self.community_cards = init.community_cards.copy()
-        self.side_pots = self._create_side_pots()
         self.remaining_deck = [Card(r, s) for r in range(2, 15) for s in range(4)]
         rd.shuffle(self.remaining_deck)
         # Retire d'éventuelles cartes déjà au board
@@ -70,7 +69,7 @@ class PokerGameExpresso:
         self.last_raiser = None
         self.last_raise_amount = self.big_blind
 
-        self.players = self._initialize_simulated_players(init)
+        self.players = self.initialize_simulated_players(init)
 
         self.current_maximum_bet = max(p.current_player_bet for p in self.players)
         self.action_masks = {0: {a: False for a in PLAYER_ACTIONS}, 1: {a: False for a in PLAYER_ACTIONS}, 2: {a: False for a in PLAYER_ACTIONS}}
@@ -127,9 +126,10 @@ class PokerGameExpresso:
         if current_maximum_bet == 0:
             min_raise = self.big_blind
         else:
-            min_raise = (current_maximum_bet - player.current_player_bet) * 2
+            min_raise = current_maximum_bet + max(self.last_raise_amount, self.big_blind)
         
-        if player.stack < min_raise:
+        add_required = min_raise - player.current_player_bet
+        if add_required <= 0 or player.stack < add_required:
             self.action_masks[player_role]["RAISE"] = False
 
         if number_raise_this_game_phase >= 4:
@@ -195,7 +195,7 @@ class PokerGameExpresso:
                     print(f"[GAME_OPTI] {player.name} reçoit: {player.cards[0]} {player.cards[1]}")
 
 
-    def _next_player(self):
+    def next_player(self):
         """
         Passe au prochain joueur actif et n'ayant pas fold dans le sens horaire.
         Skip les joueurs all-in.
@@ -256,7 +256,7 @@ class PokerGameExpresso:
             print(f"[GAME_OPTI] {sb_player.name} a deal la SB : {self.small_blind}BB")
 
         self.current_maximum_bet = self.small_blind
-        self._next_player()
+        self.next_player()
         
         # MAJ du montant de la dernière relance légale
         self.last_raise_amount = self.big_blind
@@ -280,7 +280,7 @@ class PokerGameExpresso:
             print(f"[GAME_OPTI] {bb_player.name} a deal la BB : {self.big_blind}BB")
 
         self.current_maximum_bet = self.big_blind
-        self._next_player()
+        self.next_player()
         
     def check_phase_completion(self):
         """
@@ -332,12 +332,12 @@ class PokerGameExpresso:
             if not player.has_acted:
                 if DEBUG_OPTI_ULTIMATE:
                     print(f"{player.name} n'a pas encore agi")
-                self._next_player()
+                self.next_player()
                 return
             if player.current_player_bet < self.current_maximum_bet and not player.is_all_in:
                 if DEBUG_OPTI_ULTIMATE:
                     print("Un des joueurs en jeu n'a pas égalisé la mise maximale")
-                self._next_player()
+                self.next_player()
                 return
 
         # Ici, toutes les conditions pour avancer la phase sont remplies
@@ -535,21 +535,28 @@ class PokerGameExpresso:
                 print(f"[GAME_OPTI] {player.name} a raise à {raise_amount}BB")
 
         elif action == "ALL-IN":
-            if DEBUG_OPTI : 
+            if DEBUG_OPTI:
                 print(f"[GAME_OPTI] {player.name} all-in.")
+            prev_max = self.current_maximum_bet
             all_in_amount = player.stack
+            new_to = player.current_player_bet + all_in_amount
+            delta = new_to - prev_max
+
+            # Met à jour la mise maximale
+            if delta > 0:
+                self.current_maximum_bet = new_to
+                # Rouvre seulement si delta >= last_raise_amount (au moins un min-raise légal)
+                if delta >= max(self.last_raise_amount, self.big_blind):
+                    self.number_raise_this_game_phase += 1
+                    self.last_raiser = self.current_role
+                    self.last_raise_amount = delta  # nouvelle taille de relance légale
             
-            # Mise à jour de la mise maximale seulement si l'all-in est supérieur
-            if all_in_amount + player.current_player_bet > self.current_maximum_bet:  # Si le all-in est supérieur à la mise maximale, on met à jour la mise maximale
-                self.current_maximum_bet = all_in_amount + player.current_player_bet  # On met à jour la mise maximale
-                self.number_raise_this_game_phase += 1  # On incrémente le nombre de raise dans la phase
-                self.last_raiser = self.current_role  # Enregistrer le all-in comme raise
-            
-            player.stack -= all_in_amount  # On retire le all-in du stack du joueur
-            player.current_player_bet += all_in_amount  # On ajoute le all-in à la mise du joueur
-            self.main_pot += all_in_amount  # On ajoute le all-in au pot de la phase
-            player.total_bet += all_in_amount  # On ajoute le all-in à la mise totale du joueur
-            player.is_all_in = True  # On indique que le joueur est all-in
+            player.stack -= all_in_amount
+            player.current_player_bet += all_in_amount
+            self.main_pot += all_in_amount
+            player.total_bet += all_in_amount
+            player.is_all_in = True
+
             if DEBUG_OPTI : 
                 print(f"[GAME_OPTI] {player.name} a all-in {all_in_amount}BB")
         
@@ -658,18 +665,13 @@ class PokerGameExpresso:
 
         # Figer les actions
         for player in self.players:
-            self.update_available_actions(
-                player, self.current_maximum_bet, self.number_raise_this_game_phase, self.main_pot, self.current_phase
-            )
+            self.update_available_actions(player, 0, 0, self.main_pot, self.current_phase)
 
         active_players = [p for p in self.players if p.is_active and not p.has_folded]
-        if DEBUG_OPTI:
-            print(f"[GAME_OPTI] [SHOWDOWN] Joueurs actifs: {len(active_players)}")
 
         # Complète le board à 5 cartes
         while len(self.community_cards) < 5:
             if not self.remaining_deck:
-                # Reconstruit un pack si besoin (sécurité)
                 self.remaining_deck = [Card(r, s) for r in range(2, 15) for s in range(4)]
                 rd.shuffle(self.remaining_deck)
                 known = {c.id for p in self.players for c in getattr(p, "cards", [])} | {c.id for c in self.community_cards}
@@ -680,96 +682,54 @@ class PokerGameExpresso:
         if len(active_players) == 1:
             winner = active_players[0]
             winner.stack += self.main_pot
-            if DEBUG_OPTI:
-                print(f"[GAME_OPTI] Victoire par fold - {winner.name} gagne {self.main_pot:.2f}BB")
             self.main_pot = 0
         else:
-            # Évaluation Treys: plus GRAND = meilleur (rank7 renvoie -score Treys)
+            # Contributions effectives par joueur (limitées à leur total_bet)
+            contrib = {p: p.total_bet for p in self.players}
+            levels = sorted(set(contrib.values()))
+            prev = 0
+
+            # Décode scores Treys (rank7 renvoie -score Treys, donc plus grand = meilleur)
             b0, b1, b2, b3, b4 = [c.id for c in self.community_cards[:5]]
-            best = None
-            winners = []
+            scores = {}
             for p in active_players:
                 h0, h1 = p.cards[0].id, p.cards[1].id
-                s = rank7((h0, h1, b0, b1, b2, b3, b4))
-                if best is None or s > best:
-                    best = s
-                    winners = [p]
-                elif s == best:
-                    winners.append(p)
+                scores[p] = rank7((h0, h1, b0, b1, b2, b3, b4))
 
-            if winners:
-                share = self.main_pot / len(winners)
+            # Itère chaque "couche" de mise
+            for L in levels:
+                cap = L - prev
+                if cap <= 0:
+                    continue
+                # Joueurs éligibles à ce niveau (ont au moins L)
+                elig_all = [p for p in self.players if contrib[p] >= L]
+                # Par pot, seuls les joueurs non-couchés sont au showdown
+                elig_live = [p for p in elig_all if p in active_players]
+
+                pot_amount = cap * len(elig_all)
+                if pot_amount <= 0 or not elig_live:
+                    prev = L
+                    continue
+
+                # Trouve les gagnants de ce pot
+                best = max(scores[p] for p in elig_live)
+                winners = [p for p in elig_live if scores[p] == best]
+
+                share = pot_amount / len(winners)
                 for w in winners:
                     w.stack += share
-                    if DEBUG_OPTI:
-                        print(f"[GAME_OPTI] [SHOWDOWN] {w.name} gagne {share:.2f}BB")
-                self.main_pot = 0
-            else:
-                raise RuntimeError("[GAME_OPTI] Aucun joueur n'a gagné au showdown")
+                self.main_pot -= pot_amount
+                prev = L
+
+            # Sécurité en cas d’arrondi
+            if self.main_pot < 1e-9:
+                self.main_pot = 0.0
 
         self.net_stack_changes = {p.name: (p.stack - self.initial_stacks.get(p.name, 0)) for p in self.players}
         self.final_stacks = {p.name: p.stack for p in self.players}
 
-        if DEBUG_OPTI:
-            print("[SHOWDOWN] Stacks finaux:")
-            for p in self.players:
-                delta = self.net_stack_changes[p.name]
-                sign = "+" if delta >= 0 else ""
-                print(f"[GAME_OPTI] [SHOWDOWN] {p.name}: {p.stack:.2f}BB ({sign}{delta:.2f}BB)")
-            print("========== FIN SHOWDOWN ==========\n")
 
-    def _create_side_pots(self) -> List[SidePot]:
-        """
-        Crée 6 side pots vierges.
-        
-        Returns:
-            List[SidePot]: Liste de 6 side pots vierges
-        """
-
-        side_pots = []
-        for i in range(2):
-            side_pots.append(SidePot(id=i))
-
-        return side_pots
-
-    def _distribute_side_pots(self, in_game_players: List[Player], side_pots: List[SidePot], main_pot: float):
-        """
-        Répartit les surplus en side pots.
-
-        Pour la répartition en side pots, on laisse les joueurs - qui ne seront pas capable d'atteindre le maxbet - all-in dans le main pot 
-        On attend la fin de la phase.
-        Si les joueurs les plus pauvres sont all-in et que les plus riches sont soit all-in aussi soit à un bet égal au bet_maximum, 
-        La phase est terminée et on réparti les surplus en side pots.
-        
-        _distribute_side_pots est appelée sachant qu'on moins un joueur est all-in, et que tous les non-all-in égalisent la mise maximale.
-        side_pot_list est une liste de 4 SidePot, on verra d'après la logique suivante que maximum 4 SidePots distincts seront nécessaires pour une partie à 6 joueurs.
-
-        Exemple : J1 et J2 sont pauvres et sont all-in. J3 et J4 sont plus riches qu'eux, non all-in avec des bets égaux à la mise maximale.
-        Notons s_i la mise du joueur i. s_1 < s_2 < s_3 = s_4.
-        J1 met toute sa mise dans le main pot.
-        J2 met s_1 dans le main pot et met s_2 - s_1 dans le premier side pot.
-        J3 et J4 mettent s_1 dans le main pot, puis s_2 - s_1 dans le premier side pot.
-        Il leur reste s_3 - s_2 qu'il mettent dans le deuxième side pot.        
-        """
-        ordered_players = sorted(in_game_players, key=lambda x: x.current_player_bet)
-        ordered_bets = [p.current_player_bet for p in ordered_players]
-        
-        nb_equal_diff = 0
-        for i in range(len(ordered_players)):
-
-            diff_bet = ordered_bets[i] - (ordered_bets[i+1] if i < len(ordered_players) - 1 else 0)
-            if diff_bet < 0:
-                for player in ordered_players[i-nb_equal_diff:]:
-                    side_pots[i].contributions_dict[player] = diff_bet
-                    ordered_bets[i] -= diff_bet
-                side_pots[i].sum_of_contributions = diff_bet * (len(ordered_players) - i - nb_equal_diff +1)
-                nb_equal_diff = 0
-            else:
-                nb_equal_diff +=1
-        
-        return side_pots
-
-    def _initialize_simulated_players(self, init: GameInit):
+    def initialize_simulated_players(self, init: GameInit):
         """
         Initialise 6 joueurs simulés pour une partie MCCFR.
         """
@@ -805,7 +765,7 @@ class PokerGameExpresso:
         
         return players
 
-    def _round_value(self, value, decimals=4):
+    def round_value(self, value, decimals=4):
         """Arrondit une valeur à un nombre spécifié de décimales pour éviter les erreurs de précision."""
         return round(value, decimals)
     

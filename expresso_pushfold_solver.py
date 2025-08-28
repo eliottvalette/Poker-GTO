@@ -377,11 +377,11 @@ class SpinGoPushFoldSolver:
 
             # Compute-only depuis le snapshot (pas d'écriture pendant le calcul)
             print(f"\nCalcul des nouvelles ranges...")
-            new_SBc = self._compute_sb_call_vs_btn(snap_BTN)
-            new_BBc = self._compute_bb_call_vs_btn(snap_BTN)
-            new_BBvsSB = self._compute_bb_call_vs_sb(snap_SBs)
-            new_BTN = self._compute_btn_shove(snap_SBc, snap_BBc)
-            new_SBs = self._compute_sb_shove(snap_BBvsSB)
+            new_SBc = self.compute_sb_call_vs_btn(snap_BTN)
+            new_BBc = self.compute_bb_call_vs_btn(snap_BTN)
+            new_BBvsSB = self.compute_bb_call_vs_sb(snap_SBs)
+            new_BTN = self.compute_btn_shove(snap_SBc, snap_BBc)
+            new_SBs = self.compute_sb_shove(snap_BBvsSB)
 
             # Commit en bloc (mises à jour synchrones)
             print(f"Application des changements...")
@@ -442,7 +442,7 @@ class SpinGoPushFoldSolver:
         return 100.0 * len(combos_set) / len(ALL_COMBOS)
 
     # Méthodes compute-only pour mises à jour synchrones
-    def _compute_sb_call_vs_btn(self, prev_BTN: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+    def compute_sb_call_vs_btn(self, prev_BTN: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
         """Calcule la nouvelle range SB call vs BTN sans modifier l'état"""
         new_set = set()
         for hero_combo in tqdm.tqdm(self.all_combos, desc="SB call vs BTN", leave=False):
@@ -452,7 +452,7 @@ class SpinGoPushFoldSolver:
                 new_set.add(hero_combo)
         return new_set
 
-    def _compute_bb_call_vs_btn(self, prev_BTN: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+    def compute_bb_call_vs_btn(self, prev_BTN: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
         """Calcule la nouvelle range BB call vs BTN sans modifier l'état"""
         new_set = set()
         for hero_combo in tqdm.tqdm(self.all_combos, desc="BB call vs BTN", leave=False):
@@ -462,7 +462,7 @@ class SpinGoPushFoldSolver:
                 new_set.add(hero_combo)
         return new_set
 
-    def _compute_bb_call_vs_sb(self, prev_SB: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+    def compute_bb_call_vs_sb(self, prev_SB: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
         """Calcule la nouvelle range BB call vs SB sans modifier l'état"""
         new_set = set()
         for hero_combo in tqdm.tqdm(self.all_combos, desc="BB call vs SB", leave=False):
@@ -472,7 +472,7 @@ class SpinGoPushFoldSolver:
                 new_set.add(hero_combo)
         return new_set
 
-    def _compute_btn_shove(self, prev_SBc: Set[Tuple[int, int]], prev_BBc: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+    def compute_btn_shove(self, prev_SBc: Set[Tuple[int, int]], prev_BBc: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
         """Calcule la nouvelle range BTN shove sans modifier l'état"""
         new_set = set()
         for hero_combo in tqdm.tqdm(self.all_combos, desc="BTN shove", leave=False):
@@ -482,7 +482,7 @@ class SpinGoPushFoldSolver:
                 new_set.add(hero_combo)
         return new_set
 
-    def _compute_sb_shove(self, prev_BB: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+    def compute_sb_shove(self, prev_BB: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
         """Calcule la nouvelle range SB shove sans modifier l'état"""
         new_set = set()
         for hero_combo in tqdm.tqdm(self.all_combos, desc="SB shove", leave=False):

@@ -1,4 +1,4 @@
-# visualisation_Full.py
+# visualisation_full.py
 # Viz de la policy moyenne sauvée par cfr_solver.py
 # - Charge policy/avg_policy.json
 # - Décode les infosets (via infoset.unpack) pour agréger par phase/role/hand169
@@ -142,7 +142,7 @@ class VisualizerFull:
         plt.close(fig)
 
     # === NOUVEAU : “mosaic heatmap” préflop par position ===
-    def mosaic_heatma_by_role(self, pol: Dict[int, Dict[str,float]], outdir: str, label_threshold: float = 0.15, phase: int = 0):
+    def mosaic_heatmap_by_role(self, pol: Dict[int, Dict[str,float]], outdir: str, label_threshold: float = 0.15, phase: int = 0):
         """
         Un PNG par position (SB/BB/BTN) :
         - grille 13x13 (169 mains)
@@ -267,7 +267,7 @@ def main():
 
     for phase in range(4):  # 0=PREFLOP, 1=FLOP, 2=TURN, 3=RIVER
         print(f"[MOSAIC] Génération phase {PHASES[phase]}")
-        visualizer.mosaic_heatma_by_role(visualizer.policy, "viz_full", label_threshold=0.15, phase=phase)
+        visualizer.mosaic_heatmap_by_role(visualizer.policy, "viz_full", label_threshold=0.15, phase=phase)
 
     print("[OK] PNG écrits dans ./viz_full")
 

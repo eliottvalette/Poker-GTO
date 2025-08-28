@@ -81,16 +81,3 @@ class Player:
         return (f"Player(name={self.name}, role={self.role}, stack={self.stack}, cards={self.cards}, "
                 f"is_active={self.is_active}, has_folded={self.has_folded}, is_all_in={self.is_all_in}, "
                 f"current_bet={self.current_player_bet}, total_bet={self.total_bet}, has_acted={self.has_acted})")
-
-class SidePot:
-    """
-    Représente un pot additionnel qui peut être créé lors d'un all-in.
-
-    Pour la répartition en side pots, on laisse les plus pauvres all-in dans le main pot et on attend la fin de la phase.
-    Si les joeurs les plus pauvres son all-in et que les plus riches sont soit all-in aussi soit à un bet égal, la phase est terminée et on réparti les surplus en side pots.
-    """
-    def __init__(self, id: int):
-        self.id = id # 0-1 (2 Pots max pour 3 joueurs, un main pot et 1 side pot)
-        self.players = []
-        self.contributions_dict = {} # Dictionnaire des contributions de chaque joueur dans le side pot
-        self.sum_of_contributions = 0 # Montant total dans le side pot

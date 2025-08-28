@@ -17,7 +17,7 @@ _TREYS_EVAL = TEvaluator()
 _RANK_CHARS = "23456789TJQKA"   # 2..A
 _SUIT_CHARS = "shdc"            # ♠, ♥, ♦, ♣ (0..3)
 
-def _build_treys_lut() -> Tuple[int, ...]:
+def build_treys_lut() -> Tuple[int, ...]:
     lut = [0] * 52
     for c in range(52):
         r = (c // 4) + 2      # 2..14
@@ -25,7 +25,7 @@ def _build_treys_lut() -> Tuple[int, ...]:
         lut[c] = TCard.new(_RANK_CHARS[r-2] + _SUIT_CHARS[s])
     return tuple(lut)
 
-TREYS_INT_LUT: Tuple[int, ...] = _build_treys_lut()
+TREYS_INT_LUT: Tuple[int, ...] = build_treys_lut()
 
 # --------- API d'évaluation ----------
 def rank7(cards7: tuple[int, ...]) -> int:

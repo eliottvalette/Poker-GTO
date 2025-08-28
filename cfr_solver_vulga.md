@@ -99,7 +99,7 @@ class CFRPlusSolver:
 - **Nouvelle main**: on part d’un `GameInit`, on instancie `PokerGameExpresso`, on poste les blindes. Le paquet est ré-ensemencé pour la reproductibilité.
 
 ```python
-def _new_game(self) -> PokerGameExpresso:
+def new_game(self) -> PokerGameExpresso:
     init = GameInit(); init.stacks_init = list(self.stacks)
     init.phase = "PREFLOP"; init.community_cards = []
     random.seed(self.rng.randrange(10**9))
@@ -122,7 +122,7 @@ key = build_infoset_key_fast(game, current_player)  # -> int
 - **Regrets positifs uniquement**. S’ils sont tous ≤ 0, on joue uniforme sur les actions légales.
 
 ```python
-def _strategy_from_regret(self, key, legal):
+def strategy_from_regret(self, key, legal):
     pos = {a:max(0.0,self.regret_sum[key].get(a,0.0)) for a in legal}
     s = sum(pos.values())
     return ({a:1/len(legal) for a in legal} if s<=0 else {a:pos[a]/s for a in legal})
@@ -135,7 +135,7 @@ def _strategy_from_regret(self, key, legal):
   - Si adversaire: échantillonne son action selon la stratégie courante et met à jour la probabilité d’atteinte.
 
 ```python
-def _traverse(self, game, hero_role, reach_others):
+def traverse(self, game, hero_role, reach_others):
     while game.current_phase != "SHOWDOWN":
         current_role = game.current_role
         key = build_infoset_key_fast(game, game.players[current_role])
@@ -172,7 +172,7 @@ def _traverse(self, game, hero_role, reach_others):
 - **Après un choix du héros ou dans son évaluation locale**, on déroule la main jusqu’au showdown en échantillonnant les autres. Retourne le CEV du héros et la probabilité d’atteinte mise à jour.
 
 ```python
-def _rollout_until_terminal(self, game, hero_role, reach_others):
+def rollout_until_terminal(self, game, hero_role, reach_others):
     while game.current_phase != "SHOWDOWN":
         r = game.current_role; p = game.players[r]
         key = build_infoset_key_fast(game, p)

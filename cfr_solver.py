@@ -25,7 +25,7 @@ from infoset import build_infoset_key_fast
 # =========================
 DEBUG_CFR = True
 PROFILE = False
-SAVE_EVERY = 10_000  # Sauvegarde tous les N itérations
+SAVE_EVERY = 0  # Sauvegarde tous les N itérations
 
 # =========================
 # Types et utilitaires
@@ -33,14 +33,14 @@ SAVE_EVERY = 10_000  # Sauvegarde tous les N itérations
 Action = str
 Key = int  # infoset dense key
 
-def _default_action_dict():
+def default_action_dict():
     return defaultdict(float)
 
-def _key_to_hex_string(key_int: int) -> str:
+def key_to_hex_string(key_int: int) -> str:
     """Convertit une clé dense en string hexadécimale lisible."""
     return f"{key_int:016X}"
 
-def _format_game_state_for_debug(game: PokerGameExpresso) -> str:
+def format_game_state_for_debug(game: PokerGameExpresso) -> str:
     player = game.players[game.current_role]
     board = " ".join(str(c) for c in game.community_cards)
     return (
@@ -68,8 +68,8 @@ class CFRPlusSolver:
         self.hands_per_iter = hands_per_iter
 
         # Stockage des regrets et stratégies
-        self.regret_sum: Dict[Key, Dict[Action, float]] = defaultdict(_default_action_dict)
-        self.strategy_sum: Dict[Key, Dict[Action, float]] = defaultdict(_default_action_dict)
+        self.regret_sum: Dict[Key, Dict[Action, float]] = defaultdict(default_action_dict)
+        self.strategy_sum: Dict[Key, Dict[Action, float]] = defaultdict(default_action_dict)
 
         # RNG et statistiques
         self.rng = random.Random(seed)
@@ -83,7 +83,7 @@ class CFRPlusSolver:
     # =========================
     # Utilitaires d'environnement
     # =========================
-    def _new_game(self) -> PokerGameExpresso:
+    def new_game(self) -> PokerGameExpresso:
         """Initialise une nouvelle main aléatoire et poste les blindes"""
         init = GameInit()
         init.stacks_init = list(self.stacks)              # SB, BB, BTN
@@ -102,7 +102,7 @@ class CFRPlusSolver:
         return game
 
     @staticmethod
-    def _legal_actions(game: PokerGameExpresso) -> List[Action]:
+    def legal_actions(game: PokerGameExpresso) -> List[Action]:
         """Récupère les actions légales pour le joueur courant"""
         current_player = game.players[game.current_role]
         return game.update_available_actions(
@@ -114,7 +114,7 @@ class CFRPlusSolver:
         )
 
     @staticmethod
-    def _terminal_cev(game: PokerGameExpresso, hero_role: int) -> float:
+    def terminal_cev(game: PokerGameExpresso, hero_role: int) -> float:
         """Calcule la valeur terminale pour le héros (en BB)"""
         # handle_showdown a déjà rempli net_stack_changes
         name = f"Player_{hero_role}"
@@ -123,7 +123,7 @@ class CFRPlusSolver:
     # =========================
     # Régret Matching+ et échantillonnage
     # =========================
-    def _strategy_from_regret(self, key: Key, legal: List[Action]) -> Dict[Action, float]:
+    def strategy_from_regret(self, key: Key, legal: List[Action]) -> Dict[Action, float]:
         """Calcule la stratégie actuelle basée sur les regrets CFR+ (tronqués à 0)."""
         positive_regrets = {action: max(0.0, self.regret_sum[key].get(action, 0.0)) for action in legal}
         total_positive_regret = sum(positive_regrets.values())
@@ -132,7 +132,7 @@ class CFRPlusSolver:
             return {action: uniform_prob for action in legal}
         return {action: positive_regrets[action] / total_positive_regret for action in legal}
 
-    def _sample_from(self, distribution: Dict[Action, float]) -> Action:
+    def sample_from(self, distribution: Dict[Action, float]) -> Action:
         """Échantillonne une action selon la distribution de probabilités"""
         # distribution supposée normalisée
         random_sample = self.random_generator.random()
@@ -148,7 +148,7 @@ class CFRPlusSolver:
     # =========================
     # Rollout itératif jusqu'au terminal (sans récursion)
     # =========================
-    def _rollout_until_terminal(
+    def rollout_until_terminal(
         self, game: PokerGameExpresso, hero_role: int, reach_probability_of_others: float
     ) -> Tuple[float, float]:
         """
@@ -161,27 +161,27 @@ class CFRPlusSolver:
             current_player = game.players[current_role]
 
             key = build_infoset_key_fast(game, current_player)
-            legal_actions = self._legal_actions(game)
+            legal_actions = self.legal_actions(game)
             if not legal_actions:
-                state = _format_game_state_for_debug(game)
+                state = format_game_state_for_debug(game)
                 raise RuntimeError(
                     "[CFR+] Aucune action légale pour le joueur courant — état incohérent.\n"
                     f"{state}"
                 )
 
-            strategy_distribution = self._strategy_from_regret(key, legal_actions)
-            chosen_action = self._sample_from(strategy_distribution)
+            strategy_distribution = self.strategy_from_regret(key, legal_actions)
+            chosen_action = self.sample_from(strategy_distribution)
             if current_role != hero_role:
                 reach_probability_of_others *= strategy_distribution[chosen_action]
 
             game.process_action(current_player, chosen_action)
 
-        return self._terminal_cev(game, hero_role), reach_probability_of_others
+        return self.terminal_cev(game, hero_role), reach_probability_of_others
 
     # =========================
     # Traversal CFR+ (external sampling)
     # =========================
-    def _traverse(self, game: PokerGameExpresso, hero_role: int, reach_probability_of_others: float) -> float:
+    def traverse(self, game: PokerGameExpresso, hero_role: int, reach_probability_of_others: float) -> float:
         """
         External-sampling CFR+ multi-rues :
         - Adversaires : on échantillonne et on multiplie reach_probability_of_others.
@@ -195,9 +195,9 @@ class CFRPlusSolver:
             current_player = game.players[current_role]
 
             key = build_infoset_key_fast(game, current_player)
-            legal_actions = self._legal_actions(game)
+            legal_actions = self.legal_actions(game)
             if not legal_actions:
-                state = _format_game_state_for_debug(game)
+                state = format_game_state_for_debug(game)
                 raise RuntimeError(
                     "[CFR+] Aucune action légale pour le joueur courant — état incohérent.\n"
                     f"{state}"
@@ -205,14 +205,14 @@ class CFRPlusSolver:
 
             if current_role == hero_role:
                 # 1) Stratégie courante (sigma) depuis regrets+
-                strategy_distribution = self._strategy_from_regret(key, legal_actions)
+                strategy_distribution = self.strategy_from_regret(key, legal_actions)
 
                 # 2) Utilités d'action via rollout terminal
                 action_utilities: Dict[Action, float] = {}
                 for action in legal_actions:
                     snap = game.snapshot()
                     game.process_action(current_player, action)
-                    utility, _ = self._rollout_until_terminal(
+                    utility, _ = self.rollout_until_terminal(
                         game, hero_role, reach_probability_of_others
                     )
                     action_utilities[action] = utility
@@ -238,19 +238,19 @@ class CFRPlusSolver:
                     )
 
                 # 6) Échantillonne une action du héros pour CONTINUER le parcours
-                chosen_action = self._sample_from(strategy_distribution)
+                chosen_action = self.sample_from(strategy_distribution)
                 game.process_action(current_player, chosen_action)
                 # Note : on NE multiplie PAS reach_probability_of_others par sigma_héros
 
                 continue
 
             # Adversaire : on échantillonne et on met à jour reach des AUTRES
-            strategy_distribution = self._strategy_from_regret(key, legal_actions)
-            chosen_action = self._sample_from(strategy_distribution)
+            strategy_distribution = self.strategy_from_regret(key, legal_actions)
+            chosen_action = self.sample_from(strategy_distribution)
             reach_probability_of_others *= strategy_distribution[chosen_action]
             game.process_action(current_player, chosen_action)
 
-        return self._terminal_cev(game, hero_role)
+        return self.terminal_cev(game, hero_role)
 
 
     # =========================
@@ -282,8 +282,8 @@ class CFRPlusSolver:
 
                 for _ in trange(self.hands_per_iter, desc=f"  Hands iter {iter_idx}", leave=False):
                     for hero in (0, 1, 2):  # 0=SB,1=BB,2=BTN
-                        game = self._new_game()
-                        self._traverse(game, hero_role=hero, reach_probability_of_others=1.0)
+                        game = self.new_game()
+                        self.traverse(game, hero_role=hero, reach_probability_of_others=1.0)
 
                 if SAVE_EVERY > 0 and (iter_idx % SAVE_EVERY == 0):
                     save_path = f"policy/avg_policy_iter_{iter_idx}.json"
@@ -310,9 +310,9 @@ class CFRPlusSolver:
         self.save_policy_json(final_path)
         
         # Résumé final
-        self._print_training_summary(iterations, final_path)
+        self.print_training_summary(iterations, final_path)
 
-    def _print_training_summary(self, iterations: int, final_path: str):
+    def print_training_summary(self, iterations: int, final_path: str):
         """Affiche un résumé clair de l'entraînement"""
         print(f"\n{'='*80}")
         print(f"ENTRAÎNEMENT CFR+ TERMINÉ")
@@ -333,7 +333,7 @@ class CFRPlusSolver:
         for key, counts in self.strategy_sum.items():
             total = sum(counts.values())
             if total > 0:
-                policy[key] = {action: counts[action] / total for action in counts}
+                policy[key] = {action: round(counts[action] / total, 5) for action in counts}
             else:
                 # fallback: regret-matching+ uniforme implicite
                 # on normalise sur les actions existantes dans le noeud
@@ -341,7 +341,7 @@ class CFRPlusSolver:
                 if not actions_in_node:
                     continue
                 uniform_prob = 1.0 / len(actions_in_node)
-                policy[key] = {action: uniform_prob for action in actions_in_node}
+                policy[key] = {action: round(uniform_prob, 5) for action in actions_in_node}
         return policy
 
     # =========================
@@ -391,7 +391,7 @@ class CFRPlusSolver:
         # Afficher quelques exemples d'infosets
         print(f"\nExemples d'infosets (premiers 5):")
         for i, (key, actions) in enumerate(list(policy.items())[:5]):
-            key_str = _key_to_hex_string(key)
+            key_str = key_to_hex_string(key)
             print(f"  {key_str}: {list(actions.keys())}")
         
         print(f"{'='*60}")
@@ -401,6 +401,9 @@ class CFRPlusSolver:
 # Exécution principale
 # =========================
 if __name__ == "__main__":
+    import gc
+    gc.collect()
+
     print("CFR+ Solver - 3-handed NLHE")
     print("=" * 50)
     
@@ -408,7 +411,7 @@ if __name__ == "__main__":
     seed = 42
     stacks = (100, 100, 100)  # SB, BB, BTN
     hands_per_iter = 1
-    iterations = 100_000
+    iterations = 30_000
     
     print(f"Configuration:")
     print(f"  Seed: {seed}")
