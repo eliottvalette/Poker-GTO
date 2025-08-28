@@ -19,13 +19,31 @@ ACTIONS_LOWER = ["fold","check","call","raise","all-in"]
 ROLE_NAMES = ["SB","BB","BTN"]
 PHASES = ["PREFLOP","FLOP","TURN","RIVER","SHOWDOWN"]
 
-# Palette (modifiable)
+COLOR_PALETTE = ['#003049', '#006DAA', '#D62828', '#F77F00', '#FCBF49', '#EAE2B7']
+
+# Palette modifiée pour regrouper les actions
 ACTION_COLORS = {
-    'fold':   '#780000',
-    'check':  '#C1121F',
-    'call':   '#FDF0D5',
-    'raise':  '#669BBC',
-    'all-in': '#003049'
+    'fold':   '#006DAA',      # Bleu 
+    'check':  '#97e29b',      # Vert
+    'call':   '#97e29b',      # Même vert que check
+    'raise':  '#D62828',      # Rouge
+    'all-in': '#D62828'       # Même rouge que raise
+}
+
+# Mapping pour regrouper les actions dans la visualisation
+ACTION_GROUPS = {
+    'fold': 'fold',
+    'check': 'check_call',
+    'call': 'check_call', 
+    'raise': 'raise_allin',
+    'all-in': 'raise_allin'
+}
+
+# Couleurs pour les groupes d'actions
+GROUP_COLORS = {
+    'fold': '#006DAA',        # Bleu
+    'check_call': '#97e29b',  # Vert
+    'raise_allin': '#D62828'  # Rouge
 }
 
 class VisualizerFull:
@@ -69,9 +87,12 @@ class VisualizerFull:
 
         agents = ROLE_NAMES  # SB, BB, BTN
         phases_names = ['preflop', 'flop', 'turn', 'river']
-        actions_l = ACTIONS_LOWER
+        
+        # Actions groupées pour la visualisation
+        grouped_actions = ['raise_allin', 'check_call', 'fold']
+        grouped_labels = ['Raise/All-in', 'Check/Call', 'Fold']
 
-        phase_action_freq = {agent: {ph: {a: 0.0 for a in actions_l} for ph in phases_names} for agent in agents}
+        phase_action_freq = {agent: {ph: {a: 0.0 for a in grouped_actions} for ph in phases_names} for agent in agents}
 
         for ph_idx, ph_name in enumerate(phases_names):
             for role in range(3):
@@ -80,11 +101,11 @@ class VisualizerFull:
                 s = sum(totals.values())
                 if s > 0:
                     totals = {a: totals[a]/s for a in ACTIONS}
-                phase_action_freq[agents[role]][ph_name]['fold']   = totals.get('FOLD', 0.0)
-                phase_action_freq[agents[role]][ph_name]['check']  = totals.get('CHECK', 0.0)
-                phase_action_freq[agents[role]][ph_name]['call']   = totals.get('CALL', 0.0)
-                phase_action_freq[agents[role]][ph_name]['raise']  = totals.get('RAISE', 0.0)
-                phase_action_freq[agents[role]][ph_name]['all-in'] = totals.get('ALL-IN', 0.0)
+                
+                # Regroupement des actions
+                phase_action_freq[agents[role]][ph_name]['raise_allin'] = totals.get('RAISE', 0.0) + totals.get('ALL-IN', 0.0)
+                phase_action_freq[agents[role]][ph_name]['check_call'] = totals.get('CHECK', 0.0) + totals.get('CALL', 0.0)
+                phase_action_freq[agents[role]][ph_name]['fold'] = totals.get('FOLD', 0.0)
 
         fig, ax2 = plt.subplots(figsize=(10, 5))
         x = np.arange(len(agents))
@@ -97,7 +118,7 @@ class VisualizerFull:
 
         for p_idx, phase in enumerate(phases_names):
             bottom = np.zeros(len(agents))
-            for action in actions_l:
+            for action in grouped_actions:
                 values = []
                 for agent in agents:
                     total = sum(phase_action_freq[agent][phase].values())
@@ -109,8 +130,8 @@ class VisualizerFull:
                     values,
                     width,
                     bottom=bottom,
-                    label=f'{action} ({phase})' if p_idx == 0 else "",
-                    color=ACTION_COLORS[action],
+                    label=f'{grouped_labels[grouped_actions.index(action)]} ({phase})' if p_idx == 0 else "",
+                    color=GROUP_COLORS[action],
                     alpha=0.8,
                 )
 
@@ -128,7 +149,7 @@ class VisualizerFull:
                 group_center = np.mean(x + p_idx * width - width * 1.5)
                 ax2.text(group_center, 0.5, 'no data', ha='center', va='center', fontsize=8, color='#888888', rotation=90)
 
-        ax2.set_title('Fréquence des actions par position et par phase')
+        ax2.set_title('Fréquence des actions par position et par phase (actions groupées)')
         ax2.set_xticks(x)
         ax2.set_xticklabels(agents)
         ax2.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
@@ -146,7 +167,7 @@ class VisualizerFull:
         """
         Un PNG par position (SB/BB/BTN) :
         - grille 13x13 (169 mains)
-        - chaque case = bandeaux horizontaux proportionnels aux pourcentages d’actions
+        - chaque case = bandeaux horizontaux proportionnels aux pourcentages d'actions groupées
         """
 
         # Agrégation: pour chaque role et hidx (0..168) -> probas moyennes d'actions
@@ -166,6 +187,10 @@ class VisualizerFull:
 
         # labels axes
         card_labels = ["A","K","Q","J","T","9","8","7","6","5","4","3","2"]
+        
+        # Actions groupées pour la visualisation
+        grouped_actions = ['raise_allin', 'check_call', 'fold']
+        grouped_labels = ['Raise/All-in', 'Check/Call', 'Fold']
 
         for role in range(3):
             # figure
@@ -207,22 +232,29 @@ class VisualizerFull:
                     else:
                         avg = {a: 0.0 for a in ACTIONS}
 
+                    # Regroupement des actions pour la visualisation
+                    grouped_probs = {
+                        'raise_allin': avg.get('RAISE', 0.0) + avg.get('ALL-IN', 0.0),
+                        'check_call': avg.get('CHECK', 0.0) + avg.get('CALL', 0.0),
+                        'fold': avg.get('FOLD', 0.0)
+                    }
+
                     # bandeaux horizontaux (de haut en bas ou bas en haut : ici haut->bas)
                     y0 = i
                     x0 = j
                     cell_width = 1.0
                     cell_height = 1.0
 
-                    # On empile dans l'ordre d'ACTIONS_LOWER pour la légende cohérente
+                    # On empile dans l'ordre des actions groupées
                     cursor_x = x0
-                    for a_upper, a_lower in zip(ACTIONS, ACTIONS_LOWER):
-                        frac = avg[a_upper]
+                    for action_group in grouped_actions:
+                        frac = grouped_probs[action_group]
                         if frac <= 0:
                             continue
                         band_w = cell_width * frac
                         band = plt.Rectangle(
                             (cursor_x, y0), band_w, cell_height,
-                            facecolor=ACTION_COLORS[a_lower], edgecolor=None
+                            facecolor=GROUP_COLORS[action_group], edgecolor=None
                         )
                         ax.add_patch(band)
 
@@ -247,11 +279,11 @@ class VisualizerFull:
             ax.set_yticklabels(card_labels, fontsize=9)
             ax.set_xlabel("r2 (A→2)")
             ax.set_ylabel("r1 (A→2)")
-            ax.set_title(f"{PHASES[phase]} — {ROLE_NAMES[role]} — mix d’actions par main (169)")
+            ax.set_title(f"{PHASES[phase]} — {ROLE_NAMES[role]} — mix d'actions groupées par main (169)")
 
-            # Légende actions
-            legend_handles = [plt.Rectangle((0,0),1,1, color=ACTION_COLORS[a]) for a in ACTIONS_LOWER]
-            ax.legend(legend_handles, ACTIONS_LOWER, ncol=5, loc='upper center', bbox_to_anchor=(0.5, -0.06), frameon=False)
+            # Légende actions groupées
+            legend_handles = [plt.Rectangle((0,0),1,1, color=GROUP_COLORS[a]) for a in grouped_actions]
+            ax.legend(legend_handles, grouped_labels, ncol=3, loc='upper center', bbox_to_anchor=(0.5, -0.06), frameon=False)
 
             plt.tight_layout()
             fname = os.path.join(outdir, f"{PHASES[phase]}_mosaic_{ROLE_NAMES[role].lower()}.png")
