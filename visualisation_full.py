@@ -142,14 +142,12 @@ class VisualizerFull:
         plt.close(fig)
 
     # === NOUVEAU : “mosaic heatmap” préflop par position ===
-    def mosaic_heatmap_preflop_by_role(self, pol: Dict[int, Dict[str,float]], outdir: str,
-                                       label_threshold: float = 0.15):
+    def mosaic_heatma_by_role(self, pol: Dict[int, Dict[str,float]], outdir: str, label_threshold: float = 0.15, phase: int = 0):
         """
         Un PNG par position (SB/BB/BTN) :
         - grille 13x13 (169 mains)
         - chaque case = bandeaux horizontaux proportionnels aux pourcentages d’actions
         """
-        PHASE_PREFLOP = 0
 
         # Agrégation: pour chaque role et hidx (0..168) -> probas moyennes d'actions
         role_hand_action_sum = {role: {h: {a:0.0 for a in ACTIONS} for h in range(169)} for role in range(3)}
@@ -157,7 +155,7 @@ class VisualizerFull:
 
         for k, dist in pol.items():
             f = unpack_infoset_key_dense(k)
-            if int(f["phase"]) != PHASE_PREFLOP:
+            if int(f["phase"]) != phase:
                 continue
             role = int(f["role"])
             hidx = int(f["hand"])  # 0..168 (row-major: i=0..12, j=0..12)
@@ -249,14 +247,14 @@ class VisualizerFull:
             ax.set_yticklabels(card_labels, fontsize=9)
             ax.set_xlabel("r2 (A→2)")
             ax.set_ylabel("r1 (A→2)")
-            ax.set_title(f"Préflop — {ROLE_NAMES[role]} — mix d’actions par main (169)")
+            ax.set_title(f"{PHASES[phase]} — {ROLE_NAMES[role]} — mix d’actions par main (169)")
 
             # Légende actions
             legend_handles = [plt.Rectangle((0,0),1,1, color=ACTION_COLORS[a]) for a in ACTIONS_LOWER]
             ax.legend(legend_handles, ACTIONS_LOWER, ncol=5, loc='upper center', bbox_to_anchor=(0.5, -0.06), frameon=False)
 
             plt.tight_layout()
-            fname = os.path.join(outdir, f"preflop_mosaic_{ROLE_NAMES[role].lower()}.png")
+            fname = os.path.join(outdir, f"{PHASES[phase]}_mosaic_{ROLE_NAMES[role].lower()}.png")
             plt.savefig(fname, dpi=170, bbox_inches='tight')
             plt.close(fig)
 
@@ -267,8 +265,9 @@ def main():
     # (optionnel) graphe barres par phase/position
     visualizer.bar_mix_by_phase_role(visualizer.policy, "viz_full")
 
-    # nouveau rendu “mosaic heatmap” préflop, un PNG par position
-    visualizer.mosaic_heatmap_preflop_by_role(visualizer.policy, "viz_full", label_threshold=0.15)
+    for phase in range(4):  # 0=PREFLOP, 1=FLOP, 2=TURN, 3=RIVER
+        print(f"[MOSAIC] Génération phase {PHASES[phase]}")
+        visualizer.mosaic_heatma_by_role(visualizer.policy, "viz_full", label_threshold=0.15, phase=phase)
 
     print("[OK] PNG écrits dans ./viz_full")
 

@@ -113,8 +113,6 @@ class CFRPlusSolver:
             game.current_phase
         )
 
-    
-
     @staticmethod
     def _terminal_cev(game: PokerGameExpresso, hero_role: int) -> float:
         """Calcule la valeur terminale pour le héros (en BB)"""
@@ -185,10 +183,12 @@ class CFRPlusSolver:
     # =========================
     def _traverse(self, game: PokerGameExpresso, hero_role: int, reach_probability_of_others: float) -> float:
         """
-        External-sampling CFR+ sans recursion :
-        - On échantillonne les adversaires en boucle jusqu'à atteindre un nœud du héros (ou le terminal).
-        - Au nœud du héros, on évalue toutes ses actions via des rollouts itératifs.
-        - On met à jour regrets/stratégies au nœud visité, puis on retourne.
+        External-sampling CFR+ multi-rues :
+        - Adversaires : on échantillonne et on multiplie reach_probability_of_others.
+        - Héros : on évalue TOUTES les actions (snapshot/restore + rollout terminal),
+                on met à jour regrets/stratégie, PUIS on échantillonne une action
+                du héros et on CONTINUE (pas de return prématuré).
+        Retourne la valeur terminale du héros.
         """
         while game.current_phase != "SHOWDOWN":
             current_role = game.current_role
@@ -204,22 +204,26 @@ class CFRPlusSolver:
                 )
 
             if current_role == hero_role:
+                # 1) Stratégie courante (sigma) depuis regrets+
                 strategy_distribution = self._strategy_from_regret(key, legal_actions)
 
+                # 2) Utilités d'action via rollout terminal
                 action_utilities: Dict[Action, float] = {}
                 for action in legal_actions:
-                    snapshot = game.snapshot()
+                    snap = game.snapshot()
                     game.process_action(current_player, action)
                     utility, _ = self._rollout_until_terminal(
                         game, hero_role, reach_probability_of_others
                     )
                     action_utilities[action] = utility
-                    game.restore(snapshot)
+                    game.restore(snap)
 
+                # 3) Utility du nœud (espérance sous sigma)
                 node_utility = sum(
-                    strategy_distribution[action] * action_utilities[action] for action in legal_actions
+                    strategy_distribution[a] * action_utilities[a] for a in legal_actions
                 )
 
+                # 4) Update CFR+ regrets (tronqués à 0) pondérés par reach des AUTRES
                 for action in legal_actions:
                     regret = action_utilities[action] - node_utility
                     self.regret_sum[key][action] = max(
@@ -227,19 +231,27 @@ class CFRPlusSolver:
                         self.regret_sum[key].get(action, 0.0) + reach_probability_of_others * regret,
                     )
 
+                # 5) Accumule stratégie moyenne (pondérée par reach des AUTRES)
                 for action in legal_actions:
                     self.strategy_sum[key][action] += (
                         reach_probability_of_others * strategy_distribution[action]
                     )
 
-                return node_utility
+                # 6) Échantillonne une action du héros pour CONTINUER le parcours
+                chosen_action = self._sample_from(strategy_distribution)
+                game.process_action(current_player, chosen_action)
+                # Note : on NE multiplie PAS reach_probability_of_others par sigma_héros
 
+                continue
+
+            # Adversaire : on échantillonne et on met à jour reach des AUTRES
             strategy_distribution = self._strategy_from_regret(key, legal_actions)
             chosen_action = self._sample_from(strategy_distribution)
             reach_probability_of_others *= strategy_distribution[chosen_action]
             game.process_action(current_player, chosen_action)
 
         return self._terminal_cev(game, hero_role)
+
 
     # =========================
     # Entraînement principal
@@ -396,7 +408,7 @@ if __name__ == "__main__":
     seed = 42
     stacks = (100, 100, 100)  # SB, BB, BTN
     hands_per_iter = 1
-    iterations = 1_000
+    iterations = 40_000
     
     print(f"Configuration:")
     print(f"  Seed: {seed}")
