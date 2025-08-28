@@ -89,8 +89,8 @@ class VisualizerFull:
         phases_names = ['preflop', 'flop', 'turn', 'river']
         
         # Actions groupées pour la visualisation
-        grouped_actions = ['raise_allin', 'check_call', 'fold']
-        grouped_labels = ['Raise/All-in', 'Check/Call', 'Fold']
+        grouped_actions = ['fold', 'check_call', 'raise_allin']
+        grouped_labels = ['Fold', 'Check/Call', 'Raise/All-in']
 
         phase_action_freq = {agent: {ph: {a: 0.0 for a in grouped_actions} for ph in phases_names} for agent in agents}
 
@@ -103,9 +103,9 @@ class VisualizerFull:
                     totals = {a: totals[a]/s for a in ACTIONS}
                 
                 # Regroupement des actions
-                phase_action_freq[agents[role]][ph_name]['raise_allin'] = totals.get('RAISE', 0.0) + totals.get('ALL-IN', 0.0)
-                phase_action_freq[agents[role]][ph_name]['check_call'] = totals.get('CHECK', 0.0) + totals.get('CALL', 0.0)
                 phase_action_freq[agents[role]][ph_name]['fold'] = totals.get('FOLD', 0.0)
+                phase_action_freq[agents[role]][ph_name]['check_call'] = totals.get('CHECK', 0.0) + totals.get('CALL', 0.0)
+                phase_action_freq[agents[role]][ph_name]['raise_allin'] = totals.get('RAISE', 0.0) + totals.get('ALL-IN', 0.0)
 
         fig, ax2 = plt.subplots(figsize=(10, 5))
         x = np.arange(len(agents))

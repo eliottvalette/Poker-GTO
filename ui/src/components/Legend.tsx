@@ -1,14 +1,14 @@
 "use client";
 import React from "react";
-import { ACTIONS_L, ACTION_COLORS } from "@/lib/policy";
+import { GROUPED_ACTIONS, GROUP_COLORS, GROUPED_LABELS } from "@/lib/policy";
 
 export default function Legend() {
   return (
     <div className="flex gap-4 flex-wrap text-xs mt-2">
-      {ACTIONS_L.map((a) => (
+      {GROUPED_ACTIONS.map((a, idx) => (
         <div key={a} className="flex items-center gap-2">
-          <span className="inline-block w-4 h-3 rounded" style={{ background: ACTION_COLORS[a] }} />
-          <span className="uppercase tracking-wide">{a}</span>
+          <span className="inline-block w-4 h-3 rounded" style={{ background: GROUP_COLORS[a] }} />
+          <span className="uppercase tracking-wide">{GROUPED_LABELS[idx]}</span>
         </div>
       ))}
     </div>

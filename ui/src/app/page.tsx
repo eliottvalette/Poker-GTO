@@ -51,10 +51,10 @@ export default function Page() {
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl md:text-2xl font-semibold">GTO Viewer</h1>
-          <p className="text-sm text-zinc-400">Grille 13×13 — chaque case affiche une rangée (row) proportionnelle au mix d’actions.</p>
+          <p className="text-sm text-muted-foreground">Grille 13x13 — chaque case affiche une rangée (row) proportionnelle au mix d&apos;actions.</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="text-sm text-zinc-300">Label ≥ %</div>
+          <div className="text-sm text-muted-foreground">Label ≥ %</div>
           <Input type="number" className="w-20" value={labelThreshold}
                  min={0} max={100}
                  onChange={(e)=>setLabelThreshold(parseInt(e.target.value || "0",10))}/>
@@ -78,9 +78,9 @@ export default function Page() {
       </Card>
 
       <Card>
-        <CardHeader className="pb-2"><CardTitle>Mix d’actions (13×13)</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle>Mix d&apos;actions (13x13)</CardTitle></CardHeader>
         <CardContent>
-          {!policy ? <div className="text-zinc-400">Chargement de <code>avg_policy.json</code>…</div> : (
+          {!policy ? <div className="text-muted-foreground">Chargement de <code>avg_policy.json</code>…</div> : (
             <>
               <Legend />
               <div className="mt-3">
