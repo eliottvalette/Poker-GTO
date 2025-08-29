@@ -13,7 +13,7 @@ import json
 import os
 import time
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 import cProfile
 
 from tqdm import trange
@@ -21,27 +21,16 @@ from poker_game_expresso import PokerGameExpresso, GameInit
 from infoset import build_infoset_key_fast
 from stats_policy import extraction_policy_data
 
-# =========================
-# Configuration et constantes
-# =========================
 DEBUG_CFR = True
 PROFILE = False
 SAVE_EVERY = 0  # Sauvegarde tous les N itérations
-WARM_START_WEIGHT = 1.0  # poids initial injecté dans strategy_sum lors du warm start
 
-# =========================
-# Types et utilitaires
-# =========================
-Action = str
-Key = int  # infoset dense key
+# Actions fixes
+ACTIONS = ["FOLD", "CHECK", "CALL", "RAISE", "ALL-IN"]
+ACTION_IDX = {a: i for i, a in enumerate(ACTIONS)}
+N_ACTIONS = len(ACTIONS)
 
-def default_action_dict():
-    return defaultdict(float)
-
-def key_to_hex_string(key_int: int) -> str:
-    """Convertit une clé dense en string hexadécimale lisible."""
-    return f"{key_int:016X}"
-
+# Utilitaires
 def format_game_state_for_debug(game: PokerGameExpresso) -> str:
     player = game.players[game.current_role]
     board = " ".join(str(c) for c in game.community_cards)
@@ -59,50 +48,26 @@ def format_game_state_for_debug(game: PokerGameExpresso) -> str:
 # Classe principale CFR+
 # =========================
 class CFRPlusSolver:
-    def __init__(
-        self,
-        seed: int = 1,
-        stacks: Tuple[int, int, int] = (100, 100, 100),  # SB, BB, BTN
-        hands_per_iter: int = 1
-    ):
+    def __init__(self, seed: int = 1, stacks=(100, 100, 100), hands_per_iter: int = 1):
         self.seed = seed
         self.stacks = stacks
         self.hands_per_iter = hands_per_iter
 
-        # Stockage des regrets et stratégies
-        self.regret_sum: Dict[Key, Dict[Action, float]] = defaultdict(default_action_dict)
-        self.strategy_sum: Dict[Key, Dict[Action, float]] = defaultdict(default_action_dict)
+        # Chaque infoset stocke deux vecteurs fixes [FOLD,CHECK,CALL,RAISE,ALL-IN]
+        self.regret_sum = defaultdict(lambda: [0.0] * N_ACTIONS)
+        self.strategy_sum = defaultdict(lambda: [0.0] * N_ACTIONS)
 
-        # RNG et statistiques
         self.rng = random.Random(seed)
-        self.random_generator = self.rng
         self.stats = {
             'total_infosets': 0,
             'total_actions': 0,
             'training_time': 0.0
         }
 
-        # Warm start: pré-remplir strategy_sum avec une policy existante si disponible
-        try:
-            existing_policy_path = "policy/avg_policy.json"
-            if os.path.exists(existing_policy_path):
-                loaded_policy = self.load_policy_json(existing_policy_path)
-                injected = 0
-                for key, dist in loaded_policy.items():
-                    for action, prob in dist.items():
-                        # Injecte un petit poids initial pour chaque action présente
-                        self.strategy_sum[key][action] += float(prob) * WARM_START_WEIGHT
-                    injected += 1
-                if DEBUG_CFR:
-                    print(f"[WARM-START] Strategy initialisée depuis {existing_policy_path} ({injected} infosets)")
-        except FileNotFoundError:
-            pass
-
-    # =========================
-    # Utilitaires d'environnement
-    # =========================
+    # -------------------------
+    # Environnement de jeu
+    # -------------------------
     def new_game(self) -> PokerGameExpresso:
-        """Initialise une nouvelle main aléatoire et poste les blindes"""
         init = GameInit()
         init.stacks_init = list(self.stacks)              # SB, BB, BTN
         init.total_bets_init = [0, 0, 0]
@@ -113,15 +78,13 @@ class CFRPlusSolver:
         init.phase = "PREFLOP"
         init.community_cards = []
         
-        # Seed global random pour que le paquet soit reproductible
         random.seed(self.rng.randrange(10**9))
         game = PokerGameExpresso(init)
         game.deal_small_and_big_blind()
         return game
 
     @staticmethod
-    def legal_actions(game: PokerGameExpresso) -> List[Action]:
-        """Récupère les actions légales pour le joueur courant"""
+    def legal_actions(game: PokerGameExpresso) -> List[str]:
         current_player = game.players[game.current_role]
         return game.update_available_actions(
             current_player,
@@ -133,149 +96,120 @@ class CFRPlusSolver:
 
     @staticmethod
     def terminal_cev(game: PokerGameExpresso, hero_role: int) -> float:
-        """Calcule la valeur terminale pour le héros (en BB)"""
-        # handle_showdown a déjà rempli net_stack_changes
         name = f"Player_{hero_role}"
         return float(game.net_stack_changes.get(name, 0.0))
 
-    # =========================
-    # Régret Matching+ et échantillonnage
-    # =========================
-    def strategy_from_regret(self, key: Key, legal: List[Action]) -> Dict[Action, float]:
-        """Calcule la stratégie actuelle basée sur les regrets CFR+ (tronqués à 0)."""
-        positive_regrets = {action: max(0.0, self.regret_sum[key].get(action, 0.0)) for action in legal}
-        total_positive_regret = sum(positive_regrets.values())
-        if total_positive_regret <= 0.0:
-            uniform_prob = 1.0 / len(legal) if legal else 0.0
-            return {action: uniform_prob for action in legal}
-        return {action: positive_regrets[action] / total_positive_regret for action in legal}
+    # -------------------------
+    # Regret Matching+
+    # -------------------------
+    def strategy_from_regret(self, key: int, legal: List[str]) -> List[float]:
+        vec = self.regret_sum[key]
+        total = 0.0
+        probs = [0.0] * N_ACTIONS
 
-    def sample_from(self, distribution: Dict[Action, float]) -> Action:
-        """Échantillonne une action selon la distribution de probabilités"""
-        # distribution supposée normalisée
-        random_sample = self.random_generator.random()
-        cumulative_probability = 0.0
-        last_action = None
-        for action, prob in distribution.items():
-            cumulative_probability += prob
-            last_action = action
-            if random_sample <= cumulative_probability:
-                return action
-        return last_action  # garde-fou (erreurs d'arrondi)
+        for a in legal:
+            i = ACTION_IDX[a]
+            r = vec[i]
+            if r > 0:
+                probs[i] = r
+                total += r
 
-    # =========================
-    # Rollout itératif jusqu'au terminal (sans récursion)
-    # =========================
-    def rollout_until_terminal(
-        self, game: PokerGameExpresso, hero_role: int, reach_probability_of_others: float
-    ) -> Tuple[float, float]:
-        """
-        Poursuit la partie jusqu'au SHOWDOWN en échantillonnant les actions selon la stratégie courante
-        pour tous les joueurs (y compris le héros). Itératif (boucle while).
-        Retourne (utility_hero, updated_reach_probability_of_others).
-        """
+        if total <= 0.0:
+            u = 1.0 / len(legal)
+            for a in legal:
+                probs[ACTION_IDX[a]] = u
+        else:
+            for a in legal:
+                i = ACTION_IDX[a]
+                probs[i] /= total
+        return probs
+
+    def sample_from(self, probs: List[float]) -> str:
+        x = self.rng.random()
+        c = 0.0
+        for i, p in enumerate(probs):
+            c += p
+            if x <= c:
+                return ACTIONS[i]
+        return ACTIONS[-1]
+
+    # -------------------------
+    # Rollout
+    # -------------------------
+    def rollout_until_terminal(self, game: PokerGameExpresso, hero_role: int, reach: float) -> Tuple[float, float]:
         while game.current_phase != "SHOWDOWN":
             current_role = game.current_role
             current_player = game.players[current_role]
 
             key = build_infoset_key_fast(game, current_player)
-            legal_actions = self.legal_actions(game)
-            if not legal_actions:
-                state = format_game_state_for_debug(game)
-                raise RuntimeError(
-                    "[CFR+] Aucune action légale pour le joueur courant — état incohérent.\n"
-                    f"{state}"
-                )
+            legal = self.legal_actions(game)
+            if not legal:
+                raise RuntimeError(f"[CFR+] Aucune action légale.\n{format_game_state_for_debug(game)}")
 
-            strategy_distribution = self.strategy_from_regret(key, legal_actions)
-            chosen_action = self.sample_from(strategy_distribution)
+            probs = self.strategy_from_regret(key, legal)
+            action = self.sample_from(probs)
+
             if current_role != hero_role:
-                reach_probability_of_others *= strategy_distribution[chosen_action]
+                reach *= probs[ACTION_IDX[action]]
 
-            game.process_action(current_player, chosen_action)
+            game.process_action(current_player, action)
+        return self.terminal_cev(game, hero_role), reach
 
-        return self.terminal_cev(game, hero_role), reach_probability_of_others
-
-    # =========================
-    # Traversal CFR+ (external sampling)
-    # =========================
-    def traverse(self, game: PokerGameExpresso, hero_role: int, reach_probability_of_others: float) -> float:
-        """
-        External-sampling CFR+ multi-rues :
-        - Adversaires : on échantillonne et on multiplie reach_probability_of_others.
-        - Héros : on évalue TOUTES les actions (snapshot/restore + rollout terminal),
-                on met à jour regrets/stratégie, PUIS on échantillonne une action
-                du héros et on CONTINUE (pas de return prématuré).
-        Retourne la valeur terminale du héros.
-        """
+    # -------------------------
+    # Traverse CFR+
+    # -------------------------
+    def traverse(self, game: PokerGameExpresso, hero_role: int, reach: float) -> float:
         while game.current_phase != "SHOWDOWN":
             current_role = game.current_role
             current_player = game.players[current_role]
 
             key = build_infoset_key_fast(game, current_player)
-            legal_actions = self.legal_actions(game)
-            if not legal_actions:
-                state = format_game_state_for_debug(game)
-                raise RuntimeError(
-                    "[CFR+] Aucune action légale pour le joueur courant — état incohérent.\n"
-                    f"{state}"
-                )
+            legal = self.legal_actions(game)
+            if not legal:
+                raise RuntimeError(f"[CFR+] Aucune action légale.\n{format_game_state_for_debug(game)}")
 
             if current_role == hero_role:
-                # 1) Stratégie courante (sigma) depuis regrets+
-                strategy_distribution = self.strategy_from_regret(key, legal_actions)
+                probs = self.strategy_from_regret(key, legal)
 
-                # 2) Utilités d'action via rollout terminal
-                action_utilities: Dict[Action, float] = {}
-                for action in legal_actions:
+                # Utilities par action
+                utils = [0.0] * N_ACTIONS
+                node_util = 0.0
+
+                for a in legal:
+                    i = ACTION_IDX[a]
                     snap = game.snapshot()
-                    game.process_action(current_player, action)
-                    utility, _ = self.rollout_until_terminal(
-                        game, hero_role, reach_probability_of_others
-                    )
-                    action_utilities[action] = utility
+                    game.process_action(current_player, a)
+                    u, _ = self.rollout_until_terminal(game, hero_role, reach)
                     game.restore(snap)
 
-                # 3) Utility du nœud (espérance sous sigma)
-                node_utility = sum(
-                    strategy_distribution[a] * action_utilities[a] for a in legal_actions
-                )
+                    utils[i] = u
+                    node_util += probs[i] * u
 
-                # 4) Update CFR+ regrets (tronqués à 0) pondérés par reach des AUTRES
-                for action in legal_actions:
-                    regret = action_utilities[action] - node_utility
-                    self.regret_sum[key][action] = max(
-                        0.0,
-                        self.regret_sum[key].get(action, 0.0) + reach_probability_of_others * regret,
+                # Update regrets
+                for a in legal:
+                    i = ACTION_IDX[a]
+                    regret = utils[i] - node_util
+                    self.regret_sum[key][i] = max(
+                        0.0, self.regret_sum[key][i] + reach * regret
                     )
+                    self.strategy_sum[key][i] += reach * probs[i]
 
-                # 5) Accumule stratégie moyenne (pondérée par reach des AUTRES)
-                for action in legal_actions:
-                    self.strategy_sum[key][action] += (
-                        reach_probability_of_others * strategy_distribution[action]
-                    )
-
-                # 6) Échantillonne une action du héros pour CONTINUER le parcours
-                chosen_action = self.sample_from(strategy_distribution)
-                game.process_action(current_player, chosen_action)
-                # Note : on NE multiplie PAS reach_probability_of_others par sigma_héros
-
+                action = self.sample_from(probs)
+                game.process_action(current_player, action)
                 continue
 
-            # Adversaire : on échantillonne et on met à jour reach des AUTRES
-            strategy_distribution = self.strategy_from_regret(key, legal_actions)
-            chosen_action = self.sample_from(strategy_distribution)
-            reach_probability_of_others *= strategy_distribution[chosen_action]
-            game.process_action(current_player, chosen_action)
+            # Adversaire
+            probs = self.strategy_from_regret(key, legal)
+            action = self.sample_from(probs)
+            reach *= probs[ACTION_IDX[action]]
+            game.process_action(current_player, action)
 
         return self.terminal_cev(game, hero_role)
 
-
-    # =========================
-    # Entraînement principal
-    # =========================
+    # -------------------------
+    # Entraînement
+    # -------------------------
     def train(self, iterations: int = 1000) -> None:
-        """Entraîne le solveur CFR+ sur le nombre d'itérations spécifié"""
         print(f"\n{'='*80}")
         print(f"DÉMARRAGE ENTRAÎNEMENT CFR+")
         print(f"{'='*80}")
@@ -283,55 +217,33 @@ class CFRPlusSolver:
         print(f"Itérations: {iterations}")
         print(f"Mains par itération: {self.hands_per_iter}")
         print(f"Seed: {self.seed}")
-        print(f"Sauvegarde tous les: {SAVE_EVERY} itérations")
         print(f"{'='*80}\n")
 
         start_time = time.time()
-        
-        # Créer le dossier policy s'il n'existe pas
         os.makedirs('policy', exist_ok=True)
 
-        # Barre de progression principale
         with trange(1, iterations + 1, desc="CFR+ Training", unit="iter") as pbar:
-            for iter_idx in pbar:
-                pbar.set_description(f"CFR+ Iter {iter_idx}/{iterations}")
-                
-                self.random_generator.seed(self.seed + 7919 * iter_idx)
+            for it in pbar:
+                self.rng.seed(self.seed + 7919 * it)
 
                 for _ in range(self.hands_per_iter):
-                    for hero in (0, 1, 2):  # 0=SB,1=BB,2=BTN
-                        game = self.new_game()
-                        self.traverse(game, hero_role=hero, reach_probability_of_others=1.0)
+                    for hero in (0, 1, 2):
+                        g = self.new_game()
+                        self.traverse(g, hero_role=hero, reach=1.0)
 
-                if SAVE_EVERY > 0 and (iter_idx % SAVE_EVERY == 0):
-                    save_path = f"policy/avg_policy_iter_{iter_idx}.json"
-                    self.save_policy_json(save_path)
-                    if DEBUG_CFR:
-                        print(f"[SAVE] Policy sauvegardée à l'itération {iter_idx} -> {save_path}")
+                if SAVE_EVERY > 0 and (it % SAVE_EVERY == 0):
+                    self.save_policy_json(f"policy/avg_policy_iter_{it}.json")
 
-                # Mise à jour des statistiques
                 self.stats['total_infosets'] = len(self.strategy_sum)
-                total_actions = sum(len(actions) for actions in self.strategy_sum.values())
+                total_actions = sum(sum(1 for p in vec if p > 0) for vec in self.strategy_sum.values())
                 self.stats['total_actions'] = total_actions
-                
-                # Mise à jour de la barre avec les stats
-                pbar.set_postfix({
-                    'Infosets': self.stats['total_infosets'],
-                    'Actions': total_actions
-                })
+                pbar.set_postfix({'Infosets': self.stats['total_infosets'], 'Actions': total_actions})
 
-        # Temps total d'entraînement
         self.stats['training_time'] = time.time() - start_time
-        
-        # Sauvegarde finale
-        final_path = "policy/avg_policy.json"
-        self.save_policy_json(final_path)
-        
-        # Résumé final
-        self.print_training_summary(iterations, final_path)
+        self.save_policy_json("policy/avg_policy.json")
+        self.print_training_summary(iterations, "policy/avg_policy.json")
 
     def print_training_summary(self, iterations: int, final_path: str):
-        """Affiche un résumé clair de l'entraînement"""
         print(f"\n{'='*80}")
         print(f"ENTRAÎNEMENT CFR+ TERMINÉ")
         print(f"{'='*80}")
@@ -342,49 +254,27 @@ class CFRPlusSolver:
         print(f"Policy finale: {final_path}")
         print(f"{'='*80}")
 
-    # =========================
+    # -------------------------
     # Politique moyenne
-    # =========================
-    def extract_average_policy(self) -> Dict[int, Dict[str, float]]:
-        """Extrait la politique moyenne depuis les stratégies cumulées"""
+    # -------------------------
+    def extract_average_policy(self):
         policy = {}
-        for key, counts in self.strategy_sum.items():
-            total = sum(counts.values())
+        for k, vec in self.strategy_sum.items():
+            total = sum(vec)
             if total > 0:
-                policy[key] = {action: round(counts[action] / total, 5) for action in counts}
-            else:
-                # fallback: regret-matching+ uniforme implicite
-                # on normalise sur les actions existantes dans le noeud
-                actions_in_node = list(counts.keys())
-                if not actions_in_node:
-                    continue
-                uniform_prob = 1.0 / len(actions_in_node)
-                policy[key] = {action: round(uniform_prob, 5) for action in actions_in_node}
+                policy[k] = {ACTIONS[i]: round(vec[i]/total, 5) for i in range(N_ACTIONS) if vec[i] > 0}
         return policy
 
-    # =========================
-    # Sauvegarde/Chargement
-    # =========================
     def save_policy_json(self, path: str) -> None:
-        """Sauvegarde la politique moyenne au format JSON en fusionnant avec l'existant"""
-        new_policy = self.extract_average_policy()
-        # Fusionne avec l'ancienne policy pour conserver les noeuds non visités
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                old_policy = json.load(f)
-        except FileNotFoundError:
-            old_policy = {}
-        # Met à jour/ajoute les nouveaux noeuds
-        old_policy.update({str(k): v for k, v in new_policy.items()})
+        avg_policy = self.extract_average_policy()
+        out = {str(k): v for k, v in avg_policy.items()}
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(old_policy, f, indent=2, ensure_ascii=False)
-
+            json.dump(out, f, indent=2, ensure_ascii=False)
         if DEBUG_CFR:
-            print(f"[SAVE] Policy sauvegardée: {path} ({len(old_policy)} infosets)")
+            print(f"[SAVE] Policy sauvegardée: {path} ({len(out)} infosets)")
 
     @staticmethod
-    def load_policy_json(path: str) -> Dict[int, Dict[str, float]]:
-        """Charge une politique depuis un fichier JSON"""
+    def load_policy_json(path: str):
         with open(path, "r", encoding="utf-8") as f:
             raw = json.load(f)
         if DEBUG_CFR:
@@ -404,8 +294,8 @@ if __name__ == "__main__":
     # Configuration
     seed = 42
     stacks = (100, 100, 100)  # SB, BB, BTN
-    hands_per_iter = 8
-    iterations = 10_000
+    hands_per_iter = 16
+    iterations = 30_000
     
     print(f"Configuration:")
     print(f"  Seed: {seed}")
