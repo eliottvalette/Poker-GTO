@@ -79,8 +79,8 @@ class VisualizerFull:
 
         for k, dist in pol.items():
             f = unpack_infoset_key_dense(k)
-            phase = int(f["phase"])
-            role  = int(f["role"])
+            phase = int(f["PHASE"])
+            role  = int(f["ROLE"])
             probs = self.normalize_on_legal_actions(dist)
             agg[phase][role].update(probs)
             cnt[phase][role] = cnt[phase].get(role, 0) + 1
@@ -176,14 +176,14 @@ class VisualizerFull:
 
         for k, dist in pol.items():
             f = unpack_infoset_key_dense(k)
-            if int(f["phase"]) != phase:
+            if int(f["PHASE"]) != phase:
                 continue
-            role = int(f["role"])
-            hidx = int(f["hand"])  # 0..168 (row-major: i=0..12, j=0..12)
+            role = int(f["ROLE"])
+            hand_index = int(f["HAND"])  # 0..168 (row-major: i=0..12, j=0..12)
             probs = self.normalize_on_legal_actions(dist)
             for a in ACTIONS:
-                role_hand_action_sum[role][hidx][a] += probs[a]
-            role_hand_count[role][hidx] += 1
+                role_hand_action_sum[role][hand_index][a] += probs[a]
+            role_hand_count[role][hand_index] += 1
 
         # labels axes
         card_labels = ["A","K","Q","J","T","9","8","7","6","5","4","3","2"]
@@ -211,15 +211,15 @@ class VisualizerFull:
             # dessiner chaque case
             for i in range(13):       # ligne
                 for j in range(13):   # colonne
-                    hidx = i*13 + j
-                    count = role_hand_count[role][hidx]
+                    hand_index = i*13 + j
+                    count = role_hand_count[role][hand_index]
                     if count == 0:
                         # Case sans data: griser léger
                         rect = plt.Rectangle((j, i), 1, 1, facecolor='#F3F3F3', edgecolor='#E0E0E0', linewidth=0.4)
                         ax.add_patch(rect)
                         continue
 
-                    totals = role_hand_action_sum[role][hidx]
+                    totals = role_hand_action_sum[role][hand_index]
                     # moyenne
                     s = sum(totals.values())
                     if s > 0:

@@ -6,8 +6,12 @@ import numpy as np
 from typing import Dict, Set, Tuple, Callable, List
 from utils import load_ranges_json
 from classes import Deck
+import json
 
 ALL_COMBOS = Deck().all_starting_combos()
+def _id_to_rank_suit(card_id: int) -> Tuple[int, int]:
+        # Convert 0..51 to (rank 2..14, suit 0..3)
+        return card_id // 4 + 2, card_id % 4
 
 def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Callable[[Set[Tuple[int,int]]], float], iter_num: int, evolution_data: Dict[str, List[float]] = None):
     # Créer le dossier viz s'il n'existe pas
@@ -47,8 +51,8 @@ def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Calla
             
             # Compter les combos par case (rang1, rang2)
             for combo in combo_set:
-                r1, r2 = combo[0].rank, combo[1].rank
-                s1, s2 = combo[0].suit, combo[1].suit
+                r1, s1 = _id_to_rank_suit(int(combo[0]))
+                r2, s2 = _id_to_rank_suit(int(combo[1]))
                 
                 # Déterminer le rang haut et bas
                 hi, lo = (r1, r2) if r1 >= r2 else (r2, r1)
@@ -91,8 +95,8 @@ def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Calla
         global_matrix = np.zeros((13, 13))
         for combo_set in ranges.values():
             for combo in combo_set:
-                r1, r2 = combo[0].rank, combo[1].rank
-                s1, s2 = combo[0].suit, combo[1].suit
+                r1, s1 = _id_to_rank_suit(int(combo[0]))
+                r2, s2 = _id_to_rank_suit(int(combo[1]))
                 
                 # Déterminer le rang haut et bas
                 hi, lo = (r1, r2) if r1 >= r2 else (r2, r1)
@@ -109,11 +113,11 @@ def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Calla
                     global_matrix[j, i] += 1/12/5                 # Offsuit
         
         # Limiter le nombre de décimales à 2
-        global_matrix = np.round(global_matrix, 2)
+        rounded_global_matrix = np.round(global_matrix, 2)
         
         # Afficher la matrice globale
         plt.figure(figsize=(10, 8))
-        sns.heatmap(global_matrix, annot=True, fmt='g', cmap='RdYlBu_r',
+        sns.heatmap(rounded_global_matrix, annot=True, fmt='g', cmap='RdYlBu_r',
                    xticklabels=ranks, yticklabels=ranks,
                    cbar_kws={'label': 'Nombre de ranges contenant ce combo'})
         plt.title("Matrice globale - Tous les ranges combinés", fontsize=16, fontweight='bold')
@@ -127,6 +131,14 @@ def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Calla
             os.makedirs(f'viz/viz_iter_{iter_num}', exist_ok=True)
             plt.savefig(f'viz/viz_iter_{iter_num}/matrix_globale.png', dpi=300, bbox_inches='tight')
         plt.close()
+
+        # Save global_matrix in ranges/
+        global_matrix_data = {}
+        for i in range(13):
+            for j in range(13):
+                global_matrix_data[f"{ranks[i]}{ranks[j]}"] = (global_matrix[i, j])
+        with open('ranges/global_matrix.json', 'w') as f:
+            json.dump(global_matrix_data, f)
         
         # 4. Créer le graphique des courbes d'évolution des couvertures
         if evolution_data and len(evolution_data.get('BTN_shove', [])) > 1:

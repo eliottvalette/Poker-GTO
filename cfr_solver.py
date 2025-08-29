@@ -410,7 +410,7 @@ if __name__ == "__main__":
     # Configuration
     seed = 42
     stacks = (100, 100, 100)  # SB, BB, BTN
-    hands_per_iter = 1
+    hands_per_iter = 8
     iterations = 30_000
     
     print(f"Configuration:")

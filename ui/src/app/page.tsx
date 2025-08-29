@@ -31,6 +31,7 @@ export default function Page() {
       for (const [kStr, dist] of Object.entries(policy)) {
         const f = unpackInfosetKeyDense(kStr);
         if (f.phase !== phaseIdx || f.role !== roleIdx) continue;
+        if (f.hand < 0 || f.hand >= 169) continue; // garde-fou
         const probs = normalize(dist);
         for (const a of ACTIONS) sums[f.hand][a] += probs[a];
         counts[f.hand] += 1;

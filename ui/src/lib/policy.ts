@@ -1,29 +1,29 @@
 export const ACTIONS = ["FOLD","CHECK","CALL","RAISE","ALL-IN"] as const;
 export type ActionU = typeof ACTIONS[number];
-export const ACTIONS_L = ["fold","check","call","raise","all-in"] as const;
+export const ACTIONS_L = ["FOLD","CHECK","CALL","RAISE","ALL-IN"] as const;
 export type ActionL = typeof ACTIONS_L[number];
 
 // Actions groupées pour la visualisation
-export const GROUPED_ACTIONS = ["fold","check_call","raise_allin"] as const;
+export const GROUPED_ACTIONS = ["raise_allin","check_call","fold"] as const;
 export type GroupedAction = typeof GROUPED_ACTIONS[number];
-export const GROUPED_LABELS = ["Fold", "Check/Call", "Raise/All-in"] as const;
+export const GROUPED_LABELS = ["Raise/All-in", "Check/Call", "Fold"] as const;
 
 export const ROLES = ["SB","BB","BTN"] as const;
 export const PHASES = ["PREFLOP","FLOP","TURN","RIVER","SHOWDOWN"] as const;
 
 export const ACTION_COLORS: Record<ActionL, string> = {
-  fold:   "#006DAA",      // Bleu
-  check:  "#97e29b",      // Vert
-  call:   "#97e29b",      // Même vert que check
-  raise:  "#D62828",      // Rouge
-  "all-in":"#D62828"      // Même rouge que raise
+  FOLD:   "#006DAA",      // Bleu
+  CHECK:  "#97e29b",      // Vert
+  CALL:   "#97e29b",      // Même vert que check
+  RAISE:  "#D62828",      // Rouge
+  "ALL-IN": "#D62828"      // Même rouge que raise
 };
 
 // Couleurs pour les groupes d'actions
 export const GROUP_COLORS: Record<GroupedAction, string> = {
-  fold: "#006DAA",        // Bleu
-  check_call: "#97e29b",  // Vert
-  raise_allin: "#D62828"  // Rouge
+  raise_allin: "#D62828",  // Rouge
+  check_call: "#97e29b",   // Vert
+  fold: "#006DAA"          // Bleu
 };
 
 export type Dist = Partial<Record<ActionU, number>>;
@@ -45,8 +45,8 @@ export function normalize(dist: Dist | undefined): GridMix {
 // Fonction pour regrouper les actions
 export function groupActions(mix: GridMix): GroupedGridMix {
   return {
-    fold: mix.FOLD,
+    raise_allin: mix.RAISE + mix["ALL-IN"],
     check_call: mix.CHECK + mix.CALL,
-    raise_allin: mix.RAISE + mix["ALL-IN"]
+    fold: mix.FOLD
   };
 }
