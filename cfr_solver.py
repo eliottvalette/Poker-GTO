@@ -19,6 +19,7 @@ import cProfile
 from tqdm import trange
 from poker_game_expresso import PokerGameExpresso, GameInit
 from infoset import build_infoset_key_fast
+from stats_policy import extraction_policy_data
 
 # =========================
 # Configuration et constantes
@@ -26,6 +27,7 @@ from infoset import build_infoset_key_fast
 DEBUG_CFR = True
 PROFILE = False
 SAVE_EVERY = 0  # Sauvegarde tous les N itérations
+WARM_START_WEIGHT = 1.0  # poids initial injecté dans strategy_sum lors du warm start
 
 # =========================
 # Types et utilitaires
@@ -79,6 +81,22 @@ class CFRPlusSolver:
             'total_actions': 0,
             'training_time': 0.0
         }
+
+        # Warm start: pré-remplir strategy_sum avec une policy existante si disponible
+        try:
+            existing_policy_path = "policy/avg_policy.json"
+            if os.path.exists(existing_policy_path):
+                loaded_policy = self.load_policy_json(existing_policy_path)
+                injected = 0
+                for key, dist in loaded_policy.items():
+                    for action, prob in dist.items():
+                        # Injecte un petit poids initial pour chaque action présente
+                        self.strategy_sum[key][action] += float(prob) * WARM_START_WEIGHT
+                    injected += 1
+                if DEBUG_CFR:
+                    print(f"[WARM-START] Strategy initialisée depuis {existing_policy_path} ({injected} infosets)")
+        except FileNotFoundError:
+            pass
 
     # =========================
     # Utilitaires d'environnement
@@ -280,7 +298,7 @@ class CFRPlusSolver:
                 
                 self.random_generator.seed(self.seed + 7919 * iter_idx)
 
-                for _ in trange(self.hands_per_iter, desc=f"  Hands iter {iter_idx}", leave=False):
+                for _ in range(self.hands_per_iter):
                     for hero in (0, 1, 2):  # 0=SB,1=BB,2=BTN
                         game = self.new_game()
                         self.traverse(game, hero_role=hero, reach_probability_of_others=1.0)
@@ -348,15 +366,21 @@ class CFRPlusSolver:
     # Sauvegarde/Chargement
     # =========================
     def save_policy_json(self, path: str) -> None:
-        """Sauvegarde la politique moyenne au format JSON"""
-        avg_policy_dict = self.extract_average_policy()
-        # clés JSON = str(key dense)
-        out = {str(k): v for k, v in avg_policy_dict.items()}
+        """Sauvegarde la politique moyenne au format JSON en fusionnant avec l'existant"""
+        new_policy = self.extract_average_policy()
+        # Fusionne avec l'ancienne policy pour conserver les noeuds non visités
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                old_policy = json.load(f)
+        except FileNotFoundError:
+            old_policy = {}
+        # Met à jour/ajoute les nouveaux noeuds
+        old_policy.update({str(k): v for k, v in new_policy.items()})
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(out, f, indent=2, ensure_ascii=False)
-        
+            json.dump(old_policy, f, indent=2, ensure_ascii=False)
+
         if DEBUG_CFR:
-            print(f"[SAVE] Policy sauvegardée: {path} ({len(out)} infosets)")
+            print(f"[SAVE] Policy sauvegardée: {path} ({len(old_policy)} infosets)")
 
     @staticmethod
     def load_policy_json(path: str) -> Dict[int, Dict[str, float]]:
@@ -366,36 +390,6 @@ class CFRPlusSolver:
         if DEBUG_CFR:
             print(f"[LOAD] Policy chargée: {path} ({len(raw)} infosets)")
         return {int(k): v for k, v in raw.items()}
-
-    # =========================
-    # Statistiques et analyse
-    # =========================
-    def print_policy_stats(self):
-        """Affiche des statistiques sur la politique apprise"""
-        policy = self.extract_average_policy()
-        
-        print(f"\n{'='*60}")
-        print(f"STATISTIQUES DE LA POLITIQUE")
-        print(f"{'='*60}")
-        print(f"Nombre d'infosets: {len(policy)}")
-        
-        # Compter les actions par infoset
-        action_counts = defaultdict(int)
-        for infoset_policy in policy.values():
-            action_counts[len(infoset_policy)] += 1
-        
-        print(f"Distribution des actions par infoset:")
-        for action_count, count in sorted(action_counts.items()):
-            print(f"  {action_count} actions: {count} infosets")
-        
-        # Afficher quelques exemples d'infosets
-        print(f"\nExemples d'infosets (premiers 5):")
-        for i, (key, actions) in enumerate(list(policy.items())[:5]):
-            key_str = key_to_hex_string(key)
-            print(f"  {key_str}: {list(actions.keys())}")
-        
-        print(f"{'='*60}")
-
 
 # =========================
 # Exécution principale
@@ -411,7 +405,7 @@ if __name__ == "__main__":
     seed = 42
     stacks = (100, 100, 100)  # SB, BB, BTN
     hands_per_iter = 8
-    iterations = 30_000
+    iterations = 10_000
     
     print(f"Configuration:")
     print(f"  Seed: {seed}")
@@ -427,9 +421,6 @@ if __name__ == "__main__":
         hands_per_iter=hands_per_iter
     )
 
-    # Load policy
-    solver.load_policy_json("policy/avg_policy.json")
-    
     if PROFILE:
         profiler = cProfile.Profile()
         profiler.enable()
@@ -442,7 +433,7 @@ if __name__ == "__main__":
         profiler.dump_stats("profiling/cfr_solver_profile.prof")
     
     # Statistiques finales
-    solver.print_policy_stats()
+    extraction_policy_data()
     
     print(f"\nEntraînement terminé avec succès!")
     print(f"Policy sauvegardée dans: policy/avg_policy.json")

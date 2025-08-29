@@ -132,7 +132,7 @@ def extraction_policy_data(src_path="policy/avg_policy.json"):
         print("-" * 100)
         print()
 
-    stats = get_policy_stats(policy_json)
+    get_policy_stats(policy_json)
 
 if __name__ == "__main__":
     extraction_policy_data()
