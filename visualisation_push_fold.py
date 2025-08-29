@@ -136,7 +136,12 @@ def visualise_ranges(ranges: Dict[str, Set[Tuple[int,int]]], coverage_pct: Calla
         global_matrix_data = {}
         for i in range(13):
             for j in range(13):
-                global_matrix_data[f"{ranks[i]}{ranks[j]}"] = (global_matrix[i, j])
+                if i < j: # suited
+                    global_matrix_data[f"{ranks[i]}{ranks[j]}s"] = (rounded_global_matrix[i, j])
+                elif i == j: # pairs
+                    global_matrix_data[f"{ranks[i]}{ranks[j]}"] = (rounded_global_matrix[i, j])
+                else: # offsuit
+                    global_matrix_data[f"{ranks[j]}{ranks[i]}o"] = (rounded_global_matrix[i, j])
         with open('ranges/global_matrix.json', 'w') as f:
             json.dump(global_matrix_data, f)
         
