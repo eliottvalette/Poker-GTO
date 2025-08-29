@@ -4,6 +4,8 @@ import json
 from typing import Dict
 from infoset import unpack_infoset_key_dense
 from infoset import _LABELS_169
+import pandas as pd 
+from tqdm import tqdm
 
 # Actions canon
 ACTIONS = ["FOLD", "CHECK", "CALL", "RAISE", "ALL-IN"]
@@ -17,7 +19,7 @@ def _format_actions(proba_by_action: Dict[str, float]) -> str:
     return "  " + "  |  ".join(parts)
 
 
-def _decode_fields(unpacked: Dict[str, int]) -> Dict[str, str]:
+def _decode_fields(unpacked: Dict[str, int], policy_dist: Dict[str, float] = None) -> Dict[str, str]:
     decoded: Dict[str, str] = {}
     decoded["PHASE"] = ID_TO_PHASE.get(unpacked["PHASE"], str(unpacked["PHASE"]))
     decoded["ROLE"] = ROLE_LABELS[unpacked["ROLE"]] if 0 <= unpacked["ROLE"] < len(ROLE_LABELS) else str(unpacked["ROLE"]) 
@@ -28,6 +30,12 @@ def _decode_fields(unpacked: Dict[str, int]) -> Dict[str, str]:
     decoded["RATIO"] = str(unpacked["RATIO"]) 
     decoded["SPR"] = str(unpacked["SPR"]) 
     decoded["HEROBOARD"] = str(unpacked["HEROBOARD"]) 
+    
+    # Add policy values for all actions, defaulting to 0.0 if not present
+    if policy_dist is not None:
+        for action in ACTIONS:
+            decoded[f"PROB_{action}"] = str(policy_dist.get(action, 0.0))
+    
     return decoded
 
 
@@ -79,42 +87,18 @@ def mix_actions_by_phase(policy_json):
             print(f"{a}: {pct:.2f}%")
 
 
-def get_policy_stats(policy_json: Dict[str, Dict[str, float]]) -> Dict[str, Dict[str, float]]:
-    stats = {
-        "total_infosets": len(policy_json),
-        "num_PREFLOP_infosets": 0,
-        "num_FLOP_infosets": 0,
-        "num_TURN_infosets": 0,
-        "num_RIVER_infosets": 0,
-        "num_SB_infosets": 0,
-        "num_BB_infosets": 0,
-        "num_BTN_infosets": 0
-    }
-
-    for k in policy_json.keys():
+def build_dataframe(policy_json: Dict[str, Dict[str, float]]):
+    # Collect all data in a list first for much better performance
+    data_rows = []
+    
+    for k in tqdm(policy_json.keys()):
         unpacked_key = unpack_infoset_key_dense(int(k))
-        decoded = _decode_fields(unpacked_key)
-        stats[f"num_{decoded['PHASE']}_infosets"] += 1
-        stats[f"num_{decoded['ROLE']}_infosets"] += 1
+        decoded = _decode_fields(unpacked_key, policy_json[k]) # Pass policy_dist here
+        data_rows.append(decoded)
     
-    # Convert in percentage
-    for k in stats.keys():
-        if k.endswith('_infosets') and k != 'total_infosets':
-            stats[k] = round(stats[k] / stats['total_infosets'] * 100, 2)
-
-    for k, v in stats.items():
-        if k != 'total_infosets':
-            print(f"{k}: {v}%")
-        else:
-            print(f"{k}: {v}")
-    
-    print("-" * 100)
-    print()
-    
-    # More Stats per phase
-    mix_actions_by_phase(policy_json)
-
-    return stats
+    # Create DataFrame from all collected data at once
+    df = pd.DataFrame(data_rows)
+    return df
 
 def extraction_policy_data(src_path="policy/avg_policy.json"):
     with open(src_path, "r") as f:
@@ -124,7 +108,7 @@ def extraction_policy_data(src_path="policy/avg_policy.json"):
     infoset_keys = list(policy_json.keys())
     for k in infoset_keys[:5]:
         unpacked_key = unpack_infoset_key_dense(int(k))
-        decoded = _decode_fields(unpacked_key)
+        decoded = _decode_fields(unpacked_key, policy_json[k]) # Pass policy_dist here
 
         print(f"Infoset: {k}")
         print(_format_actions(policy_json[k]))
@@ -132,7 +116,8 @@ def extraction_policy_data(src_path="policy/avg_policy.json"):
         print("-" * 100)
         print()
 
-    get_policy_stats(policy_json)
+    df = build_dataframe(policy_json)
+    df.to_csv("policy/avg_policy.csv", index=False)
 
 if __name__ == "__main__":
     extraction_policy_data()
