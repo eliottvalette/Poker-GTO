@@ -180,7 +180,9 @@ class PokerGameExpresso:
             for action in PLAYER_ACTIONS:
                 self.action_masks[player_role][action] = False
 
-        return [a for a, enabled in self.action_masks[player_role].items() if enabled]
+        action_mask = self.action_masks[player_role]
+        # ordre canonique constant → tuple (pas de nouvelle liste)
+        return tuple(a for a in ("FOLD","CHECK","CALL","RAISE","ALL-IN") if action_mask[a])
 
     def deal_cards(self):
         """
@@ -190,7 +192,7 @@ class PokerGameExpresso:
             print("[GAME_OPTI] Distribution des cartes privées")
         for player in self.players:
             if player.is_active and not player.has_folded and not player.cards:
-                player.cards = [self.remaining_deck.pop(0), self.remaining_deck.pop(0)]
+                player.cards = [self.remaining_deck.pop(), self.remaining_deck.pop()]
                 if DEBUG_OPTI:
                     print(f"[GAME_OPTI] {player.name} reçoit: {player.cards[0]} {player.cards[1]}")
 
@@ -314,7 +316,7 @@ class PokerGameExpresso:
                 if DEBUG_OPTI_ULTIMATE:
                     print("Moving to showdown (all-in present, no further betting possible)")
                 while len(self.community_cards) < 5 and self.remaining_deck:
-                    self.community_cards.append(self.remaining_deck.pop(0))
+                    self.community_cards.append(self.remaining_deck.pop())
                 self.handle_showdown()
                 return
 
@@ -323,7 +325,7 @@ class PokerGameExpresso:
             if DEBUG_OPTI_ULTIMATE:
                 print("Moving to showdown (all remaining players are all-in)")
             while len(self.community_cards) < 5 and self.remaining_deck:
-                self.community_cards.append(self.remaining_deck.pop(0))
+                self.community_cards.append(self.remaining_deck.pop())
             self.handle_showdown()
             return
 
@@ -367,12 +369,12 @@ class PokerGameExpresso:
             if len(self.remaining_deck) < 3:
                 raise ValueError("[GAME_OPTI] Deck épuisé pour le flop")
             for _ in range(3):
-                self.community_cards.append(self.remaining_deck.pop(0))
+                self.community_cards.append(self.remaining_deck.pop())
 
         elif self.current_phase in ["TURN", "RIVER"]:
             if not self.remaining_deck:
                 raise ValueError(f"[GAME_OPTI] Deck épuisé pour {self.current_phase}")
-            self.community_cards.append(self.remaining_deck.pop(0))
+            self.community_cards.append(self.remaining_deck.pop())
 
         if DEBUG_OPTI:
             print(f"[GAME_OPTI] [DISTRIBUTION] Board: {self.community_cards}")
@@ -676,7 +678,7 @@ class PokerGameExpresso:
                 rd.shuffle(self.remaining_deck)
                 known = {c.id for p in self.players for c in getattr(p, "cards", [])} | {c.id for c in self.community_cards}
                 self.remaining_deck = [c for c in self.remaining_deck if c.id not in known]
-            self.community_cards.append(self.remaining_deck.pop(0))
+            self.community_cards.append(self.remaining_deck.pop())
 
         # Victoire par fold
         if len(active_players) == 1:

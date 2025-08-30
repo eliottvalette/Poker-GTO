@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import List, Tuple
 from classes import Card, Player
 import math
+import bisect
 
 # ============================================================
 # --- 169 map (lisible <-> index)
@@ -187,10 +188,9 @@ _RATIO_EDGES  = [0.00,0.05,0.125,0.25,0.5,1.0,2.0,float("inf")]
 _SPR_EDGES    = [0.00,0.75,1.25,2.0,3.5,6.0,10.0,float("inf")]
 
 def _bucket_from_edges(x: float, edges: list[float]) -> int:
-    for i in range(len(edges)-1):
-        if x <= edges[i+1]:
-            return i
-    return len(edges)-2
+    # Optimisée par dichotomie
+    idx = bisect.bisect_right(edges, x) - 1
+    return max(0, min(idx, len(edges) - 2))
 
 def qlog_bb(pot_bb: float) -> int:
     return _bucket_from_edges(max(0.0, pot_bb), _POT_EDGES_BB)

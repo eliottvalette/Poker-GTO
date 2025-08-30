@@ -83,11 +83,6 @@ class CFRPlusSolver:
         self.strategy_sum = defaultdict(lambda: [0.0] * N_ACTIONS)
 
         self.rng = random.Random(seed)
-        self.stats = {
-            'total_infosets': 0,
-            'total_actions': 0,
-            'training_time': 0.0
-        }
 
     # -------------------------
     # Environnement de jeu
@@ -211,13 +206,14 @@ class CFRPlusSolver:
                     node_util += probs[i] * u
 
                 # Update regrets
+                regret_sum = self.regret_sum[key]
+                strategy_sum = self.strategy_sum[key]
                 for a in legal:
                     i = ACTION_IDX[a]
-                    regret = utils[i] - node_util
-                    self.regret_sum[key][i] = max(
-                        0.0, self.regret_sum[key][i] + reach * regret
-                    )
-                    self.strategy_sum[key][i] += reach * probs[i]
+                    reg = utils[i] - node_util
+                    val = regret_sum[i] + reach * reg
+                    regret_sum[i] = val if val > 0.0 else 0.0
+                    strategy_sum[i] += reach * probs[i]
 
                 action = self.sample_from(probs)
                 game.process_action(current_player, action)
@@ -259,23 +255,17 @@ class CFRPlusSolver:
                 if SAVE_EVERY > 0 and (it % SAVE_EVERY == 0):
                     self.save_policy_json(f"policy/avg_policy_iter_{it}.json")
 
-                self.stats['total_infosets'] = len(self.strategy_sum)
-                total_actions = sum(sum(1 for p in vec if p > 0) for vec in self.strategy_sum.values())
-                self.stats['total_actions'] = total_actions
-                pbar.set_postfix({'Infosets': self.stats['total_infosets'], 'Actions': total_actions})
-
-        self.stats['training_time'] = time.time() - start_time
         self.save_policy_json("policy/avg_policy.json.gz")
         self.print_training_summary(iterations, "policy/avg_policy.json.gz")
+
+        end_time = time.time()
+        print(f"Temps total: {end_time - start_time:.2f}s")
 
     def print_training_summary(self, iterations: int, final_path: str):
         print(f"\n{'='*80}")
         print(f"ENTRAÎNEMENT CFR+ TERMINÉ")
         print(f"{'='*80}")
         print(f"Itérations complétées: {iterations}")
-        print(f"Temps total: {self.stats['training_time']:.2f}s")
-        print(f"Infosets uniques: {self.stats['total_infosets']}")
-        print(f"Actions totales: {self.stats['total_actions']}")
         print(f"Policy finale: {final_path}")
         print(f"{'='*80}")
 
@@ -347,8 +337,8 @@ if __name__ == "__main__":
     # Configuration
     seed = 42
     stacks = (100, 100, 100)  # SB, BB, BTN
-    hands_per_iter = 8
-    iterations = 10
+    hands_per_iter = 16
+    iterations = 100_000
     
     print(f"Configuration:")
     print(f"  Seed: {seed}")
