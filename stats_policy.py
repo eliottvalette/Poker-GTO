@@ -1,11 +1,27 @@
 # make_synthetic_policy.py
 from __future__ import annotations
 import json
+import gzip
 from typing import Dict
 from infoset import unpack_infoset_key_dense
 from infoset import _LABELS_169
 import pandas as pd 
 from tqdm import tqdm
+
+def _decode_compact_entry(entry: list[int]) -> Dict[str, float]:
+    mask = entry[0]
+    qs = entry[1:]
+    total = sum(qs)
+    if total <= 0:
+        return {}
+    dist = {}
+    idx_q = 0
+    for i, a in enumerate(ACTIONS):
+        if (mask >> i) & 1:
+            q = qs[idx_q]
+            dist[a] = q / total
+            idx_q += 1
+    return dist
 
 # Actions canon
 ACTIONS = ["FOLD", "CHECK", "CALL", "RAISE", "ALL-IN"]
@@ -100,9 +116,16 @@ def build_dataframe(policy_json: Dict[str, Dict[str, float]]):
     df = pd.DataFrame(data_rows)
     return df
 
-def extraction_policy_data(src_path="policy/avg_policy.json"):
-    with open(src_path, "r") as f:
-        policy_json = json.load(f)
+def extraction_policy_data(src_path="policy/avg_policy.json.gz"):
+    with gzip.open(src_path, "rt", encoding="utf-8") as f:
+        raw = json.load(f)
+
+    policy_json = {}
+    for k, v in raw.items():
+        if isinstance(v, list) and v and isinstance(v[0], int):
+            dist = _decode_compact_entry(v)
+            if dist:
+                policy_json[k] = dist
 
     # Overview of first 5 infosets
     infoset_keys = list(policy_json.keys())

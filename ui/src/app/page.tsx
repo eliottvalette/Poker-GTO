@@ -1,6 +1,8 @@
+// ui/src/app/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { inflate } from "pako";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,6 +13,24 @@ import Legend from "@/components/Legend";
 
 type Policy = Record<string, Record<string, number>>;
 
+// Decode l'entrée compacte [mask, q...] -> {action: proba}
+function decodeCompact(entry: number[]): Record<string, number> {
+  const mask = entry?.[0] ?? 0;
+  const qs = entry.slice(1);
+  const total = qs.reduce((a,b)=>a+b,0);
+  if (!mask || total <= 0) return {};
+  const ACTIONS = ["FOLD","CHECK","CALL","RAISE","ALL-IN"] as const;
+  const dist: Record<string, number> = {};
+  let qi = 0;
+  for (let i=0;i<ACTIONS.length;i++) {
+    if ((mask >> i) & 1) {
+      const q = qs[qi++] ?? 0;
+      dist[ACTIONS[i]] = q / total;
+    }
+  }
+  return dist;
+}
+
 export default function Page() {
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [phaseIdx, setPhaseIdx] = useState<number>(0);
@@ -18,7 +38,16 @@ export default function Page() {
   const [labelThreshold, setLabelThreshold] = useState<number>(18);
 
   useEffect(() => {
-    fetch("/avg_policy.json").then(r => r.json()).then(setPolicy).catch(console.error);
+    (async () => {
+      const res = await fetch("/avg_policy.json.gz");
+      const buf = await res.arrayBuffer();
+      const jsonText = new TextDecoder("utf-8").decode(inflate(new Uint8Array(buf)));
+      const raw: Record<string, number[]> = JSON.parse(jsonText);
+      const decoded: Policy = Object.fromEntries(
+        Object.entries(raw).map(([k, v]) => [k, decodeCompact(v)])
+      );
+      setPolicy(decoded);
+    })().catch(console.error);
   }, []);
 
   const gridMixes: GridMix[] = useMemo(() => {
@@ -81,7 +110,7 @@ export default function Page() {
       <Card>
         <CardHeader className="pb-2"><CardTitle>Mix d&apos;actions (13x13)</CardTitle></CardHeader>
         <CardContent>
-          {!policy ? <div className="text-muted-foreground">Chargement de <code>avg_policy.json</code>…</div> : (
+          {!policy ? <div className="text-muted-foreground">Chargement de <code>avg_policy.json.gz</code>…</div> : (
             <>
               <Legend />
               <div className="mt-3">

@@ -1,3 +1,4 @@
+// ui/src/components/Legend.tsx
 "use client";
 import React from "react";
 import { GROUPED_ACTIONS, GROUP_COLORS, GROUPED_LABELS } from "@/lib/policy";

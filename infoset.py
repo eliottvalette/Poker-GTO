@@ -216,9 +216,15 @@ def build_infoset_key_fast(game, hero) -> int:
     rank_to_index = {14:12,13:11,12:10,11:9,10:8,9:7,8:6,7:5,6:4,5:3,4:2,3:1,2:0}
     i, j = rank_to_index[card_1.rank], rank_to_index[card_2.rank]
     suited = (card_1.suit == card_2.suit)
-    if i == j: hand_index = i*13+i
-    elif suited: hand_index = max(i,j)*13+min(i,j)
-    else: hand_index = min(i,j)*13+max(i,j)
+    if i == j:
+        # paire: diagonale
+        hand_index = i * 13 + i
+    elif suited:
+        # suited: triangle supérieur -> ligne < colonne
+        hand_index = min(i, j) * 13 + max(i, j)
+    else:
+        # offsuit: triangle inférieur -> ligne > colonne
+        hand_index = max(i, j) * 13 + min(i, j)
 
     # Board bucket
     bidx, _ = board_bucket(game.community_cards)

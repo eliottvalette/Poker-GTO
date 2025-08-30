@@ -1,11 +1,11 @@
 # visualisation_full.py
 # Viz de la policy moyenne sauvée par cfr_solver.py
-# - Charge policy/avg_policy.json
+# - Charge policy/avg_policy.json.gz
 # - Décode les infosets (via infoset.unpack) pour agréger par phase/role/hand169
 # - Sauvegarde des PNG dans viz/
 
 from __future__ import annotations
-import os, json
+import os, json, gzip
 from collections import Counter
 from typing import Dict
 import numpy as np
@@ -46,6 +46,21 @@ GROUP_COLORS = {
     'raise_allin': '#D62828'  # Rouge
 }
 
+def _decode_compact_entry(entry: list[int]) -> Dict[str, float]:
+    mask = entry[0]
+    qs = entry[1:]
+    total = sum(qs)
+    if total <= 0:
+        return {}
+    dist = {}
+    idx_q = 0
+    for i, a in enumerate(ACTIONS):
+        if (mask >> i) & 1:
+            q = qs[idx_q]
+            dist[a] = q / total
+            idx_q += 1
+    return dist
+
 class VisualizerFull:
     def __init__(self, policy_path: str):
         self.policy_path = policy_path
@@ -54,10 +69,15 @@ class VisualizerFull:
         os.makedirs(self.outdir, exist_ok=True)
 
     def load_policy(self, path: str) -> Dict[int, Dict[str, float]]:
-        with open(path, "r", encoding="utf-8") as f:
+        with gzip.open(path, "rt", encoding="utf-8") as f:
             raw = json.load(f)
-        # cfr_solver.py sauve des clés str(int_dense)
-        return {int(k): v for k, v in raw.items()}
+        pol = {}
+        for k, v in raw.items():
+            if isinstance(v, list) and v and isinstance(v[0], int):
+                dist = _decode_compact_entry(v)
+                if dist:
+                    pol[int(k)] = dist
+        return pol
 
     def normalize_on_legal_actions(self, dist: Dict[str, float]) -> Dict[str, float]:
         """Renormalise les probas aux actions connues (ACTIONS)."""
@@ -291,7 +311,7 @@ class VisualizerFull:
             plt.close(fig)
 
 def main():
-    visualizer = VisualizerFull("policy/avg_policy.json")
+    visualizer = VisualizerFull("policy/avg_policy.json.gz")
     print(f"[LOAD] policy: {len(visualizer.policy)} infosets")
 
     # (optionnel) graphe barres par phase/position

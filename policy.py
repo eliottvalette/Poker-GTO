@@ -1,24 +1,47 @@
 # policy.py
-# Politique (chargement / action) basée sur la stratégie moyenne sauvegardée.
-
 from __future__ import annotations
 import json
 import random
+import gzip
 from typing import Dict, List
 from infoset import build_infoset_key
 from poker_game_expresso import PokerGameExpresso
 
+ACTIONS = ["FOLD","CHECK","CALL","RAISE","ALL-IN"]
+
+def _decode_compact_entry(entry: list[int]) -> Dict[str, float]:
+    mask = entry[0]
+    qs = entry[1:]
+    total = sum(qs)
+    if total <= 0:
+        return {}
+    dist = {}
+    idx_q = 0
+    for i, a in enumerate(ACTIONS):
+        if (mask >> i) & 1:
+            q = qs[idx_q]
+            dist[a] = q / total
+            idx_q += 1
+    return dist
 
 class AveragePolicy:
     def __init__(self, policy: Dict[int, Dict[str, float]], seed: int = 123):
-        self.policy = policy          # key(int) -> {action: prob}
+        self.policy = policy
         self.rng = random.Random(seed)
 
     @staticmethod
     def load(path: str, seed: int = 123) -> "AveragePolicy":
-        with open(path, "r", encoding="utf-8") as f:
+        # GZIP + format compact OBLIGATOIRES
+        with gzip.open(path, "rt", encoding="utf-8") as f:
             raw = json.load(f)
-        pol = {int(k): v for k, v in raw.items()}
+        pol: Dict[int, Dict[str, float]] = {}
+        for k, v in raw.items():
+            key = int(k)
+            if not isinstance(v, list) or not v or not isinstance(v[0], int):
+                continue
+            dist = _decode_compact_entry(v)
+            if dist:
+                pol[key] = dist
         return AveragePolicy(pol, seed=seed)
 
     @staticmethod
@@ -44,7 +67,6 @@ class AveragePolicy:
         return last
 
     def act(self, game: PokerGameExpresso) -> str:
-        # Retourne une action légale échantillonnée selon la politique moyenne.
         player = game.players[game.current_role]
         _, key = build_infoset_key(game, player)
         legal = self.legal_actions(game)
@@ -53,11 +75,9 @@ class AveragePolicy:
 
         dist = self.policy.get(key)
         if not dist:
-            # inconnu → uniforme sur les actions légales
             p = 1.0 / len(legal)
             dist = {a: p for a in legal}
         else:
-            # restreindre aux actions légales & renormaliser
             dist = {a: dist.get(a, 0.0) for a in legal}
             s = sum(dist.values())
             if s <= 1e-12:

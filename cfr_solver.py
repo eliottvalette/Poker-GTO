@@ -12,6 +12,7 @@ import random
 import json
 import os
 import time
+import gzip
 from collections import defaultdict
 from typing import List, Tuple
 import cProfile
@@ -29,6 +30,30 @@ SAVE_EVERY = 0  # Sauvegarde tous les N itérations
 ACTIONS = ["FOLD", "CHECK", "CALL", "RAISE", "ALL-IN"]
 ACTION_IDX = {a: i for i, a in enumerate(ACTIONS)}
 N_ACTIONS = len(ACTIONS)
+
+def _quantize_dist(vec: list[float], keep_top_k: int = 3, eps: float = 1e-6):
+    # vec = probabilités sur 5 actions (déjà normalisées)
+    # garde top-k, quantifie sur 0..255, renvoie (mask, [q...]) où sum(q)=255
+    items = [(i, vec[i]) for i in range(5) if vec[i] > eps]
+    items.sort(key=lambda x: x[1], reverse=True)
+    items = items[:keep_top_k]
+    s = sum(p for _, p in items)
+    if s <= 0:
+        raise ValueError("Sum of probabilities is less than or equal to 0")
+    probs = [p/s for _, p in items]
+    qu = [int(round(p*255)) for p in probs]
+    # ajuste la somme à 255
+    diff = 255 - sum(qu)
+    if diff != 0:
+        # ajuste l'élément le plus grand
+        j = max(range(len(qu)), key=lambda k: qu[k])
+        qu[j] = max(0, min(255, qu[j] + diff))
+    mask = 0
+    order = []
+    for i,_ in items:
+        mask |= (1 << i)
+        order.append(i)
+    return mask, qu
 
 # Utilitaires
 def format_game_state_for_debug(game: PokerGameExpresso) -> str:
@@ -240,8 +265,8 @@ class CFRPlusSolver:
                 pbar.set_postfix({'Infosets': self.stats['total_infosets'], 'Actions': total_actions})
 
         self.stats['training_time'] = time.time() - start_time
-        self.save_policy_json("policy/avg_policy.json")
-        self.print_training_summary(iterations, "policy/avg_policy.json")
+        self.save_policy_json("policy/avg_policy.json.gz")
+        self.print_training_summary(iterations, "policy/avg_policy.json.gz")
 
     def print_training_summary(self, iterations: int, final_path: str):
         print(f"\n{'='*80}")
@@ -258,24 +283,52 @@ class CFRPlusSolver:
     # Politique moyenne
     # -------------------------
     def extract_average_policy(self):
-        policy = {}
+        out = {}
         for k, vec in self.strategy_sum.items():
             total = sum(vec)
-            if total > 0:
-                policy[k] = {ACTIONS[i]: round(vec[i]/total, 5) for i in range(N_ACTIONS) if vec[i] > 0}
-        return policy
+            if total <= 0:
+                continue
+            probs = [vec[i]/total for i in range(5)]
+            mask, qu = _quantize_dist(probs, keep_top_k=3)
+            if mask != 0:
+                out[k] = [mask] + qu
+        return out
 
     def save_policy_json(self, path: str) -> None:
-        avg_policy = self.extract_average_policy()
-        out = {str(k): v for k, v in avg_policy.items()}
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(out, f, indent=2, ensure_ascii=False)
+        compact = self.extract_average_policy()
+        out = {str(k): v for k, v in compact.items()}
+        data = json.dumps(out, separators=(",",":"), ensure_ascii=False)
+        with gzip.open(path, "wt", encoding="utf-8") as f:
+            f.write(data)
         if DEBUG_CFR:
-            print(f"[SAVE] Policy sauvegardée: {path} ({len(out)} infosets)")
+            print(f"[SAVE] Policy gzip: {path} ({len(out)} infosets)")
+
+    def warm_start_from_policy(self, path: str, weight: float = 1000.0):
+        if not os.path.exists(path):
+            return
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            raw = json.load(f)
+        for k_str, entry in raw.items():
+            k = int(k_str)
+            if not isinstance(entry, list) or not entry or not isinstance(entry[0], int):
+                continue
+            mask = entry[0]
+            qs = entry[1:]
+            total = sum(qs)
+            if total <= 0:
+                continue
+            vec = [0.0] * 5
+            idx_q = 0
+            for i in range(5):
+                if (mask >> i) & 1:
+                    q = qs[idx_q]
+                    vec[i] = weight * (q / total)
+                    idx_q += 1
+            self.strategy_sum[k] = vec
 
     @staticmethod
     def load_policy_json(path: str):
-        with open(path, "r", encoding="utf-8") as f:
+        with gzip.open(path, "rt", encoding="utf-8") as f:
             raw = json.load(f)
         if DEBUG_CFR:
             print(f"[LOAD] Policy chargée: {path} ({len(raw)} infosets)")
@@ -294,8 +347,8 @@ if __name__ == "__main__":
     # Configuration
     seed = 42
     stacks = (100, 100, 100)  # SB, BB, BTN
-    hands_per_iter = 16
-    iterations = 30_000
+    hands_per_iter = 8
+    iterations = 10
     
     print(f"Configuration:")
     print(f"  Seed: {seed}")
@@ -310,6 +363,8 @@ if __name__ == "__main__":
         stacks=stacks, 
         hands_per_iter=hands_per_iter
     )
+    
+    solver.warm_start_from_policy("policy/avg_policy.json.gz", weight=1000.0)
 
     if PROFILE:
         profiler = cProfile.Profile()
@@ -326,4 +381,4 @@ if __name__ == "__main__":
     extraction_policy_data()
     
     print(f"\nEntraînement terminé avec succès!")
-    print(f"Policy sauvegardée dans: policy/avg_policy.json")
+    print(f"Policy sauvegardée dans: policy/avg_policy.json.gz")

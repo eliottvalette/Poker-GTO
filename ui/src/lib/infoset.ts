@@ -1,3 +1,4 @@
+// ui/src/lib/infoset.ts
 // [ HEROBOARD:4 | SPR:8 | RATIO:8 | POT:8 | BOARD:5 | HAND:8 | ROLE:2 | PHASE:3 ]
 const POS = { HEROBOARD:0, SPR:4, RATIO:12, POT:20, BOARD:28, HAND:33, ROLE:41, PHASE:43 } as const;
 const MASK= { HEROBOARD:(1<<4)-1, SPR:(1<<8)-1, RATIO:(1<<8)-1, POT:(1<<8)-1,

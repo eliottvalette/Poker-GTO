@@ -1,8 +1,46 @@
 # artificial_policy.py
 from __future__ import annotations
 import json
+import gzip
 from typing import Dict
 from infoset import unpack_infoset_key_dense, _LABELS_169
+
+def _decode_compact_entry(entry: list[int]) -> Dict[str, float]:
+    mask = entry[0]
+    qs = entry[1:]
+    total = sum(qs)
+    if total <= 0:
+        return {}
+    dist = {}
+    idx_q = 0
+    for i, a in enumerate(ACTIONS):
+        if (mask >> i) & 1:
+            q = qs[idx_q]
+            dist[a] = q / total
+            idx_q += 1
+    return dist
+
+def _encode_compact(dist: Dict[str, float], keep_top_k: int = 3) -> list[int]:
+    # normalise
+    s = sum(dist.values())
+    if s <= 0:
+        return [0]
+    norm = {a: dist[a]/s for a in dist}
+    items = [(i, norm.get(a, 0.0)) for i, a in enumerate(ACTIONS) if norm.get(a, 0.0) > 0.0]
+    items.sort(key=lambda x: x[1], reverse=True)
+    items = items[:keep_top_k]
+    ps = [p for _, p in items]
+    s2 = sum(ps)
+    ps = [p/s2 for p in ps]
+    qs = [int(round(p*255)) for p in ps]
+    diff = 255 - sum(qs)
+    if diff != 0 and qs:
+        j = max(range(len(qs)), key=lambda k: qs[k])
+        qs[j] = max(0, min(255, qs[j] + diff))
+    mask = 0
+    for i, _ in items:
+        mask |= (1 << i)
+    return [mask] + qs
 
 ACTIONS = ["FOLD", "CHECK", "CALL", "RAISE", "ALL-IN"]
 ID_TO_PHASE = {0:"PREFLOP",1:"FLOP",2:"TURN",3:"RIVER",4:"SHOWDOWN"}
@@ -21,14 +59,20 @@ def load_open_range(path="ranges/global_matrix.json") -> Dict[str, float]:
         return json.load(f)  # ex: {"AA":1.0,"AKs":1.0,...} valeurs 0..1
 
 def main():
-    # 1) charge ta range 169 (prob d'open)
     open_range = load_open_range()
 
-    # 2) charge la policy existante comme squelette
-    with open("policy/avg_policy.json", "r", encoding="utf-8") as f:
-        base_policy: Dict[str, Dict[str, float]] = json.load(f)
+    # lecture policy gz compact
+    with gzip.open("policy/avg_policy.json.gz", "rt", encoding="utf-8") as f:
+        raw = json.load(f)
 
-    new_policy: Dict[str, Dict[str, float]] = {}
+    base_policy: Dict[str, Dict[str, float]] = {}
+    for k, v in raw.items():
+        if isinstance(v, list) and v and isinstance(v[0], int):
+            dist = _decode_compact_entry(v)
+            if dist:
+                base_policy[k] = dist
+
+    new_policy_compact = {}
 
     touched = 0
     for k_str, dist in base_policy.items():
@@ -39,46 +83,38 @@ def main():
         hand_idx = fields["HAND"]
         spr_q = fields["SPR"]
 
-        
-        label_169 = _169_LABEL[hand_idx]  # p.ex. "Q3s"
-        p_open = float(open_range.get(label_169, 0.0))  # défaut 0
+        label_169 = _169_LABEL[hand_idx]
+        p_open = float(open_range.get(label_169, 0.0))
 
-        # split de base : raise / fold
         p_raise = max(0.0, min(1.0, p_open))
         p_fold  = 1.0 - p_raise
         p_call  = 0.0
         p_allin = 0.0
 
-        # option limp/call
         if LIMP_ALLOWED and LIMP_FRACTION > 0.0:
             move = min(p_raise, LIMP_FRACTION)
             p_raise -= move
             p_call  += move
 
-        # option all-in si SPR bas et main premium
-        label_no_suf = label_169  # déjà canon du 169
-        if spr_q <= SPR_ALLIN_MAX_BUCKET and label_no_suf in ALLIN_HANDS and p_raise > 0.0:
+        if spr_q <= SPR_ALLIN_MAX_BUCKET and label_169 in ALLIN_HANDS and p_raise > 0.0:
             move = min(p_raise, p_raise * ALLIN_FRACTION_OF_RAISE)
             p_raise -= move
             p_allin += move
 
-        # normalisation défensive
-        s = p_fold + p_call + p_raise + p_allin
-        if s <= 0:
-            # fallback uniforme sur actions légales préflop (pas de CHECK)
-            new_policy[k_str] = {"FOLD": 0.5, "RAISE": 0.5}
-        else:
-            new_policy[k_str] = {
-                "FOLD":  p_fold / s,
-                "CALL":  p_call / s if p_call > 0 else 0.0,
-                "RAISE": p_raise / s if p_raise > 0 else 0.0,
-                "ALL-IN":p_allin / s if p_allin > 0 else 0.0
-            }
-        touched += 1
+        out_float = {}
+        if p_fold > 0:  out_float["FOLD"] = p_fold
+        if p_call > 0:  out_float["CALL"] = p_call
+        if p_raise > 0: out_float["RAISE"] = p_raise
+        if p_allin > 0: out_float["ALL-IN"] = p_allin
 
-    out_path = "policy/avg_policy_artificial.json"
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(new_policy, f, indent=2, ensure_ascii=False)
+        compact = _encode_compact(out_float, keep_top_k=3)
+        if compact[0] != 0:
+            new_policy_compact[k_str] = compact
+            touched += 1
+
+    out_path = "policy/avg_policy_artificial.json.gz"
+    with gzip.open(out_path, "wt", encoding="utf-8") as f:
+        json.dump(new_policy_compact, f, separators=(",",":"), ensure_ascii=False)
 
     print(f"[OK] Infosets modifiés PREFLOP: {touched} / {len(base_policy)}")
     print(f"[SAVE] {out_path}")

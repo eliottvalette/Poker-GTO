@@ -1,3 +1,4 @@
+// ui/src/lib/policy.ts
 export const ACTIONS = ["FOLD","CHECK","CALL","RAISE","ALL-IN"] as const;
 export type ActionU = typeof ACTIONS[number];
 export const ACTIONS_L = ["FOLD","CHECK","CALL","RAISE","ALL-IN"] as const;

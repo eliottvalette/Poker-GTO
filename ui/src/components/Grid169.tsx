@@ -1,3 +1,4 @@
+// ui/src/components/Grid169.tsx
 "use client";
 import React from "react";
 import { GROUPED_ACTIONS, GROUP_COLORS, groupActions, type GridMix } from "@/lib/policy";
