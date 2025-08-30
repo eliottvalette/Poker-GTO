@@ -10,6 +10,7 @@ import { ROLES, PHASES, ACTIONS, normalize, type GridMix } from "@/lib/policy";
 import { unpackInfosetKeyDense } from "@/lib/infoset";
 import Grid169 from "@/components/Grid169";
 import Legend from "@/components/Legend";
+import { Button } from "@/components/ui/button";
 
 type Policy = Record<string, Record<string, number>>;
 
@@ -36,7 +37,7 @@ export default function Page() {
   const [phaseIdx, setPhaseIdx] = useState<number>(0);
   const [roleIdx, setRoleIdx] = useState<number>(0);
   const [labelThreshold, setLabelThreshold] = useState<number>(18);
-
+  const [heatmapMode, setHeatmapMode] = useState<boolean>(false);
   useEffect(() => {
     (async () => {
       const res = await fetch("/avg_policy.json.gz");
@@ -89,6 +90,11 @@ export default function Page() {
                  min={0} max={100}
                  onChange={(e)=>setLabelThreshold(parseInt(e.target.value || "0",10))}/>
         </div>
+        <div className="flex items-center gap-2">
+          <Button className={heatmapMode ? " bg-primary text-primary-foreground hover:bg-primary/90 " : "bg-secondary text-secondary-foreground hover:bg-secondary/80 "} onClick={()=>setHeatmapMode(!heatmapMode)}>
+            Heatmap mode
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -114,7 +120,7 @@ export default function Page() {
             <>
               <Legend />
               <div className="mt-3">
-                <Grid169 gridMixes={gridMixes} labelThresholdPct={labelThreshold}/>
+                <Grid169 gridMixes={gridMixes} heatmapMode={heatmapMode} labelThresholdPct={labelThreshold}/>
               </div>
             </>
           )}
