@@ -5,9 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ROLES, PHASES, normalize, type Policy } from "@/lib/policy";
+import { normalize, type Policy } from "@/lib/policy";
 import { unpackInfosetKeyDense } from "@/lib/infoset";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const CARD_LABS = ["A","K","Q","J","T","9","8","7","6","5","4","3","2"] as const;
 
@@ -106,12 +105,13 @@ export default function PreciseCase({ policy }: PreciseCaseProps) {
             </Select>
           </div>
 
-        <div className="grid grid-cols-2 gap-8 gap-y-8 justify-center">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-4 justify-center">
           <div className="space-y-2">
             <Label htmlFor="pot">Pot Bucket</Label>
             <Input
               type="number"
               value={selectedPot}
+              className="bg-black"
               onChange={(e) => setSelectedPot(parseInt(e.target.value) || 0)}
               min={0}
               max={23}
@@ -123,6 +123,7 @@ export default function PreciseCase({ policy }: PreciseCaseProps) {
             <Input
               type="number"
               value={selectedRatio}
+              className="bg-black"
               onChange={(e) => setSelectedRatio(parseInt(e.target.value) || 0)}
               min={0}
               max={7}
@@ -134,6 +135,7 @@ export default function PreciseCase({ policy }: PreciseCaseProps) {
             <Input
               type="number"
               value={selectedSpr}
+              className="bg-black"
               onChange={(e) => setSelectedSpr(parseInt(e.target.value) || 0)}
               min={0}
               max={6}
@@ -178,7 +180,7 @@ export default function PreciseCase({ policy }: PreciseCaseProps) {
             )}
           </div>
         ) : (
-          <div className="text-sm text-muted-foreground">
+          <div className="text-xs text-muted-foreground text-center">
             Aucune correspondance trouvée
           </div>
         )}
