@@ -4,7 +4,7 @@ import json
 import random
 import gzip
 from typing import Dict, List
-from infoset import build_infoset_key
+from infoset import build_infoset_key_fast
 from poker_game_expresso import PokerGameExpresso
 
 ACTIONS = ["FOLD","CHECK","CALL","RAISE","ALL-IN"]
@@ -68,7 +68,7 @@ class AveragePolicy:
 
     def act(self, game: PokerGameExpresso) -> str:
         player = game.players[game.current_role]
-        _, key = build_infoset_key(game, player)
+        key = build_infoset_key_fast(game, player)
         legal = self.legal_actions(game)
         if not legal:
             raise ValueError(f"[POLICY] legal actions : {legal}")

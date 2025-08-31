@@ -82,10 +82,9 @@ def format_game_state_for_debug(game: PokerGameExpresso) -> str:
 
 
 class CFRPlusSolver:
-    def __init__(self, seed: int = 1, stacks=(100, 100, 100), hands_per_iter: int = 1):
+    def __init__(self, seed: int = 1, stacks=(100, 100, 100)):
         self.seed = seed
         self.stacks = stacks
-        self.hands_per_iter = hands_per_iter
 
         self.regret_sum = defaultdict(lambda: [0.0] * N_ACTIONS)
         self.strategy_sum = defaultdict(lambda: [0.0] * N_ACTIONS)
@@ -177,7 +176,7 @@ class CFRPlusSolver:
             infoset_key = build_infoset_key_fast(game, current_player)
             legal_actions = self.legal_actions(game)
 
-            if not legal_actions:
+            if not legal_actions or len(legal_actions) < 2:
                 raise RuntimeError(f"[CFR+] Aucune action légale.\n{format_game_state_for_debug(game)}")
 
             probabilities = self.strategy_from_regret(infoset_key, legal_actions)
@@ -201,7 +200,7 @@ class CFRPlusSolver:
             infoset_key = build_infoset_key_fast(game, current_player)
             legal_actions = self.legal_actions(game)
 
-            if not legal_actions:
+            if not legal_actions or len(legal_actions) < 2:
                 raise RuntimeError(f"[CFR+] Aucune action légale.\n{format_game_state_for_debug(game)}")
 
             if current_role == hero_role:
@@ -209,11 +208,11 @@ class CFRPlusSolver:
 
                 action_utilities = [0.0] * N_ACTIONS
                 node_expected_utility = 0.0
+            
 
+                snapshot = game.snapshot()
                 for action_name in legal_actions:
                     index = ACTION_INDEX[action_name]
-
-                    snapshot = game.snapshot()
                     game.process_action(current_player, action_name)
                     utility, _ = self.rollout_until_terminal(game, hero_role, reach_probability)
                     game.restore(snapshot)
@@ -257,7 +256,6 @@ class CFRPlusSolver:
         print(f"{'='*80}")
         print(f"Stacks: {self.stacks}")
         print(f"Itérations: {iterations}")
-        print(f"Mains par itération: {self.hands_per_iter}")
         print(f"Seed: {self.seed}")
         print(f"{'='*80}\n")
 
@@ -268,10 +266,9 @@ class CFRPlusSolver:
             for iteration_index in progress_bar:
                 self.rng.seed(self.seed + 7919 * iteration_index)
 
-                for _ in range(self.hands_per_iter):
-                    for hero_role in (0, 1, 2):
-                        game = self.new_game()
-                        self.traverse(game, hero_role=hero_role, reach_probability=1.0)
+                for hero_role in (0, 1, 2):
+                    game = self.new_game()
+                    self.traverse(game, hero_role=hero_role, reach_probability=1.0)
 
                 if SAVE_EVERY > 0 and (iteration_index % SAVE_EVERY == 0):
                     self.save_policy_json(f"policy/avg_policy_iter_{iteration_index}.json.gz")
@@ -298,7 +295,7 @@ class CFRPlusSolver:
         for infoset_key, strategy_vector in self.strategy_sum.items():
             total = sum(strategy_vector)
             if total <= 0:
-                raise ValueError(f"[EXTRACT] Total <= 0: {total}")
+                raise ValueError(f"[EXTRACT] Total <= 0: {total}. Infoset key: {infoset_key}")
 
             probabilities = [strategy_vector[action_index] / total for action_index in range(N_ACTIONS)]
             bitmask, quantized_values = quantize_distribution(probabilities, keep_top_k=3)
@@ -315,7 +312,7 @@ class CFRPlusSolver:
         for infoset_key, encoded_policy in compact_policy.items():
             serialized[str(infoset_key)] = {
                 "policy": encoded_policy,
-                "visits": self.visit_count[infoset_key]
+                "visits": min(self.visit_count[infoset_key], 120)
             }
 
         data = json.dumps(serialized, separators=(",", ":"), ensure_ascii=False)
@@ -338,7 +335,7 @@ class CFRPlusSolver:
             infoset_key = int(key_str)
 
             if "policy" not in entry or "visits" not in entry:
-                raise ValueError(f"[LOAD] Policy or visits not found: {entry}")
+                raise ValueError(f"[LOAD] Policy or visits not found: {entry}. Infoset key: {infoset_key}")
 
             bitmask = entry["policy"][0]
             quantized_values = entry["policy"][1:]
@@ -346,7 +343,7 @@ class CFRPlusSolver:
 
             total_quantized = sum(quantized_values)
             if total_quantized <= 0 or visit_count_value <= 0:
-                raise ValueError(f"[LOAD] Total quantized or visit count value <= 0: {total_quantized} or {visit_count_value}") 
+                raise ValueError(f"[LOAD] Total quantized or visit count value <= 0: {total_quantized} or {visit_count_value}. Infoset key: {infoset_key}") 
 
             reconstructed_strategy = [0.0] * N_ACTIONS
             index_quantized = 0
@@ -390,17 +387,15 @@ if __name__ == "__main__":
 
     seed = int(time.time())
     stacks = (100, 100, 100)
-    hands_per_iter = 16
-    iterations = 30_000
+    iterations = 200_000
 
     print("Configuration:")
     print(f"  Seed: {seed}")
     print(f"  Stacks: {stacks}")
-    print(f"  Mains par itération: {hands_per_iter}")
     print(f"  Itérations: {iterations}")
     print()
 
-    solver = CFRPlusSolver(seed=seed, stacks=stacks, hands_per_iter=hands_per_iter)
+    solver = CFRPlusSolver(seed=seed, stacks=stacks)
     solver.warm_start_from_policy("policy/avg_policy.json.gz")
 
     if PROFILE:

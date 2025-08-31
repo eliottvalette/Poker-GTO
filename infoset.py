@@ -213,7 +213,7 @@ def build_infoset_key_fast(game, hero) -> int:
 
     # Hand 169 idx
     card_1, card_2 = hero.cards
-    rank_to_index = {14:12,13:11,12:10,11:9,10:8,9:7,8:6,7:5,6:4,5:3,4:2,3:1,2:0}
+    rank_to_index = {14:0,13:1,12:2,11:3,10:4,9:5,8:6,7:7,6:8,5:9,4:10,3:11,2:12}
     i, j = rank_to_index[card_1.rank], rank_to_index[card_2.rank]
     suited = (card_1.suit == card_2.suit)
     if i == j:
@@ -246,32 +246,3 @@ def build_infoset_key_fast(game, hero) -> int:
                     HAND=hand_index, BOARD=bidx,
                     POT=pot_q, RATIO=ratio_q,
                     SPR=spr_q, HEROBOARD=hb)
-
-def build_infoset_key(game, hero: Player) -> Tuple[str, int]:
-    hand_index, hand_label = hand169_idx(hero.cards[0], hero.cards[1])
-    bidx, bname = board_bucket(game.community_cards)
-
-    pot_bb    = float(game.main_pot)
-    tocall_bb = max(0.0, float(game.current_maximum_bet - hero.current_player_bet))
-    live      = [p for p in game.players if p.is_active and not p.has_folded]
-    eff       = min([min(hero.stack, op.stack) for op in live if op is not hero],
-                    default=hero.stack)
-
-    pot_q   = qlog_bb(pot_bb)
-    ratio_q = ratio_bucket(tocall_bb, pot_bb)
-    spr_q   = spr_bucket(eff, pot_bb)
-    hb      = hero_vs_board_bucket(hero, game.community_cards)
-
-    dense = pack_u64(PHASE=PHASE_TO_ID[game.current_phase], ROLE=hero.role,
-                     HAND=hand_index, BOARD=bidx,
-                     POT=pot_q, RATIO=ratio_q,
-                     SPR=spr_q, HEROBOARD=hb)
-
-    readable = (
-        f"ph={game.current_phase} role={hero.role} "
-        f"hand={hand_label} bkt={bname} "
-        f"potQ={pot_q} ratioQ={ratio_q} sprQ={spr_q} "
-        f"heroBoard={hb}"
-    )
-
-    return readable, dense

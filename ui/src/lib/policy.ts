@@ -30,6 +30,7 @@ export const GROUP_COLORS: Record<GroupedAction, string> = {
 export type Dist = Partial<Record<ActionU, number>>;
 export type GridMix = Record<ActionU, number>;
 export type GroupedGridMix = Record<GroupedAction, number>;
+export type VisitCounts = number[];
 
 export function normalize(dist: Dist | undefined): GridMix {
   const v: GridMix = Object.fromEntries(ACTIONS.map(a => [a, dist?.[a] ?? 0])) as GridMix;
@@ -49,5 +50,34 @@ export function groupActions(mix: GridMix): GroupedGridMix {
     raise_allin: mix.RAISE + mix["ALL-IN"],
     check_call: mix.CHECK + mix.CALL,
     fold: mix.FOLD
+  };
+}
+
+// Fonction pour calculer les statistiques de visites
+export function calculateVisitStats(visitCounts: VisitCounts): { min: number; max: number; avg: number } {
+  const validVisits = visitCounts.filter(v => v > 0);
+  if (validVisits.length === 0) return { min: 0, max: 0, avg: 0 };
+  
+  return {
+    min: Math.min(...validVisits),
+    max: Math.max(...validVisits),
+    avg: validVisits.reduce((a, b) => a + b, 0) / validVisits.length
+  };
+}
+
+// Fonction pour calculer les statistiques pondérées par visites
+export function calculateWeightedStats(visitCounts: VisitCounts): { 
+  totalVisits: number; 
+  avgVisitsPerHand: number; 
+  coverage: number; // pourcentage de mains avec des visites
+} {
+  const totalVisits = visitCounts.reduce((a, b) => a + b, 0);
+  const handsWithVisits = visitCounts.filter(v => v > 0).length;
+  const coverage = (handsWithVisits / visitCounts.length) * 100;
+  
+  return {
+    totalVisits,
+    avgVisitsPerHand: totalVisits / visitCounts.length,
+    coverage
   };
 }

@@ -102,7 +102,7 @@ def main():
     for k_str, dist in base_policy.items():
         k = int(k_str)
         fields = unpack_infoset_key_dense(k)
-        phase_name = ID_TO_PHASE.get(fields["PHASE"], str(fields["PHASE"]))
+        ratio_bucket = fields["RATIO"]
         hand_idx = fields["HAND"]
         label_169 = _169_LABEL.get(hand_idx, "??")
 
@@ -112,7 +112,7 @@ def main():
         legal_actions = list(dist.keys())
         artificial = {a: 0.0 for a in legal_actions}
 
-        if phase_name == "PREFLOP":
+        if ratio_bucket == 0:
             # simple règle: open = RAISE, sinon CHECK/FOLD selon légalité
             if "RAISE" in legal_actions:
                 artificial["RAISE"] = proba_open

@@ -6,7 +6,7 @@ import { inflate } from "pako";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { ROLES, PHASES, ACTIONS, normalize, type GridMix } from "@/lib/policy";
+import { ROLES, PHASES, ACTIONS, normalize, type GridMix, calculateWeightedStats } from "@/lib/policy";
 import { unpackInfosetKeyDense } from "@/lib/infoset";
 import Grid169 from "@/components/Grid169";
 import Legend from "@/components/Legend";
@@ -40,7 +40,7 @@ export default function Page() {
   const [phaseIdx, setPhaseIdx] = useState<number>(0);
   const [roleIdx, setRoleIdx] = useState<number>(0);
   const [labelThreshold, setLabelThreshold] = useState<number>(25);
-  const [heatmapMode, setHeatmapMode] = useState<boolean>(false);
+  const [heatmapMode, setHeatmapMode] = useState<"action" | "visits" | false>(false);
   useEffect(() => {
     (async () => {
       const res = await fetch("/avg_policy.json.gz");
@@ -59,31 +59,36 @@ export default function Page() {
   }, []);
   
 
-  const gridMixes: GridMix[] = useMemo(() => {
+  const { gridMixes, visitCounts }: { gridMixes: GridMix[]; visitCounts: number[] } = useMemo(() => {
     const sums: GridMix[] = Array.from({length:169}, () =>
       Object.fromEntries(ACTIONS.map(a=>[a,0])) as GridMix
     );
-    const counts = Array(169).fill(0);
+    const totalVisits = Array(169).fill(0);
 
     if (policy) {
-      for (const [kStr, {dist, visits}] of Object.entries(policy)) {
+      for (const [kStr, {dist, visits: visitCount}] of Object.entries(policy)) {
         const f = unpackInfosetKeyDense(kStr);
         if (f.phase !== phaseIdx || f.role !== roleIdx) continue;
         if (f.hand < 0 || f.hand >= 169) continue; // garde-fou
         const probs = normalize(dist);
-        for (const a of ACTIONS) sums[f.hand][a] += probs[a];
-        counts[f.hand] += 1;
+        // Pondérer par le nombre de visites
+        for (const a of ACTIONS) sums[f.hand][a] += probs[a] * visitCount;
+        totalVisits[f.hand] += visitCount;
       }
     }
 
-    return sums.map((tot, h) => {
-      const c = counts[h] || 0;
-      if (!c) return Object.fromEntries(ACTIONS.map(a=>[a,0])) as GridMix;
-      const avg = Object.fromEntries(ACTIONS.map(a=>[a, tot[a]/c])) as GridMix;
+    const gridMixes = sums.map((tot, h) => {
+      const totalVisit = totalVisits[h] || 0;
+      if (totalVisit <= 0) return Object.fromEntries(ACTIONS.map(a=>[a,0])) as GridMix;
+      const avg = Object.fromEntries(ACTIONS.map(a=>[a, tot[a]/totalVisit])) as GridMix;
       const s = ACTIONS.reduce((acc,a)=>acc+(avg[a]||0),0);
       return s>0 ? Object.fromEntries(ACTIONS.map(a=>[a,(avg[a]||0)/s])) as GridMix : avg;
     });
+
+    return { gridMixes, visitCounts: totalVisits };
   }, [policy, phaseIdx, roleIdx]);
+
+  const weightedStats = useMemo(() => calculateWeightedStats(visitCounts), [visitCounts]);
 
   return (
     <main className="p-4 md:p-6 space-y-4">
@@ -99,8 +104,15 @@ export default function Page() {
                  onChange={(e)=>setLabelThreshold(parseInt(e.target.value || "0",10))}/>
         </div>
         <div className="flex items-center gap-2">
-          <Button className={heatmapMode ? " bg-primary text-primary-foreground hover:bg-primary/90 " : "bg-secondary text-secondary-foreground hover:bg-secondary/80 "} onClick={()=>setHeatmapMode(!heatmapMode)}>
-            Heatmap mode
+          <Button 
+            className={heatmapMode === "action" ? "bg-primary text-primary-foreground hover:bg-primary/90" : 
+                      heatmapMode === "visits" ? "bg-orange-600 text-white hover:bg-orange-700" :
+                      "bg-secondary text-secondary-foreground hover:bg-secondary/80"} 
+            onClick={() => setHeatmapMode(heatmapMode === false ? "action" : heatmapMode === "action" ? "visits" : false)}
+          >
+            {heatmapMode === "action" ? "Action Heatmap" : 
+             heatmapMode === "visits" ? "Visits Heatmap" : 
+             "Heatmap Mode"}
           </Button>
         </div>
       </div>
@@ -126,9 +138,18 @@ export default function Page() {
         <CardContent>
           {!policy ? <div className="text-muted-foreground">Chargement de <code>avg_policy.json.gz</code>…</div> : (
             <>
-              <Legend />
+              <div className="text-sm text-muted-foreground mb-3">
+                Statistiques pondérées par visites: {weightedStats.totalVisits.toLocaleString()} visites totales 
+                ({weightedStats.coverage.toFixed(1)}% de couverture, {weightedStats.avgVisitsPerHand.toFixed(0)} visites/mains en moyenne)
+              </div>
+              <Legend heatmapMode={heatmapMode} />
               <div className="mt-3">
-                <Grid169 gridMixes={gridMixes} heatmapMode={heatmapMode} labelThresholdPct={labelThreshold}/>
+                <Grid169 
+                  gridMixes={gridMixes} 
+                  visitCounts={visitCounts}
+                  heatmapMode={heatmapMode} 
+                  labelThresholdPct={labelThreshold}
+                />
               </div>
             </>
           )}

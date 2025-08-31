@@ -1,13 +1,14 @@
 // ui/src/components/Grid169.tsx
 "use client";
 import React from "react";
-import { GROUPED_ACTIONS, GROUP_COLORS, groupActions, type GridMix } from "@/lib/policy";
+import { GROUPED_ACTIONS, GROUP_COLORS, groupActions, type GridMix, type VisitCounts, calculateVisitStats } from "@/lib/policy";
 
 const CARD_LABS = ["A","K","Q","J","T","9","8","7","6","5","4","3","2"] as const;
 type GroupedAction = typeof GROUPED_ACTIONS[number];
 
 const RED_HEX   = "#D62828"; // 100% raise/all-in
 const BLUE_HEX  = "#006DAA"; // 100% fold
+const GREEN_HEX = "#22C55E"; // High visits
 const NO_DATA_BG = "#F3F3F3";
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -25,38 +26,62 @@ function lerpColor(aHex: string, bHex: string, t: number): string {
 
 function Cell({
   mix,
+  visitCount,
   heatmapMode,
   labelThresholdPct = 18,
-}: { mix: GridMix; heatmapMode: boolean; labelThresholdPct?: number }) {
+  visitStats,
+}: { 
+  mix: GridMix; 
+  visitCount: number;
+  heatmapMode: "action" | "visits" | false; 
+  labelThresholdPct?: number;
+  visitStats: { min: number; max: number; avg: number };
+}) {
   const grouped = groupActions(mix);
 
-  if (heatmapMode) {
-    const f = grouped.fold;
-    const r = grouped.raise_allin;
-    const denom = f + r;
+  if (heatmapMode === "action") {
+    const fold = grouped.fold;
+    const raise_allin = grouped.raise_allin;
+    const denom = fold + raise_allin;
 
     // t = 0 -> rouge (100% raise), t = 1 -> bleu (100% fold)
-    const t = denom > 0 ? f / denom : NaN;
+    const t = denom > 0 ? fold / denom : NaN;
     const bg = Number.isNaN(t) ? NO_DATA_BG : lerpColor(RED_HEX, BLUE_HEX, t);
 
-    const mainPct = Math.max(f, r) * 100;
+    const mainPct = raise_allin * 100;
 
     return (
       <div
         className="relative w-20 h-16 border border-border hover:ring-1 hover:ring-ring"
         style={{ background: bg }}
-        title={`fold: ${(f*100).toFixed(0)}% | raise/all-in: ${(r*100).toFixed(0)}%`}
+        title={`fold: ${(fold*100).toFixed(0)}% | raise/all-in: ${(raise_allin*100).toFixed(0)}%`}
       >
-        {mainPct >= labelThresholdPct ? (
-          <div className="absolute inset-0 flex items-center justify-center text-[8px] font-semibold">
-            {Math.round(mainPct)}%
-          </div>
-        ) : null}
+        <div className="absolute inset-0 flex items-center justify-center text-[8px] font-semibold">
+          {Math.round(mainPct)}%
+        </div>
       </div>
     );
   }
 
-  // Mode barres (inchangé)
+  if (heatmapMode === "visits") {
+    const maxVisits = visitStats.max;
+    const intensity = maxVisits > 0 ? Math.min(1, visitCount / maxVisits) : 0;
+    const bg = visitCount > 0 ? lerpColor(NO_DATA_BG, GREEN_HEX, intensity) : NO_DATA_BG;
+
+    return (
+      <div
+        className="relative w-20 h-16 border border-border hover:ring-1 hover:ring-ring"
+        style={{ background: bg }}
+        title={`visits: ${visitCount.toLocaleString()}`}
+      >
+        <div className="absolute inset-0 flex items-center justify-center text-[8px] font-semibold">
+          {visitCount > 0 ? visitCount.toLocaleString() : "0"}
+        </div>
+      </div>
+    );
+  }
+
+  // Mode barres
   const order: { action: GroupedAction; p: number }[] =
     ["raise_allin","check_call","fold"].map(a => ({ action: a as GroupedAction, p: grouped[a as GroupedAction] ?? 0 }));
   let cursor = 0;
@@ -83,8 +108,18 @@ function Cell({
 }
 
 export default function Grid169({
-  gridMixes, heatmapMode, labelThresholdPct=18,
-}: { gridMixes: GridMix[]; heatmapMode: boolean; labelThresholdPct?: number; }) {
+  gridMixes, 
+  visitCounts,
+  heatmapMode, 
+  labelThresholdPct=18,
+}: { 
+  gridMixes: GridMix[]; 
+  visitCounts: VisitCounts;
+  heatmapMode: "action" | "visits" | false; 
+  labelThresholdPct?: number; 
+}) {
+  const visitStats = calculateVisitStats(visitCounts);
+  
   return (
     <div className="overflow-auto">
       <div className="inline-grid" style={{ gridTemplateColumns: `auto repeat(13, 5rem)` }}>
@@ -101,8 +136,10 @@ export default function Grid169({
                 <Cell
                   key={hidx}
                   mix={gridMixes[hidx]}
+                  visitCount={visitCounts[hidx]}
                   heatmapMode={heatmapMode}
                   labelThresholdPct={labelThresholdPct}
+                  visitStats={visitStats}
                 />
               );
             })}

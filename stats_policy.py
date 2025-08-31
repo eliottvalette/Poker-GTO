@@ -33,7 +33,7 @@ ID_TO_PHASE = {0:"PREFLOP",1:"FLOP",2:"TURN",3:"RIVER",4:"SHOWDOWN"}
 ROLE_LABELS = ["SB", "BB", "BTN"]
 _169_TO_LABEL = {i: _LABELS_169[i] for i in range(len(_LABELS_169))}
 
-def _decode_fields(key: int, unpacked: Dict[str, int], policy_dist: Dict[str, float] = None) -> Dict[str, str]:
+def _decode_fields(key: int, unpacked: Dict[str, int], policy_dist: Dict[str, float] = None, visits: int = None) -> Dict[str, str]:
     decoded: Dict[str, str] = {}
     decoded["KEY"] = key
     decoded["PHASE"] = ID_TO_PHASE.get(unpacked["PHASE"], str(unpacked["PHASE"]))
@@ -45,6 +45,7 @@ def _decode_fields(key: int, unpacked: Dict[str, int], policy_dist: Dict[str, fl
     decoded["RATIO"] = str(unpacked["RATIO"]) 
     decoded["SPR"] = str(unpacked["SPR"]) 
     decoded["HEROBOARD"] = str(unpacked["HEROBOARD"]) 
+    decoded["VISITS"] = visits
     
     # Add policy values for all actions, defaulting to 0.0 if not present
     if policy_dist is not None:
@@ -85,13 +86,13 @@ def mix_actions_by_phase(policy_json):
             print(f"{a}: {pct:.2f}%")
 
 
-def build_dataframe(policy_json: Dict[str, Dict[str, float]]):
+def build_dataframe(policy_json):
     # Collect all data in a list first for much better performance
     data_rows = []
     
     for k in tqdm(policy_json.keys()):
         unpacked_key = unpack_infoset_key_dense(int(k))
-        decoded = _decode_fields(int(k), unpacked_key, policy_json[k]) # Pass policy_dist here
+        decoded = _decode_fields(int(k), unpacked_key, policy_json[k][0], policy_json[k][1]) # Pass policy_dist here
         data_rows.append(decoded)
     
     # Create DataFrame from all collected data at once
@@ -104,14 +105,11 @@ def extraction_policy_data(src_path="policy/avg_policy.json.gz"):
 
     policy_json = {}
     for idx, (k, v) in enumerate(raw.items()):
-        dist, visits = _decode_compact_entry(v)
-        if dist:
-            policy_json[k] = dist
-        else:
-            raise ValueError(f"[EXTRACT] Dist is empty: {dist}")
+        distribution, visits = _decode_compact_entry(v)
+        policy_json[k] = [distribution, visits]
         
         if idx < 10:
-            print(f"{k}: [{dist} / {visits}]")
+            print(f"{k}: [{distribution} / {visits}]")
 
     df = build_dataframe(policy_json)
     df.to_csv("policy/avg_policy.csv", index=False)

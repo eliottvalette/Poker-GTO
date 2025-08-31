@@ -1,7 +1,7 @@
 # run_game_with_keys.py
 import random as rd
 from poker_game_expresso import PokerGameExpresso, GameInit
-from infoset import build_infoset_key
+from infoset import build_infoset_key_fast
 
 # -------------------- Demo: run one game and print the key each step --------------------
 def main():
@@ -23,7 +23,7 @@ def main():
         hero = game.players[game.current_role]
 
         # Affiche la clé avant l'action du joueur courant
-        readable, dense = build_infoset_key(game, hero)
+        dense = build_infoset_key_fast(game, hero)
         print(f"[STEP {step:02d}] {hero.name} -> {readable} | key=0x{dense:016X}")
 
 
