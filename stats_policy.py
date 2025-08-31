@@ -1,4 +1,4 @@
-# make_synthetic_policy.py
+# stats_policy.py
 from __future__ import annotations
 import json
 import gzip
@@ -8,32 +8,30 @@ from infoset import _LABELS_169
 import pandas as pd 
 from tqdm import tqdm
 
-def _decode_compact_entry(entry: list[int]) -> Dict[str, float]:
-    mask = entry[0]
-    qs = entry[1:]
-    total = sum(qs)
+def _decode_compact_entry(entry) -> Dict[str, float]:
+    # si c'est l'ancien format (liste brute)
+    visits = entry["visits"]
+    mask = entry["policy"][0]
+    quantized = entry["policy"][1:]
+
+    total = sum(quantized)
     if total <= 0:
-        return {}
+        raise ValueError(f"[DECODE] Total <= 0: {total}")
+
     dist = {}
-    idx_q = 0
-    for i, a in enumerate(ACTIONS):
-        if (mask >> i) & 1:
-            q = qs[idx_q]
-            dist[a] = q / total
-            idx_q += 1
-    return dist
+    idx_quantized = 0
+    for action_index, action_name in enumerate(ACTIONS):
+        if (mask >> action_index) & 1:
+            q = quantized[idx_quantized]
+            dist[action_name] = q / total
+            idx_quantized += 1
+    return dist, visits
 
 # Actions canon
 ACTIONS = ["FOLD", "CHECK", "CALL", "RAISE", "ALL-IN"]
 ID_TO_PHASE = {0:"PREFLOP",1:"FLOP",2:"TURN",3:"RIVER",4:"SHOWDOWN"}
 ROLE_LABELS = ["SB", "BB", "BTN"]
 _169_TO_LABEL = {i: _LABELS_169[i] for i in range(len(_LABELS_169))}
-def _format_actions(proba_by_action: Dict[str, float]) -> str:
-    present = [(a, proba_by_action[a]) for a in ACTIONS if a in proba_by_action]
-    present.sort(key=lambda x: x[1], reverse=True)
-    parts = [f"{a:<6} {p*100:6.2f}%" for a, p in present]
-    return "  " + "  |  ".join(parts)
-
 
 def _decode_fields(unpacked: Dict[str, int], policy_dist: Dict[str, float] = None) -> Dict[str, str]:
     decoded: Dict[str, str] = {}
@@ -63,12 +61,12 @@ def mix_actions_by_phase(policy_json):
         f = unpack_infoset_key_dense(int(k))
         ph = ID_TO_PHASE.get(f["PHASE"], str(f["PHASE"]))
         if ph not in mix: 
-            continue
+            raise ValueError(f"[MIX] Phase not in mix: {ph}")
 
         # normalise la dist de l’infoset (sur actions présentes)
         s = sum(dist.values())
         if s <= 0: 
-            continue
+            raise ValueError(f"[MIX] Sum <= 0: {s}")    
         norm = {a: (dist.get(a,0.0)/s) for a in ACTIONS}
 
         # moyenne "macro" : somme des vecteurs puis / nb d'infosets
@@ -79,7 +77,7 @@ def mix_actions_by_phase(policy_json):
     for ph in phases:
         if count[ph] == 0:
             print(f"\n== {ph} ==\n(no data)")
-            continue
+            raise ValueError(f"[MIX] Count == 0: {count[ph]}")
         print(f"\n== {ph} ==")
         for a in ACTIONS:
             pct = 100.0 * mix[ph][a] / count[ph]
@@ -104,11 +102,15 @@ def extraction_policy_data(src_path="policy/avg_policy.json.gz"):
         raw = json.load(f)
 
     policy_json = {}
-    for k, v in raw.items():
-        if isinstance(v, list) and v and isinstance(v[0], int):
-            dist = _decode_compact_entry(v)
-            if dist:
-                policy_json[k] = dist
+    for idx, (k, v) in enumerate(raw.items()):
+        dist, visits = _decode_compact_entry(v)
+        if dist:
+            policy_json[k] = dist
+        else:
+            raise ValueError(f"[EXTRACT] Dist is empty: {dist}")
+        
+        if idx < 10:
+            print(f"{k}: [{dist} / {visits}]")
 
     df = build_dataframe(policy_json)
     df.to_csv("policy/avg_policy.csv", index=False)

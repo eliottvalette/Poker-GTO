@@ -12,12 +12,14 @@ import Grid169 from "@/components/Grid169";
 import Legend from "@/components/Legend";
 import { Button } from "@/components/ui/button";
 
-type Policy = Record<string, Record<string, number>>;
+type PolicyEntry = { dist: Record<string, number>, visits: number };
+type Policy = Record<string, PolicyEntry>;
 
-// Decode l'entrée compacte [mask, q...] -> {action: proba}
-function decodeCompact(entry: number[]): Record<string, number> {
-  const mask = entry?.[0] ?? 0;
-  const qs = entry.slice(1);
+// Decode l'entrée compacte {policy:[mask,q...], visits:n} -> {action: proba}
+function decodeCompact(entry: {policy:number[], visits:number}): Record<string, number> {
+  const arr = entry.policy;
+  const mask = arr?.[0] ?? 0;
+  const qs = arr.slice(1);
   const total = qs.reduce((a,b)=>a+b,0);
   if (!mask || total <= 0) return {};
   const ACTIONS = ["FOLD","CHECK","CALL","RAISE","ALL-IN"] as const;
@@ -32,24 +34,30 @@ function decodeCompact(entry: number[]): Record<string, number> {
   return dist;
 }
 
+
 export default function Page() {
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [phaseIdx, setPhaseIdx] = useState<number>(0);
   const [roleIdx, setRoleIdx] = useState<number>(0);
-  const [labelThreshold, setLabelThreshold] = useState<number>(18);
+  const [labelThreshold, setLabelThreshold] = useState<number>(25);
   const [heatmapMode, setHeatmapMode] = useState<boolean>(false);
   useEffect(() => {
     (async () => {
       const res = await fetch("/avg_policy.json.gz");
       const buf = await res.arrayBuffer();
       const jsonText = new TextDecoder("utf-8").decode(inflate(new Uint8Array(buf)));
-      const raw: Record<string, number[]> = JSON.parse(jsonText);
+      const raw: Record<string, {policy:number[], visits:number}> = JSON.parse(jsonText);
       const decoded: Policy = Object.fromEntries(
-        Object.entries(raw).map(([k, v]) => [k, decodeCompact(v)])
+        Object.entries(raw).map(([k, v]) => [k, {
+          dist: decodeCompact(v),
+          visits: v.visits
+        }])
       );
+      
       setPolicy(decoded);
     })().catch(console.error);
   }, []);
+  
 
   const gridMixes: GridMix[] = useMemo(() => {
     const sums: GridMix[] = Array.from({length:169}, () =>
@@ -58,7 +66,7 @@ export default function Page() {
     const counts = Array(169).fill(0);
 
     if (policy) {
-      for (const [kStr, dist] of Object.entries(policy)) {
+      for (const [kStr, {dist, visits}] of Object.entries(policy)) {
         const f = unpackInfosetKeyDense(kStr);
         if (f.phase !== phaseIdx || f.role !== roleIdx) continue;
         if (f.hand < 0 || f.hand >= 169) continue; // garde-fou
