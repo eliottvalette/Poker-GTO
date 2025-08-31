@@ -4,13 +4,23 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { inflate } from "pako";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ROLES, PHASES, ACTIONS, normalize, type GridMix, calculateWeightedStats } from "@/lib/policy";
 import { unpackInfosetKeyDense } from "@/lib/infoset";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Grid169 from "@/components/Grid169";
 import Legend from "@/components/Legend";
+import PreciseCase from "@/components/PreciseCase";
 import { Button } from "@/components/ui/button";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarHeader,
+  SidebarProvider,
+  SidebarTrigger,
+  SidebarInset,
+} from "@/components/ui/sidebar";
 
 type PolicyEntry = { dist: Record<string, number>, visits: number };
 type Policy = Record<string, PolicyEntry>;
@@ -41,6 +51,7 @@ export default function Page() {
   const [roleIdx, setRoleIdx] = useState<number>(0);
   const [labelThreshold, setLabelThreshold] = useState<number>(25);
   const [heatmapMode, setHeatmapMode] = useState<"action" | "visits" | false>(false);
+  
   useEffect(() => {
     (async () => {
       const res = await fetch("/avg_policy.json.gz");
@@ -91,70 +102,91 @@ export default function Page() {
   const weightedStats = useMemo(() => calculateWeightedStats(visitCounts), [visitCounts]);
 
   return (
-    <main className="p-4 md:p-6 space-y-4">
-      <div className="flex items-end justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl md:text-2xl font-semibold">GTO Viewer</h1>
-          <p className="text-sm text-muted-foreground">Grille 13x13 — chaque case affiche une rangée (row) proportionnelle au mix d&apos;actions.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="text-sm text-muted-foreground">Label ≥ %</div>
-          <Input type="number" className="w-20" value={labelThreshold}
-                 min={0} max={100}
-                 onChange={(e)=>setLabelThreshold(parseInt(e.target.value || "0",10))}/>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button 
-            className={heatmapMode === "action" ? "bg-primary text-primary-foreground hover:bg-primary/90" : 
-                      heatmapMode === "visits" ? "bg-orange-600 text-white hover:bg-orange-700" :
-                      "bg-secondary text-secondary-foreground hover:bg-secondary/80"} 
-            onClick={() => setHeatmapMode(heatmapMode === false ? "action" : heatmapMode === "action" ? "visits" : false)}
-          >
-            {heatmapMode === "action" ? "Action Heatmap" : 
-             heatmapMode === "visits" ? "Visits Heatmap" : 
-             "Heatmap Mode"}
-          </Button>
-        </div>
-      </div>
-
-      <Card>
-        <CardHeader className="pb-2"><CardTitle>Phase & Position</CardTitle></CardHeader>
-        <CardContent className="flex gap-4 flex-wrap">
-          <Tabs value={String(phaseIdx)} onValueChange={(v)=>setPhaseIdx(parseInt(v,10))}>
-            <TabsList className="flex flex-wrap">
-              {PHASES.slice(0,4).map((ph, i)=>(<TabsTrigger key={ph} value={String(i)}>{ph}</TabsTrigger>))}
-            </TabsList>
-          </Tabs>
-          <Tabs value={String(roleIdx)} onValueChange={(v)=>setRoleIdx(parseInt(v,10))}>
-            <TabsList className="flex flex-wrap">
-              {ROLES.map((r, i)=>(<TabsTrigger key={r} value={String(i)}>{r}</TabsTrigger>))}
-            </TabsList>
-          </Tabs>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-2"><CardTitle>Mix d&apos;actions (13x13)</CardTitle></CardHeader>
-        <CardContent>
-          {!policy ? <div className="text-muted-foreground">Chargement de <code>avg_policy.json.gz</code>…</div> : (
-            <>
-              <div className="text-sm text-muted-foreground mb-3">
-                Statistiques pondérées par visites: {weightedStats.totalVisits.toLocaleString()} visites totales 
-                ({weightedStats.coverage.toFixed(1)}% de couverture, {weightedStats.avgVisitsPerHand.toFixed(0)} visites/mains en moyenne)
+    <SidebarProvider>
+      <Sidebar>
+        <SidebarHeader className="border-b border-border p-4">
+          <div className="flex items-center gap-2">
+            <SidebarTrigger />
+            <h1 className="text-lg font-semibold">GTO Viewer</h1>
+          </div>
+        </SidebarHeader>
+        <SidebarContent className="p-4 space-y-4">
+          <Card>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Button 
+                  className={heatmapMode === "action" ? "bg-primary text-primary-foreground hover:bg-primary/90" : 
+                            heatmapMode === "visits" ? "bg-orange-600 text-white hover:bg-orange-700" :
+                            "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80"} 
+                  onClick={() => setHeatmapMode(heatmapMode === false ? "action" : heatmapMode === "action" ? "visits" : false)}
+                >
+                  {heatmapMode === "action" ? "Action Heatmap" : 
+                   heatmapMode === "visits" ? "Visits Heatmap" : 
+                   "Heatmap Mode"}
+                </Button>
               </div>
-              <Legend heatmapMode={heatmapMode} />
-              <div className="mt-3">
-                <Grid169 
-                  gridMixes={gridMixes} 
-                  visitCounts={visitCounts}
-                  heatmapMode={heatmapMode} 
-                  labelThresholdPct={labelThreshold}
-                />
+              <div className="space-y-2">
+                <Label htmlFor="phase">Phase</Label>
+                <Select value={String(phaseIdx)} onValueChange={(v) => setPhaseIdx(parseInt(v))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PHASES.slice(0, 4).map((phase, i) => (
+                      <SelectItem key={phase} value={String(i)}>{phase}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-    </main>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Position</div>
+                <Tabs value={String(roleIdx)} onValueChange={(v)=>setRoleIdx(parseInt(v,10))}>
+                  <TabsList className="grid w-full grid-cols-3">
+                    {ROLES.map((r, i)=>(<TabsTrigger key={r} value={String(i)}>{r}</TabsTrigger>))}
+                  </TabsList>
+                </Tabs>
+              </div>
+            </CardContent>
+          </Card>
+          <PreciseCase policy={policy} />
+        </SidebarContent>
+      </Sidebar>
+
+      <SidebarInset>
+        <main className="p-4 md:p-6 space-y-4">
+          <div className="flex items-end justify-between gap-3 flex-wrap">
+            <div>
+              <h1 className="text-xl md:text-2xl font-semibold">GTO Viewer</h1>
+            </div>
+          </div>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Mix d&apos;actions (13x13)</CardTitle>
+              <CardDescription>
+                  Statistiques pondérées par visites: {weightedStats.totalVisits.toLocaleString()} visites totales 
+                  ({weightedStats.coverage.toFixed(1)}% de couverture, {weightedStats.avgVisitsPerHand.toFixed(0)} visites/mains en moyenne)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!policy ? <div className="text-muted-foreground">Chargement de <code>avg_policy.json.gz</code>…</div> : (
+                <>
+                  <Legend heatmapMode={heatmapMode} />
+                  <div className="mt-3">
+                    <Grid169 
+                      gridMixes={gridMixes} 
+                      visitCounts={visitCounts}
+                      heatmapMode={heatmapMode} 
+                      labelThresholdPct={labelThreshold}
+                    />
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

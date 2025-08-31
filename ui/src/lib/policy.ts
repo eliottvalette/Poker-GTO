@@ -32,6 +32,10 @@ export type GridMix = Record<ActionU, number>;
 export type GroupedGridMix = Record<GroupedAction, number>;
 export type VisitCounts = number[];
 
+// Policy types
+export type PolicyEntry = { dist: Record<string, number>, visits: number };
+export type Policy = Record<string, PolicyEntry>;
+
 export function normalize(dist: Dist | undefined): GridMix {
   const v: GridMix = Object.fromEntries(ACTIONS.map(a => [a, dist?.[a] ?? 0])) as GridMix;
   const s = ACTIONS.reduce((acc,a)=>acc+(v[a]||0),0);
