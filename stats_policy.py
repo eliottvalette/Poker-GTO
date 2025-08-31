@@ -54,23 +54,6 @@ def _decode_fields(unpacked: Dict[str, int], policy_dist: Dict[str, float] = Non
     
     return decoded
 
-
-def _format_fields(decoded: Dict[str, str]) -> str:
-    order = ["PHASE", "ROLE", "HAND", "BOARD", "POT", "RATIO", "SPR", "HEROBOARD"]
-    labels = {
-        "PHASE": "Phase",
-        "ROLE": "Role",
-        "HAND": "Hand",
-        "BOARD": "Board",
-        "POT": "PotQ",
-        "RATIO": "RatioQ",
-        "SPR": "SprQ",
-        "HEROBOARD": "HeroBoard",
-    }
-    max_label = max(len(v) for v in labels.values())
-    lines = [f"{labels[k]:<{max_label}} : {decoded[k]}" for k in order]
-    return "\n".join(lines)
-
 def mix_actions_by_phase(policy_json):
     phases = ["PREFLOP","FLOP","TURN","RIVER"]
     mix = {ph:{a:0.0 for a in ACTIONS} for ph in phases}
@@ -126,18 +109,6 @@ def extraction_policy_data(src_path="policy/avg_policy.json.gz"):
             dist = _decode_compact_entry(v)
             if dist:
                 policy_json[k] = dist
-
-    # Overview of first 5 infosets
-    infoset_keys = list(policy_json.keys())
-    for k in infoset_keys[:5]:
-        unpacked_key = unpack_infoset_key_dense(int(k))
-        decoded = _decode_fields(unpacked_key, policy_json[k]) # Pass policy_dist here
-
-        print(f"Infoset: {k}")
-        print(_format_actions(policy_json[k]))
-        print(_format_fields(decoded))
-        print("-" * 100)
-        print()
 
     df = build_dataframe(policy_json)
     df.to_csv("policy/avg_policy.csv", index=False)

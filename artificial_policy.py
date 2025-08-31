@@ -79,35 +79,38 @@ def main():
         k = int(k_str)
         fields = unpack_infoset_key_dense(k)
         phase = ID_TO_PHASE.get(fields["PHASE"], str(fields["PHASE"]))
-        role  = fields["ROLE"]
+        legal_actions = list(dist.keys())
         hand_idx = fields["HAND"]
-        spr_q = fields["SPR"]
 
         label_169 = _169_LABEL[hand_idx]
-        p_open = float(open_range.get(label_169, 0.0))
+        proba_open = float(open_range.get(label_169, 0.0))
 
-        p_raise = max(0.0, min(1.0, p_open))
-        p_fold  = 1.0 - p_raise
-        p_call  = 0.0
-        p_allin = 0.0
+        artificial_policy = {legal_action:0.0 for legal_action in legal_actions}
+        if phase == "PREFLOP":
+            if "FOLD" in legal_actions:
+                artificial_policy["FOLD"] = 1 - proba_open
+            if "CHECK" in legal_actions:
+                artificial_policy["CHECK"] = 1 - proba_open
+            if "CALL" in legal_actions:
+                artificial_policy["CALL"] = 0.0
+            if "RAISE" in legal_actions:
+                artificial_policy["RAISE"] = proba_open
+            if "ALL-IN" in legal_actions:
+                artificial_policy["ALL-IN"] = 0.0
+        else:
+            num_legal_actions = len(legal_actions)
+            if "FOLD" in legal_actions:
+                artificial_policy["FOLD"] = 1 / num_legal_actions
+            if "CHECK" in legal_actions:
+                artificial_policy["CHECK"] = 1 / num_legal_actions
+            if "CALL" in legal_actions:
+                artificial_policy["CALL"] = 1 / num_legal_actions
+            if "RAISE" in legal_actions:
+                artificial_policy["RAISE"] = 1 / num_legal_actions
+            if "ALL-IN" in legal_actions:
+                artificial_policy["ALL-IN"] = 1 / num_legal_actions
 
-        if LIMP_ALLOWED and LIMP_FRACTION > 0.0:
-            move = min(p_raise, LIMP_FRACTION)
-            p_raise -= move
-            p_call  += move
-
-        if spr_q <= SPR_ALLIN_MAX_BUCKET and label_169 in ALLIN_HANDS and p_raise > 0.0:
-            move = min(p_raise, p_raise * ALLIN_FRACTION_OF_RAISE)
-            p_raise -= move
-            p_allin += move
-
-        out_float = {}
-        if p_fold > 0:  out_float["FOLD"] = p_fold
-        if p_call > 0:  out_float["CALL"] = p_call
-        if p_raise > 0: out_float["RAISE"] = p_raise
-        if p_allin > 0: out_float["ALL-IN"] = p_allin
-
-        compact = _encode_compact(out_float, keep_top_k=3)
+        compact = _encode_compact(artificial_policy, keep_top_k=3)
         if compact[0] != 0:
             new_policy_compact[k_str] = compact
             touched += 1
