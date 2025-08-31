@@ -274,6 +274,7 @@ class CFRPlusSolver:
                     self.save_policy_json(f"policy/avg_policy_iter_{iteration_index}.json.gz")
 
         self.save_policy_json("policy/avg_policy.json.gz")
+        self.save_policy_json("ui/public/avg_policy.json.gz")
         self.print_training_summary(iterations, "policy/avg_policy.json.gz")
 
         end_time = time.time()

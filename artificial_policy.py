@@ -102,7 +102,7 @@ def main():
     for k_str, dist in base_policy.items():
         k = int(k_str)
         fields = unpack_infoset_key_dense(k)
-        ratio_bucket = fields["RATIO"]
+        phase = fields["PHASE"]
         hand_idx = fields["HAND"]
         label_169 = _169_LABEL.get(hand_idx, "??")
 
@@ -112,7 +112,7 @@ def main():
         legal_actions = list(dist.keys())
         artificial = {a: 0.0 for a in legal_actions}
 
-        if ratio_bucket == 0:
+        if phase == 0:
             # simple règle: open = RAISE, sinon CHECK/FOLD selon légalité
             if "RAISE" in legal_actions:
                 artificial["RAISE"] = proba_open
@@ -125,10 +125,18 @@ def main():
             if "FOLD" in legal_actions and "CHECK" not in legal_actions:
                 artificial["FOLD"] = 1.0 - proba_open
         else:
-            # postflop: uniforme sur actions légales
             n = max(1, len(legal_actions))
             for a in legal_actions:
                 artificial[a] = 1.0 / n
+
+            if "FOLD" in legal_actions and n > 1:   # <- garde-fou
+                fold_prob = artificial["FOLD"]
+                artificial["FOLD"] = fold_prob / 2
+                bump = (fold_prob / 2) / (n - 1)
+                for a in legal_actions:
+                    if a != "FOLD":
+                        artificial[a] += bump
+
 
         compact = _encode_compact(artificial, keep_top_k=3)
         if compact[0] != 0:
@@ -143,7 +151,7 @@ def main():
         json.dump(new_policy_compact, f, separators=(",",":"), ensure_ascii=False)
 
     total_in = len(base_policy)
-    print(f"[OK] Infosets modifiés PREFLOP: {touched} / {total_in}")
+    print(f"[OK] Infosets modifiés: {touched} / {total_in}")
     print(f"[SAVE] {out_path}")
 
 if __name__ == "__main__":
