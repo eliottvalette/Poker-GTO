@@ -104,7 +104,7 @@ export default function Page() {
 
   return (
     <SidebarProvider>
-      <Sidebar>
+      <Sidebar variant="floating">
         <SidebarHeader className="border-b border-border p-4">
           <div className="flex items-center gap-2">
             <SidebarTrigger />
