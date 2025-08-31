@@ -115,8 +115,8 @@ export default function Page() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Button 
-                  className={heatmapMode === "action" ? "bg-primary text-primary-foreground hover:bg-primary/90" : 
-                            heatmapMode === "visits" ? "bg-orange-600 text-white hover:bg-orange-700" :
+                  className={heatmapMode === "action" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90" : 
+                            heatmapMode === "visits" ? "bg-orange-600 text-white w-full hover:bg-orange-700" :
                             "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80"} 
                   onClick={() => setHeatmapMode(heatmapMode === false ? "action" : heatmapMode === "action" ? "visits" : false)}
                 >
