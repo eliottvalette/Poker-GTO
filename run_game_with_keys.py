@@ -24,7 +24,7 @@ def main():
 
         # Affiche la clé avant l'action du joueur courant
         dense = build_infoset_key_fast(game, hero)
-        print(f"[STEP {step:02d}] {hero.name} -> {readable} | key=0x{dense:016X}")
+        print(f"[STEP {step:02d}] {hero.name} -> key=0x{dense:016X}")
 
 
         allowed = game.update_available_actions(
