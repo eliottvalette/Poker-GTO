@@ -33,8 +33,9 @@ ID_TO_PHASE = {0:"PREFLOP",1:"FLOP",2:"TURN",3:"RIVER",4:"SHOWDOWN"}
 ROLE_LABELS = ["SB", "BB", "BTN"]
 _169_TO_LABEL = {i: _LABELS_169[i] for i in range(len(_LABELS_169))}
 
-def _decode_fields(unpacked: Dict[str, int], policy_dist: Dict[str, float] = None) -> Dict[str, str]:
+def _decode_fields(key: int, unpacked: Dict[str, int], policy_dist: Dict[str, float] = None) -> Dict[str, str]:
     decoded: Dict[str, str] = {}
+    decoded["KEY"] = key
     decoded["PHASE"] = ID_TO_PHASE.get(unpacked["PHASE"], str(unpacked["PHASE"]))
     decoded["ROLE"] = ROLE_LABELS[unpacked["ROLE"]] if 0 <= unpacked["ROLE"] < len(ROLE_LABELS) else str(unpacked["ROLE"]) 
     decoded["HAND"] = _169_TO_LABEL.get(unpacked["HAND"], str(unpacked["HAND"]))
@@ -90,7 +91,7 @@ def build_dataframe(policy_json: Dict[str, Dict[str, float]]):
     
     for k in tqdm(policy_json.keys()):
         unpacked_key = unpack_infoset_key_dense(int(k))
-        decoded = _decode_fields(unpacked_key, policy_json[k]) # Pass policy_dist here
+        decoded = _decode_fields(int(k), unpacked_key, policy_json[k]) # Pass policy_dist here
         data_rows.append(decoded)
     
     # Create DataFrame from all collected data at once

@@ -2,124 +2,148 @@
 from __future__ import annotations
 import json
 import gzip
-from typing import Dict
+from typing import Dict, Tuple
 from infoset import unpack_infoset_key_dense, _LABELS_169
-
-def _decode_compact_entry(entry: list[int]) -> Dict[str, float]:
-    mask = entry[0]
-    qs = entry[1:]
-    total = sum(qs)
-    if total <= 0:
-        return {}
-    dist = {}
-    idx_q = 0
-    for i, a in enumerate(ACTIONS):
-        if (mask >> i) & 1:
-            q = qs[idx_q]
-            dist[a] = q / total
-            idx_q += 1
-    return dist
-
-def _encode_compact(dist: Dict[str, float], keep_top_k: int = 3) -> list[int]:
-    # normalise
-    s = sum(dist.values())
-    if s <= 0:
-        return [0]
-    norm = {a: dist[a]/s for a in dist}
-    items = [(i, norm.get(a, 0.0)) for i, a in enumerate(ACTIONS) if norm.get(a, 0.0) > 0.0]
-    items.sort(key=lambda x: x[1], reverse=True)
-    items = items[:keep_top_k]
-    ps = [p for _, p in items]
-    s2 = sum(ps)
-    ps = [p/s2 for p in ps]
-    qs = [int(round(p*255)) for p in ps]
-    diff = 255 - sum(qs)
-    if diff != 0 and qs:
-        j = max(range(len(qs)), key=lambda k: qs[k])
-        qs[j] = max(0, min(255, qs[j] + diff))
-    mask = 0
-    for i, _ in items:
-        mask |= (1 << i)
-    return [mask] + qs
+import os
 
 ACTIONS = ["FOLD", "CHECK", "CALL", "RAISE", "ALL-IN"]
 ID_TO_PHASE = {0:"PREFLOP",1:"FLOP",2:"TURN",3:"RIVER",4:"SHOWDOWN"}
 ROLE_NAMES   = ["SB","BB","BTN"]
 _169_LABEL   = {i: _LABELS_169[i] for i in range(len(_LABELS_169))}
 
-# --- Paramètres à ajuster ---
-SPR_ALLIN_MAX_BUCKET = 2      # si SPR bucket <= 2 -> on autorise un peu d'ALL-IN
+# --- Paramètres optionnels (non utilisés si tu ne t'en sers pas) ---
+SPR_ALLIN_MAX_BUCKET = 2
 ALLIN_HANDS = set(["AA","KK","QQ","JJ","AKs","AQs","AKo"])
-ALLIN_FRACTION_OF_RAISE = 0.25  # % du RAISE converti en ALL-IN quand SPR faible
-LIMP_ALLOWED = False            # si True, déplacer une partie de RAISE vers CALL
+ALLIN_FRACTION_OF_RAISE = 0.25
+LIMP_ALLOWED = False
 LIMP_FRACTION = 0.0
 
+def _decode_compact_entry(entry_list: list[int]) -> Dict[str, float]:
+    """Decode [mask, q...] -> {action: prob}"""
+    mask = entry_list[0]
+    qs = entry_list[1:]
+    total = sum(qs)
+    if not mask or total <= 0:
+        return {}
+    dist: Dict[str, float] = {}
+    qi = 0
+    for i, a in enumerate(ACTIONS):
+        if (mask >> i) & 1:
+            q = qs[qi] if qi < len(qs) else 0
+            qi += 1
+            dist[a] = q / total
+    return dist
+
+def _encode_compact(dist: Dict[str, float], keep_top_k: int = 3) -> list[int]:
+    """Encode {action: prob} -> [mask, q...] avec quantif sur 255"""
+    s = sum(dist.values())
+    if s <= 0:
+        return [0]
+    norm = {a: dist.get(a, 0.0) / s for a in ACTIONS if dist.get(a, 0.0) > 0.0}
+    items = [(i, norm.get(a, 0.0)) for i, a in enumerate(ACTIONS) if norm.get(a, 0.0) > 0.0]
+    items.sort(key=lambda x: x[1], reverse=True)
+    items = items[:keep_top_k]
+
+    probs = [p for _, p in items]
+    s2 = sum(probs)
+    probs = [p / s2 for p in probs] if s2 > 0 else []
+
+    quantized = [int(round(p * 255)) for p in probs]
+    diff = 255 - sum(quantized)
+    if diff != 0 and quantized:
+        j = max(range(len(quantized)), key=lambda k: quantized[k])
+        quantized[j] = max(0, min(255, quantized[j] + diff))
+
+    mask = 0
+    for i, _ in items:
+        mask |= (1 << i)
+    return [mask] + quantized
+
 def load_open_range(path="ranges/global_matrix.json") -> Dict[str, float]:
-    with open(path, "r") as f:
-        return json.load(f)  # ex: {"AA":1.0,"AKs":1.0,...} valeurs 0..1
+    if not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def decode_entry_any_format(value) -> Tuple[Dict[str, float], int]:
+    """
+    Accepte ancien format (list) ou nouveau (dict {"policy":[...], "visits":N}).
+    Renvoie (dist, visits).
+    """
+    if isinstance(value, list):
+        return _decode_compact_entry(value), 1
+    if isinstance(value, dict):
+        entry = value
+        plist = entry.get("policy")
+        visits = int(entry.get("visits", 1))
+        if isinstance(plist, list):
+            return _decode_compact_entry(plist), visits
+    return {}, 0
 
 def main():
     open_range = load_open_range()
 
-    # lecture policy gz compact
+    # lecture policy gz (ancien ou nouveau format)
     with gzip.open("policy/avg_policy.json.gz", "rt", encoding="utf-8") as f:
         raw = json.load(f)
 
     base_policy: Dict[str, Dict[str, float]] = {}
-    for k, v in raw.items():
-        if isinstance(v, list) and v and isinstance(v[0], int):
-            dist = _decode_compact_entry(v)
-            if dist:
-                base_policy[k] = dist
+    base_visits: Dict[str, int] = {}
 
-    new_policy_compact = {}
+    for k_str, v in raw.items():
+        dist, visits = decode_entry_any_format(v)
+        if dist:
+            base_policy[k_str] = dist
+            base_visits[k_str] = max(1, visits)
 
     touched = 0
+    new_policy_compact = {}
+
     for k_str, dist in base_policy.items():
         k = int(k_str)
         fields = unpack_infoset_key_dense(k)
-        phase = ID_TO_PHASE.get(fields["PHASE"], str(fields["PHASE"]))
-        legal_actions = list(dist.keys())
+        phase_name = ID_TO_PHASE.get(fields["PHASE"], str(fields["PHASE"]))
         hand_idx = fields["HAND"]
+        label_169 = _169_LABEL.get(hand_idx, "??")
 
-        label_169 = _169_LABEL[hand_idx]
+        # proba d'open souhaitée (par main) - 0 si range absente
         proba_open = float(open_range.get(label_169, 0.0))
 
-        artificial_policy = {legal_action:0.0 for legal_action in legal_actions}
-        if phase == "PREFLOP":
-            if "FOLD" in legal_actions:
-                artificial_policy["FOLD"] = 1 - proba_open
-            if "CHECK" in legal_actions:
-                artificial_policy["CHECK"] = 1 - proba_open
-            if "CALL" in legal_actions:
-                artificial_policy["CALL"] = 0.0
-            if "RAISE" in legal_actions:
-                artificial_policy["RAISE"] = proba_open
-            if "ALL-IN" in legal_actions:
-                artificial_policy["ALL-IN"] = 0.0
-        else:
-            num_legal_actions = len(legal_actions)
-            if "FOLD" in legal_actions:
-                artificial_policy["FOLD"] = 1 / num_legal_actions
-            if "CHECK" in legal_actions:
-                artificial_policy["CHECK"] = 1 / num_legal_actions
-            if "CALL" in legal_actions:
-                artificial_policy["CALL"] = 1 / num_legal_actions
-            if "RAISE" in legal_actions:
-                artificial_policy["RAISE"] = 1 / num_legal_actions
-            if "ALL-IN" in legal_actions:
-                artificial_policy["ALL-IN"] = 1 / num_legal_actions
+        legal_actions = list(dist.keys())
+        artificial = {a: 0.0 for a in legal_actions}
 
-        compact = _encode_compact(artificial_policy, keep_top_k=3)
+        if phase_name == "PREFLOP":
+            # simple règle: open = RAISE, sinon CHECK/FOLD selon légalité
+            if "RAISE" in legal_actions:
+                artificial["RAISE"] = proba_open
+            if "ALL-IN" in legal_actions:
+                artificial["ALL-IN"] = 0.0
+            if "CALL" in legal_actions:
+                artificial["CALL"] = 0.0
+            if "CHECK" in legal_actions:
+                artificial["CHECK"] = 1.0 - proba_open
+            if "FOLD" in legal_actions and "CHECK" not in legal_actions:
+                artificial["FOLD"] = 1.0 - proba_open
+        else:
+            # postflop: uniforme sur actions légales
+            n = max(1, len(legal_actions))
+            for a in legal_actions:
+                artificial[a] = 1.0 / n
+
+        compact = _encode_compact(artificial, keep_top_k=3)
         if compact[0] != 0:
-            new_policy_compact[k_str] = compact
+            new_policy_compact[k_str] = {
+                "policy": compact,
+                "visits": 10
+            }
             touched += 1
 
     out_path = "policy/avg_policy_artificial.json.gz"
     with gzip.open(out_path, "wt", encoding="utf-8") as f:
         json.dump(new_policy_compact, f, separators=(",",":"), ensure_ascii=False)
 
-    print(f"[OK] Infosets modifiés PREFLOP: {touched} / {len(base_policy)}")
+    total_in = len(base_policy)
+    print(f"[OK] Infosets modifiés PREFLOP: {touched} / {total_in}")
     print(f"[SAVE] {out_path}")
 
 if __name__ == "__main__":

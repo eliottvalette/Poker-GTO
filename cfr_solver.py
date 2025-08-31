@@ -360,10 +360,12 @@ class CFRPlusSolver:
             self.visit_count[infoset_key] = visit_count_value
         
         if DEBUG_CFR:
-            for infoset_key, strategy_vector in self.strategy_sum.items()[:3]:
+            for index, (infoset_key, strategy_vector) in enumerate(self.strategy_sum.items()):
                 print(f"[LOAD] Strategy vector: {strategy_vector}")
                 print(f"[LOAD] Visit count: {self.visit_count[infoset_key]}")
                 print(f"[LOAD] Infoset key: {infoset_key}")
+                if index >= 3:
+                    break
 
     @staticmethod
     def load_policy_json(path: str):
@@ -388,8 +390,8 @@ if __name__ == "__main__":
 
     seed = int(time.time())
     stacks = (100, 100, 100)
-    hands_per_iter = 8
-    iterations = 10_000
+    hands_per_iter = 16
+    iterations = 30_000
 
     print("Configuration:")
     print(f"  Seed: {seed}")
