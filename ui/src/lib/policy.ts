@@ -1,4 +1,6 @@
 // ui/src/lib/policy.ts
+import { unpackInfosetKeyDense } from "./infoset";
+
 export const ACTIONS = ["FOLD","CHECK","CALL","RAISE","ALL-IN"] as const;
 export type ActionU = typeof ACTIONS[number];
 export const ACTIONS_L = ["FOLD","CHECK","CALL","RAISE","ALL-IN"] as const;
@@ -70,7 +72,7 @@ export function calculateVisitStats(visitCounts: VisitCounts): { min: number; ma
 }
 
 // Fonction pour calculer les statistiques pondérées par visites
-export function calculateWeightedStats(visitCounts: VisitCounts): { 
+export function calculateWeightedStats(visitCounts: VisitCounts, phaseIdx?: number): { 
   totalVisits: number; 
   avgVisitsPerHand: number; 
   coverage: number; // pourcentage de mains avec des visites
@@ -84,4 +86,38 @@ export function calculateWeightedStats(visitCounts: VisitCounts): {
     avgVisitsPerHand: totalVisits / visitCounts.length,
     coverage
   };
+}
+
+// Fonction pour calculer les statistiques par phase
+export function calculatePhaseStats(policy: Policy | null): {
+  [phase: string]: { totalVisits: number; avgVisitsPerHand: number; coverage: number };
+} {
+  if (!policy) {
+    return PHASES.reduce((acc, phase) => {
+      acc[phase] = { totalVisits: 0, avgVisitsPerHand: 0, coverage: 0 };
+      return acc;
+    }, {} as Record<string, { totalVisits: number; avgVisitsPerHand: number; coverage: number }>);
+  }
+
+  const phaseVisits: Record<string, number[]> = {};
+  PHASES.forEach(phase => {
+    phaseVisits[phase] = Array(169).fill(0);
+  });
+
+  for (const [kStr, { visits }] of Object.entries(policy)) {
+    const f = unpackInfosetKeyDense(kStr);
+    if (f.hand < 0 || f.hand >= 169) continue;
+    
+    const phaseName = PHASES[f.phase];
+    if (phaseVisits[phaseName]) {
+      phaseVisits[phaseName][f.hand] += visits;
+    }
+  }
+
+  const result: Record<string, { totalVisits: number; avgVisitsPerHand: number; coverage: number }> = {};
+  PHASES.forEach(phase => {
+    result[phase] = calculateWeightedStats(phaseVisits[phase]);
+  });
+
+  return result;
 }

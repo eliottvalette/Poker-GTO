@@ -5,7 +5,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { inflate } from "pako";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ROLES, PHASES, ACTIONS, normalize, type GridMix, calculateWeightedStats } from "@/lib/policy";
+import { ROLES, PHASES, ACTIONS, normalize, type GridMix, calculateWeightedStats, calculatePhaseStats } from "@/lib/policy";
 import { unpackInfosetKeyDense } from "@/lib/infoset";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -100,6 +100,7 @@ export default function Page() {
   }, [policy, phaseIdx, roleIdx]);
 
   const weightedStats = useMemo(() => calculateWeightedStats(visitCounts), [visitCounts]);
+  const phaseStats = useMemo(() => calculatePhaseStats(policy), [policy]);
 
   return (
     <SidebarProvider>
@@ -166,7 +167,16 @@ export default function Page() {
               <CardTitle>Mix d&apos;actions (13x13)</CardTitle>
               <CardDescription>
                   Statistiques pondérées par visites: {weightedStats.totalVisits.toLocaleString()} visites totales 
-                  ({weightedStats.coverage.toFixed(1)}% de couverture, {weightedStats.avgVisitsPerHand.toFixed(0)} visites/mains en moyenne)
+                  ({weightedStats.avgVisitsPerHand.toFixed(0)} visites/mains en moyenne)
+                  <br />
+                  <span className="text-sm">
+                    {PHASES.slice(0, 4).map(phase => (
+                      <span key={phase}>
+                        {phase}: {phaseStats[phase]?.avgVisitsPerHand.toFixed(0) || '0'} visites/mains
+                        {phase !== 'RIVER' ? ' | ' : ''}
+                      </span>
+                    ))}
+                  </span>
               </CardDescription>
             </CardHeader>
             <CardContent>
