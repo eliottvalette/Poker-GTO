@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import Grid169 from "@/components/Grid169";
 import Legend from "@/components/Legend";
 import PreciseCaseCard from "@/components/PreciseCaseCard";
+import TestTable from "@/components/TestTable";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -50,7 +51,7 @@ export default function Page() {
   const [phaseIdx, setPhaseIdx] = useState<number>(0);
   const [roleIdx, setRoleIdx] = useState<number>(0);
   const [heatmapMode, setHeatmapMode] = useState<"action" | "visits" | false>(false);
-  const [mainTab, setMainTab] = useState<"overview"|"case"|"mix">("overview");
+  const [mainTab, setMainTab] = useState<"overview"|"case"|"test">("overview");
   const labelThreshold = 25;
   
   useEffect(() => {
@@ -158,7 +159,7 @@ export default function Page() {
               <div className="flex flex-col gap-2">
                 <Button variant="outline" className={mainTab === "overview" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 hover:text-primary-foreground" : "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 hover:text-secondary-foreground"} onClick={()=>setMainTab("overview")}>Overview</Button>
                 <Button variant="outline" className={mainTab === "case" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 hover:text-primary-foreground" : "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 hover:text-secondary-foreground"} onClick={()=>setMainTab("case")}>Cas précis</Button>
-                <Button variant="outline" className={mainTab === "mix" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 hover:text-primary-foreground" : "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 hover:text-secondary-foreground"} onClick={()=>setMainTab("mix")}>Coming soon…</Button>
+                <Button variant="outline" className={mainTab === "test" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 hover:text-primary-foreground" : "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 hover:text-secondary-foreground"} onClick={()=>setMainTab("test")}>Test Live</Button>
               </div>
             </CardContent>
           </Card>
@@ -210,17 +211,20 @@ export default function Page() {
           )}
 
           {mainTab === "case" && (
-            <PreciseCaseCard policy={policy} phaseIdx={phaseIdx} roleIdx={roleIdx} />
+            <PreciseCaseCard policy={policy} />
           )}
 
-          {mainTab === "mix" && (
+          {mainTab === "test" && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle>Mix d&apos;actions (13x13)</CardTitle>
-                <CardDescription>Coming soon…</CardDescription>
+                <CardTitle>Test</CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
-                WIP
+              <CardContent>
+                <div className="space-y-3">
+                  {!policy ? <div className="text-muted-foreground">Chargement de <code>avg_policy.json.gz</code>…</div> : (
+                    <TestTable policy={policy} />
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}
