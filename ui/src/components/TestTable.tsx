@@ -5,6 +5,7 @@ import { Card as UICard, CardContent, CardHeader, CardTitle } from "@/components
 import { Button } from "@/components/ui/button";
 import { PokerGame, buildInfosetKeyFast, type Action } from "@/lib/game";
 import { normalize, type Policy } from "@/lib/policy";
+import PokerTableFrame from "@/components/PokerTableFrame";
 
 type Seat = 0|1|2;
 
@@ -91,42 +92,55 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
         <CardTitle>Test</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex gap-2">
-          <Button variant={heroSeat===0?"default":"outline"} onClick={()=>setHeroSeat(0)}>Héro: SB</Button>
-          <Button variant={heroSeat===1?"default":"outline"} onClick={()=>setHeroSeat(1)}>Héro: BB</Button>
-          <Button variant={heroSeat===2?"default":"outline"} onClick={()=>setHeroSeat(2)}>Héro: BTN</Button>
-          <Button onClick={newHand} className="ml-auto">Nouvelle main</Button>
-        </div>
-
-        <div className="text-sm">
-          <div>Phase: <b>{game.current_phase}</b> | Pot: <b>{game.main_pot.toFixed(2)} BB</b> | Au tour de: <b>Player_{game.current_role} ({seatLabel(game.current_role as Seat)})</b></div>
-          <div>Board: [{boardStr||"-"}]</div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {game.players.map((p)=>(
-            <div key={p.name} className={`p-3 rounded border ${p.role===heroSeat?"border-primary":"border-border"} bg-muted/30`}>
-              <div className="text-sm font-medium">{p.name} — {seatLabel(p.role as Seat)}</div>
-              <div className="text-xs">Stack: {p.stack.toFixed(2)} | Bet: {p.current_player_bet.toFixed(2)} | {p.has_folded?"FOLD":p.is_all_in?"ALL-IN":""}</div>
-              <div className="text-sm mt-1">Cartes: {p.cards.length? `${p.cards[0].toString()} ${p.cards[1].toString()}` : "-"}</div>
+        <PokerTableFrame
+          seats={[
+            { id:0, label:"SB", stack:`${game.players[0].stack.toFixed(1)} BB`, smallBlind:true, active:!game.players[0].has_folded },
+            { id:1, label:"BB", stack:`${game.players[1].stack.toFixed(1)} BB`, bigBlind:true,  active:!game.players[1].has_folded },
+            { id:2, label:"BTN", stack:`${game.players[2].stack.toFixed(1)} BB`, active:!game.players[2].has_folded },
+          ]}
+          potLabel={`${game.main_pot.toFixed(2)} BB`}
+          heroSeat={heroSeat}
+          board={boardStr}
+        >
+          {/* barre d'actions */}
+          <div className="flex flex-wrap items-stretch gap-2">
+            <div className="flex gap-2">
+              <Button variant={heroSeat===0?"default":"secondary"} onClick={()=>setHeroSeat(0)}>Héro: SB</Button>
+              <Button variant={heroSeat===1?"default":"secondary"} onClick={()=>setHeroSeat(1)}>Héro: BB</Button>
+              <Button variant={heroSeat===2?"default":"secondary"} onClick={()=>setHeroSeat(2)}>Héro: BTN</Button>
+              <Button onClick={newHand} className="ml-2">Nouvelle main</Button>
             </div>
-          ))}
-        </div>
 
-        {game.current_phase!=="SHOWDOWN" && game.current_role===heroSeat && (
-          <div className="flex flex-wrap gap-2">
-            {game.update_available_actions(hero).map(a=>(
-              <Button key={a} onClick={()=>onHeroAction(a)}>{a}</Button>
-            ))}
+            {game.current_phase!=="SHOWDOWN" && game.current_role===heroSeat && (
+              <div className="ml-auto flex gap-2">
+                {game.update_available_actions(hero).map(a=>(
+                  <button
+                    key={a}
+                    onClick={()=>onHeroAction(a)}
+                    className={[
+                      // bouton glossy style Winamax
+                      "px-4 py-2 rounded-xl font-semibold text-sm tracking-wide",
+                      "bg-gradient-to-b from-[#263b50] to-[#172636] text-white",
+                      "ring-1 ring-white/15 shadow-[inset_0_1px_0_0_rgba(255,255,255,.08),0_6px_20px_-4px_rgba(0,0,0,.6)]",
+                      "hover:from-[#2c4863] hover:to-[#193247] active:scale-[.98] transition",
+                    ].join(" ")}
+                  >
+                    {a}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
 
-        {game.current_phase==="SHOWDOWN" && (
-          <div className="text-sm">
-            <div className="font-medium">Showdown</div>
-            <div>Stacks finaux: {game.players.map(p=>`${p.name} ${p.stack.toFixed(2)}BB`).join(" | ")}</div>
-          </div>
-        )}
+          {game.current_phase==="SHOWDOWN" && (
+            <div className="mt-3 text-center text-cyan-100">
+              <div className="font-semibold">Showdown</div>
+              <div className="text-sm opacity-90">
+                {game.players.map(p=>`${p.name} ${p.stack.toFixed(2)}BB`).join(" | ")}
+              </div>
+            </div>
+          )}
+        </PokerTableFrame>
       </CardContent>
     </UICard>
   );
