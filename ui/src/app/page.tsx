@@ -215,18 +215,7 @@ export default function Page() {
           )}
 
           {mainTab === "test" && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle>Test</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {!policy ? <div className="text-muted-foreground">Chargement de <code>avg_policy.json.gz</code>…</div> : (
-                    <TestTable policy={policy} />
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <TestTable policy={policy} />
           )}
         </main>
       </SidebarInset>

@@ -99,9 +99,9 @@ export class PokerGame {
 
   constructor(init: GameInit) {
     this.players = [
-      new Player("Player_0",0,init.stacks[0]),
-      new Player("Player_1",1,init.stacks[1]),
-      new Player("Player_2",2,init.stacks[2]),
+      new Player("SB",0,init.stacks[0]),
+      new Player("BB",1,init.stacks[1]),
+      new Player("BTN",2,init.stacks[2]),
     ];
     // états importés
     for (let i=0;i<3;i++){

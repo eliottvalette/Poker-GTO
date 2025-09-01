@@ -9,6 +9,13 @@ import PokerTableFrame from "@/components/PokerTableFrame";
 
 type Seat = 0|1|2;
 
+type ActionHistoryEntry = {
+  phase: string;
+  player: string;
+  action: string;
+  timestamp: number;
+};
+
 function makeNewGame(): PokerGame {
   const g = new PokerGame({
     stacks: [100,100,100],
@@ -40,7 +47,17 @@ function sampleAction(dist: Record<string, number>, legal: Action[]): Action {
 export default function TestTable({ policy }: { policy: Policy | null }) {
   const [heroSeat, setHeroSeat] = useState<Seat>(2);
   const [game, setGame] = useState<PokerGame>(() => makeNewGame());
+  const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>([]);
   const [, force] = useState(0); // re-render
+
+  const addToHistory = useCallback((player: string, action: string) => {
+    setActionHistory(prev => [...prev, {
+      phase: game.current_phase,
+      player,
+      action,
+      timestamp: Date.now()
+    }]);
+  }, [game.current_phase]);
 
   const stepBotsForward = useCallback((g: PokerGame) => {
     if (!policy) return;
@@ -55,13 +72,15 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
       const dist = entry?.dist ?? {};
       const choice = sampleAction(dist, legal);
       g.process_action(p, choice);
+      addToHistory(p.name, choice);
       // continue tant que ce n'est pas au héros
     }
-  }, [policy, heroSeat]);
+  }, [policy, heroSeat, addToHistory]);
 
   function newHand() {
     const g = makeNewGame();
     setGame(g);
+    setActionHistory([]);
     force(n=>n+1);
   }
 
@@ -79,25 +98,24 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
     const legal = game.update_available_actions(hero);
     if (!legal.includes(a)) return;
     game.process_action(hero, a);
+    addToHistory(hero.name, a);
     stepBotsForward(game);
     force(n=>n+1);
   }
 
   const boardStr = game.community.map(c=>c.toString()).join(" ");
-  const seatLabel = (s:Seat)=> s===0?"SB":s===1?"BB":"BTN";
 
   return (
-    <UICard>
-      <CardHeader className="pb-2">
-        <CardTitle>Test</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <div className="space-y-4">
+      <UICard>
         <PokerTableFrame
           seats={[
             { id:0, label:"SB", stack:`${game.players[0].stack.toFixed(1)} BB`, smallBlind:true, active:!game.players[0].has_folded },
             { id:1, label:"BB", stack:`${game.players[1].stack.toFixed(1)} BB`, bigBlind:true,  active:!game.players[1].has_folded },
-            { id:2, label:"BTN", stack:`${game.players[2].stack.toFixed(1)} BB`, active:!game.players[2].has_folded },
-          ]}
+            { id:2, label:"BTN", stack:`${game.players[2].stack.toFixed(1)} BB`, active:!game.players[2].has_folded,
+              cards: heroSeat===2 ? game.players[2].cards.map(c=>c.toString()) : undefined
+            },
+          ].map((s)=> s.id===heroSeat ? { ...s, cards: game.players[heroSeat].cards.map(c=>c.toString()) } : s)}
           potLabel={`${game.main_pot.toFixed(2)} BB`}
           heroSeat={heroSeat}
           board={boardStr}
@@ -131,17 +149,49 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
               </div>
             )}
           </div>
-
-          {game.current_phase==="SHOWDOWN" && (
-            <div className="mt-3 text-center text-cyan-100">
-              <div className="font-semibold">Showdown</div>
-              <div className="text-sm opacity-90">
-                {game.players.map(p=>`${p.name} ${p.stack.toFixed(2)}BB`).join(" | ")}
-              </div>
-            </div>
-          )}
         </PokerTableFrame>
-      </CardContent>
-    </UICard>
+        {game.current_phase==="SHOWDOWN" && (
+          <div className="mt-3 text-center text-foreground">
+            <div className="font-semibold">Showdown</div>
+            <div className="text-sm text-muted-foreground">
+              {game.players.map(p=>`${p.name} ${p.stack.toFixed(2)}BB`).join(" | ")}
+            </div>
+          </div>
+        )}
+      </UICard>
+
+      {/* Historique des actions */}
+      <UICard>
+        <CardHeader>
+          <CardTitle className="text-lg">Historique des actions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="max-h-64 overflow-y-auto space-y-2">
+            {actionHistory.length === 0 ? (
+              <div className="text-gray-500 text-center py-4">Aucune action enregistrée</div>
+            ) : (
+              actionHistory.map((entry, index) => (
+                <div key={index} className="flex items-center justify-between p-2 bg-primary/5 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded">
+                      {index}
+                    </span>
+                    <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded">
+                      {entry.phase}
+                    </span>
+                    <span className="font-medium text-primary">{entry.player}</span>
+                    <span className="text-primary/60">→</span>
+                    <span className="font-semibold text-primary">{entry.action}</span>
+                  </div>
+                  <span className="text-xs text-primary/50">
+                    {new Date(entry.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </UICard>
+    </div>
   );
 }
