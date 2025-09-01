@@ -388,7 +388,7 @@ if __name__ == "__main__":
 
     seed = int(time.time())
     stacks = (100, 100, 100)
-    iterations = 200_000
+    iterations = 400_000
 
     print("Configuration:")
     print(f"  Seed: {seed}")

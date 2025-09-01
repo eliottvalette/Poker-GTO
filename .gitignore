@@ -12,7 +12,6 @@ files_to_send.py
 code_to_send_full.txt
 viz/viz_iter*
 ranges/ranges_*
-policy/avg_policy*
 profiling/
 viz/
 .DS_Store
