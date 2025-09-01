@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Grid169 from "@/components/Grid169";
 import Legend from "@/components/Legend";
-import PreciseCase from "@/components/PreciseCase";
+import PreciseCaseCard from "@/components/PreciseCaseCard";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -49,8 +49,9 @@ export default function Page() {
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [phaseIdx, setPhaseIdx] = useState<number>(0);
   const [roleIdx, setRoleIdx] = useState<number>(0);
-  const [labelThreshold, setLabelThreshold] = useState<number>(25);
   const [heatmapMode, setHeatmapMode] = useState<"action" | "visits" | false>(false);
+  const [mainTab, setMainTab] = useState<"overview"|"case"|"mix">("overview");
+  const labelThreshold = 25;
   
   useEffect(() => {
     (async () => {
@@ -112,7 +113,7 @@ export default function Page() {
           </div>
         </SidebarHeader>
         <SidebarContent className="p-4 space-y-4">
-          <Card>
+          <Card className="bg-muted/30">
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Button 
@@ -150,7 +151,17 @@ export default function Page() {
               </div>
             </CardContent>
           </Card>
-          <PreciseCase policy={policy} />
+
+          {/* Choix de page principale */}
+          <Card className="bg-muted/30">
+            <CardContent className="space-y-2">
+              <div className="flex flex-col gap-2">
+                <Button variant="outline" className={mainTab === "overview" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 hover:text-primary-foreground" : "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 hover:text-secondary-foreground"} onClick={()=>setMainTab("overview")}>Overview</Button>
+                <Button variant="outline" className={mainTab === "case" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 hover:text-primary-foreground" : "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 hover:text-secondary-foreground"} onClick={()=>setMainTab("case")}>Cas précis</Button>
+                <Button variant="outline" className={mainTab === "mix" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 hover:text-primary-foreground" : "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 hover:text-secondary-foreground"} onClick={()=>setMainTab("mix")}>Coming soon…</Button>
+              </div>
+            </CardContent>
+          </Card>
         </SidebarContent>
       </Sidebar>
 
@@ -162,39 +173,57 @@ export default function Page() {
             </div>
           </div>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle>Mix d&apos;actions (13x13)</CardTitle>
-              <CardDescription>
-                  Statistiques pondérées par visites: {weightedStats.totalVisits.toLocaleString()} visites totales 
-                  ({weightedStats.avgVisitsPerHand.toFixed(0)} visites/mains en moyenne)
-                  <br />
-                  <span className="text-sm">
-                    {PHASES.slice(0, 4).map(phase => (
-                      <span key={phase}>
-                        {phase}: {phaseStats[phase]?.avgVisitsPerHand.toFixed(0) || '0'} visites/mains
-                        {phase !== 'RIVER' ? ' | ' : ''}
-                      </span>
-                    ))}
-                  </span>
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {!policy ? <div className="text-muted-foreground">Chargement de <code>avg_policy.json.gz</code>…</div> : (
-                <>
-                  <Legend heatmapMode={heatmapMode} />
-                  <div className="mt-3">
-                    <Grid169 
-                      gridMixes={gridMixes} 
-                      visitCounts={visitCounts}
-                      heatmapMode={heatmapMode} 
-                      labelThresholdPct={labelThreshold}
-                    />
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+          {mainTab === "overview" && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle>Mix d&apos;actions (13x13)</CardTitle>
+                <CardDescription>
+                    Statistiques pondérées par visites: {weightedStats.totalVisits.toLocaleString()} visites totales 
+                    ({weightedStats.avgVisitsPerHand.toFixed(0)} visites/mains en moyenne)
+                    <br />
+                    <span className="text-sm">
+                      {PHASES.slice(0, 4).map(phase => (
+                        <span key={phase}>
+                          {phase}: {phaseStats[phase]?.avgVisitsPerHand.toFixed(0) || '0'} visites/mains
+                          {phase !== 'RIVER' ? ' | ' : ''}
+                        </span>
+                      ))}
+                    </span>
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {!policy ? <div className="text-muted-foreground">Chargement de <code>avg_policy.json.gz</code>…</div> : (
+                  <>
+                    <Legend heatmapMode={heatmapMode} />
+                    <div className="mt-3">
+                      <Grid169 
+                        gridMixes={gridMixes} 
+                        visitCounts={visitCounts}
+                        heatmapMode={heatmapMode} 
+                        labelThresholdPct={labelThreshold}
+                      />
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {mainTab === "case" && (
+            <PreciseCaseCard policy={policy} phaseIdx={phaseIdx} roleIdx={roleIdx} />
+          )}
+
+          {mainTab === "mix" && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle>Mix d&apos;actions (13x13)</CardTitle>
+                <CardDescription>Coming soon…</CardDescription>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                WIP
+              </CardContent>
+            </Card>
+          )}
         </main>
       </SidebarInset>
     </SidebarProvider>

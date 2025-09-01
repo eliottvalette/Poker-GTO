@@ -48,7 +48,7 @@ function Cell({
     const t = denom > 0 ? fold / denom : NaN;
     const bg = Number.isNaN(t) ? NO_DATA_BG : lerpColor(RED_HEX, BLUE_HEX, t);
 
-    const mainPct = raise_allin * 100;
+    const mainPct = raise_allin / denom * 100;
 
     return (
       <div
