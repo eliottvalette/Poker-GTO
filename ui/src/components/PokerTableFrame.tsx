@@ -18,7 +18,6 @@ export default function PokerTableFrame({
   potLabel,
   heroSeat,
   board,
-  className,
 }: {
   children?: React.ReactNode;
   seats: Seat[];
@@ -34,15 +33,12 @@ export default function PokerTableFrame({
 
   return (
     <div
-      className={
-        "relative mx-auto aspect-[16/9] w-full max-w-[1100px] rounded-3xl p-4 " +
-        "bg-[radial-gradient(ellipse_at_center,_#0b3866_0%,_#053056_50%,_#061c34_100%)] " +
-        "shadow-inner ring-1 ring-border " +
-        (className ?? "")
-      }
-    >
+      className={`relative mx-auto aspect-[16/9] w-full max-w-[1000px] rounded-3xl p-4 
+              bg-[radial-gradient(ellipse_at_center,_#0b3866_0%,_#053056_50%,_#061c34_100%)] 
+              shadow-inner ring-1 ring-border overflow-hidden`}
+      >
       {/* table hippodrome */}
-      <div className="absolute inset-[1.5rem] h-2/3 w-full rounded-full border border-primary/30 shadow-[inset_0_0_2rem_rgba(34,211,238,.15)]" />
+      <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[58%] w-[92%] h-[80%] rounded-full border border-primary/30 shadow-[inset_0_0_2rem_rgba(34,211,238,.15)]" />
 
       {/* logo & pot */}
       <div className="absolute top-8 left-1/2 -translate-x-1/2 text-muted-foreground/50 tracking-widest text-sm select-none">
@@ -61,7 +57,7 @@ export default function PokerTableFrame({
       </div>
 
       {/* sièges avec cartes */}
-      <div className="absolute left-[12%] top-[16%] flex flex-col items-center">
+      <div className="absolute left-[8%] top-[12%] flex flex-col items-center">
         <SeatChip {...left} />
         {left.cards?.length ? (
           <div className="mt-2 flex gap-1">
@@ -70,7 +66,7 @@ export default function PokerTableFrame({
         ) : null}
       </div>
 
-      <div className="absolute right-[12%] top-[16%] flex flex-col items-center">
+      <div className="absolute right-[8%] top-[12%] flex flex-col items-center">
         <SeatChip {...right} />
         {right.cards?.length ? (
           <div className="mt-2 flex gap-1">
@@ -99,29 +95,35 @@ export default function PokerTableFrame({
 function SeatChip({
   label,
   stack,
-  smallBlind,
-  bigBlind,
   active = true,
   highlight = false,
 }: {
   label: string;
   stack: string;
-  smallBlind?: boolean;
-  bigBlind?: boolean;
   active?: boolean;
   highlight?: boolean;
 }) {
   return (
     <div>
       <div
-        className={"rounded-2xl px-3 py-1.5 shadow-lg backdrop-blur bg-card/80 ring-1 ring-border" +(highlight ? " outline outline-primary/60" : "")}>
-        <div className="flex items-center gap-2">
+        className={
+          "rounded-2xl px-3 py-1.5 shadow-lg backdrop-blur bg-card/80 ring-1 ring-border w-40 h-10 flex items-center" +
+          (highlight ? " outline outline-primary/60" : "")
+        }
+      >
+        <div className="flex items-center justify-between w-full">
           <div
-            className={"h-6 w-6 rounded-full grid place-items-center text-[0.625rem] font-bold" +(active ? " bg-seat-active-bg" : " bg-seat-inactive-bg") + (active ? " text-seat-active-text" : " text-seat-inactive-text")}>
+            className={
+              "h-7 w-12 rounded-full grid place-items-center text-sm font-bold" +
+              (active
+                ? " bg-[var(--seat-active-bg)] text-[var(--seat-active-text)]"
+                : " bg-[var(--seat-inactive-bg)] text-[var(--seat-inactive-text)]")
+            }
+          >
             {label}
           </div>
           <div className="leading-[1.05]">
-            <div className="text-[0.6875rem] text-primary/90">{stack}</div>
+            <div className="text-md text-primary/90">{stack}</div>
           </div>
         </div>
       </div>
@@ -129,11 +131,12 @@ function SeatChip({
   );
 }
 
+
 /* ===== cartes style casino ===== */
 function PlayingCard({ text }: { text: string }) {
   if (text === "XX") {
     return (
-      <div className="w-14 h-19 rounded-sm border border-neutral-700 shadow-lg bg-neutral-950 grid place-items-center">
+      <div className="w-16 h-23 rounded-sm border border-neutral-700 shadow-lg bg-neutral-950 grid place-items-center">
         <div className="w-[80%] h-[80%] rounded-sm border border-border bg-neutral-800 grid place-items-center">
           <div className="w-[85%] h-[85%] rounded-sm border border-border bg-neutral-950 grid place-items-center">
             <span className="text-neutral-300">♠</span>
@@ -147,10 +150,10 @@ function PlayingCard({ text }: { text: string }) {
   const s = text.slice(-1);
   const isRed = s === "♥" || s === "♦";
   return (
-    <div className="relative w-12 h-16 rounded-sm border shadow-lg bg-[var(--card-bg)] border-[var(--card-border)]">
+    <div className="relative w-16 h-23 rounded-sm border shadow-lg bg-[var(--card-bg)] border-[var(--card-border)]">
       <div
         className={
-          "absolute top-0.5 left-1 text-[0.625rem] font-bold " +
+          "absolute top-0.5 left-1 text-md font-bold " +
           (isRed ? "text-[var(--card-red)]" : "text-[var(--card-black)]")
         }
       >
@@ -159,7 +162,7 @@ function PlayingCard({ text }: { text: string }) {
       </div>
       <div
         className={
-          "absolute right-1 bottom-0.5 rotate-180 text-[0.625rem] font-bold " +
+          "absolute right-1 bottom-0.5 rotate-180 text-md font-bold " +
           (isRed ? "text-[var(--card-red)]" : "text-[var(--card-black)]")
         }
       >
@@ -172,7 +175,7 @@ function PlayingCard({ text }: { text: string }) {
           (isRed ? "text-[var(--card-red)]" : "text-[var(--card-black)]")
         }
       >
-        <span className="text-xl">{s}</span>
+        <span className="text-2xl">{s}</span>
       </div>
     </div>
   );

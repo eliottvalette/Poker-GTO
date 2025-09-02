@@ -1,7 +1,7 @@
 // ui/src/components/TestTable.tsx
 "use client";
 import React, { useEffect, useState, useCallback } from "react";
-import { Card as UICard, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PokerGame, buildInfosetKeyFast, type Action } from "@/lib/game";
 import { normalize, type Policy } from "@/lib/policy";
@@ -111,7 +111,7 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
 
   return (
     <div className="space-y-4">
-      <UICard>
+      <Card>
         <PokerTableFrame
           seats={[
             {
@@ -181,18 +181,61 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
             )}
           </div>
         </PokerTableFrame>
-        {game.current_phase==="SHOWDOWN" && (
-          <div className="mt-3 text-center text-foreground">
-            <div className="font-semibold">Showdown</div>
-            <div className="text-sm text-muted-foreground">
-              {game.players.map(p=>`${p.name} ${p.stack.toFixed(2)}BB`).join(" | ")}
+        {game.current_phase === "SHOWDOWN" && (
+          <div className="border-t border-border bg-card/40 p-4">
+            <div className="mb-2 text-center font-semibold">Showdown — Résultats</div>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {game.players.map((p) => {
+                const delta = game.net_stack_changes[p.name] ?? 0;
+                const win = delta > 0;
+                const even = delta === 0;
+
+                return (
+                  <div key={p.name} className="rounded-lg bg-background/40 p-3 ring-1 ring-border">
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className="inline-flex items-center gap-2 text-sm font-medium">
+                        <span className="grid h-6 w-6 place-items-center rounded-full bg-muted text-[0.7rem]">
+                          {p.name}
+                        </span>
+                        {win && <span className="text-xs">🏆</span>}
+                      </span>
+                      <span
+                        className={
+                          win
+                            ? "rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-400"
+                            : even
+                            ? "rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                            : "rounded-md bg-rose-500/15 px-2 py-0.5 text-xs font-semibold text-rose-400"
+                        }
+                      >
+                        {win ? "+" : ""}{delta.toFixed(2)} BB
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Stack final</span>
+                      <span className="font-mono">{game.final_stacks[p.name].toFixed(2)} BB</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 text-center text-xs text-muted-foreground">
+              Pot distribué :{" "}
+              {Object.values(game.net_stack_changes)
+                .filter((x) => x > 0)
+                .reduce((a, b) => a + b, 0)
+                .toFixed(2)}{" "}
+              BB
             </div>
           </div>
         )}
-      </UICard>
+      </Card>
 
       {/* Historique des actions */}
-      <UICard>
+      <Card>
         <CardHeader>
           <CardTitle className="text-lg">Historique des actions</CardTitle>
         </CardHeader>
@@ -222,7 +265,7 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
             )}
           </div>
         </CardContent>
-      </UICard>
+      </Card>
     </div>
   );
 }

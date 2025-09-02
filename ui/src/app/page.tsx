@@ -106,7 +106,7 @@ export default function Page() {
 
   return (
     <SidebarProvider>
-      <Sidebar variant="floating">
+      <Sidebar variant="floating" className="p-3">
         <SidebarHeader className="border-b border-border p-4">
           <div className="flex items-center gap-2">
             <SidebarTrigger />
@@ -167,13 +167,7 @@ export default function Page() {
       </Sidebar>
 
       <SidebarInset>
-        <main className="p-4 md:p-6 space-y-4">
-          <div className="flex items-end justify-between gap-3 flex-wrap">
-            <div>
-              <h1 className="text-xl md:text-2xl font-semibold">GTO Viewer</h1>
-            </div>
-          </div>
-
+        <main className="py-3 px-4 space-y-4">
           {mainTab === "overview" && (
             <Card>
               <CardHeader className="pb-2">
