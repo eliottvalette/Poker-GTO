@@ -52,7 +52,6 @@ export default function Page() {
   const [roleIdx, setRoleIdx] = useState<number>(0);
   const [heatmapMode, setHeatmapMode] = useState<"action" | "visits" | false>(false);
   const [mainTab, setMainTab] = useState<"overview"|"case"|"test">("overview");
-  const labelThreshold = 25;
   
   useEffect(() => {
     (async () => {
