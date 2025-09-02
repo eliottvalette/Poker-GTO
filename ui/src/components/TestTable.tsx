@@ -114,16 +114,45 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
       <UICard>
         <PokerTableFrame
           seats={[
-            { id:0, label:"SB", stack:`${game.players[0].stack.toFixed(1)} BB`, smallBlind:true, active:!game.players[0].has_folded,
-              cards: game.current_phase==="SHOWDOWN" ? game.players[0].cards.map(c=>c.toString()) : undefined
+            {
+              id: 0,
+              label: "SB",
+              stack: `${game.players[0].stack.toFixed(1)} BB`,
+              smallBlind: true,
+              active: !game.players[0].has_folded,
+              cards:
+                heroSeat === 0
+                  ? game.players[0].cards.map(c => c.toString())
+                  : game.current_phase === "SHOWDOWN"
+                  ? game.players[0].cards.map(c => c.toString())
+                  : ["XX", "XX"], // face down
             },
-            { id:1, label:"BB", stack:`${game.players[1].stack.toFixed(1)} BB`, bigBlind:true,  active:!game.players[1].has_folded,
-              cards: game.current_phase==="SHOWDOWN" ? game.players[1].cards.map(c=>c.toString()) : undefined
+            {
+              id: 1,
+              label: "BB",
+              stack: `${game.players[1].stack.toFixed(1)} BB`,
+              bigBlind: true,
+              active: !game.players[1].has_folded,
+              cards:
+                heroSeat === 1
+                  ? game.players[1].cards.map(c => c.toString())
+                  : game.current_phase === "SHOWDOWN"
+                  ? game.players[1].cards.map(c => c.toString())
+                  : ["XX", "XX"],
             },
-            { id:2, label:"BTN", stack:`${game.players[2].stack.toFixed(1)} BB`, active:!game.players[2].has_folded,
-              cards: game.current_phase==="SHOWDOWN" ? game.players[2].cards.map(c=>c.toString()) : (heroSeat===2 ? game.players[2].cards.map(c=>c.toString()) : undefined)
+            {
+              id: 2,
+              label: "BTN",
+              stack: `${game.players[2].stack.toFixed(1)} BB`,
+              active: !game.players[2].has_folded,
+              cards:
+                heroSeat === 2
+                  ? game.players[2].cards.map(c => c.toString())
+                  : game.current_phase === "SHOWDOWN"
+                  ? game.players[2].cards.map(c => c.toString())
+                  : ["XX", "XX"],
             },
-          ].map((s)=> s.id===heroSeat ? { ...s, cards: game.players[heroSeat].cards.map(c=>c.toString()) } : s)}
+          ]}
           potLabel={`${game.main_pot.toFixed(2)} BB`}
           heroSeat={heroSeat}
           board={boardStr}
