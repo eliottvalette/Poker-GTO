@@ -158,27 +158,30 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
           board={boardStr}
         >
           {/* barre d'actions */}
-          <div className="flex flex-wrap items-stretch gap-2">
+          <div className="grid grid-cols-3 gap-2 justify-items-center">
             <div className="flex gap-2">
               <Button variant={heroSeat===0?"default":"secondary"} onClick={()=>setHeroSeat(0)}>Héro: SB</Button>
               <Button variant={heroSeat===1?"default":"secondary"} onClick={()=>setHeroSeat(1)}>Héro: BB</Button>
               <Button variant={heroSeat===2?"default":"secondary"} onClick={()=>setHeroSeat(2)}>Héro: BTN</Button>
-              <Button onClick={newHand} className="ml-2">Nouvelle main</Button>
             </div>
 
-            {game.current_phase!=="SHOWDOWN" && game.current_role===heroSeat && (
-              <div className="ml-auto flex gap-2">
-                {game.update_available_actions(hero).map(a=>(
-                  <Button
-                    key={a}
-                    onClick={()=>onHeroAction(a)}
-                    variant="default"
-                  >
-                    {a}
-                  </Button>
-                ))}
-              </div>
-            )}
+            <Button onClick={newHand} className="w-35">Nouvelle main</Button>
+
+            <div>
+              {game.current_phase!=="SHOWDOWN" && game.current_role===heroSeat && (
+                <div className="flex gap-2">
+                  {game.update_available_actions(hero).map(a=>(
+                    <Button
+                      key={a}
+                      onClick={()=>onHeroAction(a)}
+                      variant="default"
+                    >
+                      {a}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </PokerTableFrame>
         {game.current_phase === "SHOWDOWN" && (

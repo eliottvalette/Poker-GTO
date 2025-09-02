@@ -33,12 +33,12 @@ export default function PokerTableFrame({
 
   return (
     <div
-      className={`relative mx-auto aspect-[16/9] w-full max-w-[1000px] rounded-3xl p-4 
+      className={`relative mx-auto aspect-[16/9] w-[80%] rounded-3xl p-4 
               bg-[radial-gradient(ellipse_at_center,_#0b3866_0%,_#053056_50%,_#061c34_100%)] 
               shadow-inner ring-1 ring-border overflow-hidden`}
       >
       {/* table hippodrome */}
-      <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[58%] w-[92%] h-[80%] rounded-full border border-primary/30 shadow-[inset_0_0_2rem_rgba(34,211,238,.15)]" />
+      <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[64%] w-[92%] h-[74%] rounded-full border border-primary/30 shadow-[inset_0_0_2rem_rgba(34,211,238,.15)]" />
 
       {/* logo & pot */}
       <div className="absolute top-8 left-1/2 -translate-x-1/2 text-muted-foreground/50 tracking-widest text-sm select-none">
@@ -75,7 +75,7 @@ export default function PokerTableFrame({
         ) : null}
       </div>
 
-      <div className="absolute left-1/2 -translate-x-1/2 bottom-[8%] flex flex-col items-center">
+      <div className="absolute left-1/2 -translate-x-1/2 bottom-[14%] flex flex-col items-center">
         <SeatChip {...hero} highlight />
         {hero.cards?.length ? (
           <div className="mt-2 flex gap-2">
