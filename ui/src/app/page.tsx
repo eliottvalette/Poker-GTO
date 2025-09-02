@@ -51,6 +51,7 @@ export default function Page() {
   const [phaseIdx, setPhaseIdx] = useState<number>(0);
   const [roleIdx, setRoleIdx] = useState<number>(0);
   const [heatmapMode, setHeatmapMode] = useState<"action" | "visits" | false>(false);
+  const [detailedMode, setDetailedMode] = useState(false);
   const [mainTab, setMainTab] = useState<"overview"|"case"|"test">("overview");
   
   useEffect(() => {
@@ -127,6 +128,7 @@ export default function Page() {
                    "Heatmap Mode"}
                 </Button>
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="phase">Phase</Label>
                 <Select value={String(phaseIdx)} onValueChange={(v) => setPhaseIdx(parseInt(v))}>
@@ -170,30 +172,47 @@ export default function Page() {
           {mainTab === "overview" && (
             <Card className="gap-1">
               <CardHeader className="pb-1">
-                <CardTitle>Mix d&apos;actions (13x13)</CardTitle>
-                <CardDescription>
-                    Statistiques pondérées par visites: {weightedStats.totalVisits.toLocaleString()} visites totales 
-                    ({weightedStats.avgVisitsPerHand.toFixed(0)} visites/mains en moyenne)
-                    <br />
-                    <span className="text-sm">
-                      {PHASES.slice(0, 4).map(phase => (
-                        <span key={phase}>
-                          {phase}: {phaseStats[phase]?.avgVisitsPerHand.toFixed(0) || '0'} visites/mains
-                          {phase !== 'RIVER' ? ' | ' : ''}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Mix d&apos;actions (13x13)</CardTitle>
+                    <CardDescription>
+                        Statistiques pondérées par visites: {weightedStats.totalVisits.toLocaleString()} visites totales 
+                        ({weightedStats.avgVisitsPerHand.toFixed(0)} visites/mains en moyenne)
+                        <br />
+                        <span className="text-sm">
+                          {PHASES.slice(0, 4).map(phase => (
+                            <span key={phase}>
+                              {phase}: {phaseStats[phase]?.avgVisitsPerHand.toFixed(0) || '0'} visites/mains
+                              {phase !== 'RIVER' ? ' | ' : ''}
+                            </span>
+                          ))}
                         </span>
-                      ))}
-                    </span>
-                </CardDescription>
+                    </CardDescription>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <Button
+                      variant={detailedMode ? "default" : "secondary"}
+                      size="sm"
+                      onClick={()=>setDetailedMode(v=>!v)}
+                    >
+                      {detailedMode ? "Detailed: ON" : "Detailed: OFF"}
+                    </Button>
+                    <div className="text-xs text-muted-foreground text-right">
+                      (5 actions vs 3 groupes)
+                    </div>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 {!policy ? <div className="text-muted-foreground">Chargement de <code>avg_policy.json.gz</code>…</div> : (
                   <>
-                    <Legend heatmapMode={heatmapMode} />
+                    <Legend heatmapMode={heatmapMode} detailed={detailedMode} />
                     <div className="mt-1">
                       <Grid169 
                         gridMixes={gridMixes} 
                         visitCounts={visitCounts}
                         heatmapMode={heatmapMode} 
+                        detailed={detailedMode}
                       />
                     </div>
                   </>

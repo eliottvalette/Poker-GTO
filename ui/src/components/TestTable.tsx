@@ -14,6 +14,7 @@ type ActionHistoryEntry = {
   player: string;
   action: string;
   timestamp: number;
+  probs?: Record<string, number>; // distribution GTO si dispo
 };
 
 function makeNewGame(): PokerGame {
@@ -53,12 +54,13 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
   const [scoredHandId, setScoredHandId] = useState<number | null>(null);
   const [, force] = useState(0); // re-render
 
-  const addToHistory = useCallback((player: string, action: string) => {
+  const addToHistory = useCallback((player: string, action: string, probs?: Record<string, number>) => {
     setActionHistory(prev => [...prev, {
       phase: game.current_phase,
       player,
       action,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      probs
     }]);
   }, [game.current_phase]);
 
@@ -75,7 +77,7 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
       const dist = entry?.dist ?? {};
       const choice = sampleAction(dist, legal);
       g.process_action(p, choice);
-      addToHistory(p.name, choice);
+      addToHistory(p.name, choice, normalize(dist));
       // continue tant que ce n'est pas au héros
     }
   }, [policy, heroSeat, addToHistory]);
@@ -101,8 +103,14 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
     if (game.current_phase==="SHOWDOWN") return;
     const legal = game.update_available_actions(hero);
     if (!legal.includes(a)) return;
+    
+    // récupère distribution pour le héros
+    const key = buildInfosetKeyFast(game, hero);
+    const entry = policy?.[key];
+    const dist = entry?.dist ?? {};
+
     game.process_action(hero, a);
-    addToHistory(hero.name, a);
+    addToHistory(hero.name, a, normalize(dist));
     stepBotsForward(game);
     force(n=>n+1);
   }
@@ -187,15 +195,26 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
             <div>
               {game.current_phase!=="SHOWDOWN" && game.current_role===heroSeat && (
                 <div className="flex gap-2">
-                  {game.update_available_actions(hero).map(a=>(
-                    <Button
-                      key={a}
-                      onClick={()=>onHeroAction(a)}
-                      variant="default"
-                    >
-                      {a}
-                    </Button>
-                  ))}
+                  {(() => {
+                    const legal = game.update_available_actions(hero);
+                    const key = buildInfosetKeyFast(game, hero);
+                    const entry = policy?.[key];
+                    const dist = normalize(entry?.dist ?? {});
+                    return legal.map(a => {
+                      const pct = (dist[a] ?? 0) * 100;
+                      return (
+                        <Button
+                          key={a}
+                          onClick={() => {
+                            onHeroAction(a);
+                          }}
+                          variant="default"
+                        >
+                          {a} {pct > 0 ? `(${pct.toFixed(0)}%)` : ""}
+                        </Button>
+                      );
+                    });
+                  })()}
                 </div>
               )}
             </div>
@@ -286,21 +305,35 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
               <div className="text-gray-500 text-center py-4">Aucune action enregistrée</div>
             ) : (
               actionHistory.map((entry, index) => (
-                <div key={index} className="flex items-center justify-between p-2 bg-primary/5 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded">
-                      {index}
+                <div key={index} className="flex flex-col p-2 bg-primary/5 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded">
+                        {index}
+                      </span>
+                      <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded">
+                        {entry.phase}
+                      </span>
+                      <span className="font-medium text-primary">{entry.player}</span>
+                      <span className="text-primary/60">→</span>
+                      <span className="font-semibold text-primary">{entry.action}</span>
+                    </div>
+                    <span className="text-xs text-primary/50">
+                      {new Date(entry.timestamp).toLocaleTimeString()}
                     </span>
-                    <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded">
-                      {entry.phase}
-                    </span>
-                    <span className="font-medium text-primary">{entry.player}</span>
-                    <span className="text-primary/60">→</span>
-                    <span className="font-semibold text-primary">{entry.action}</span>
                   </div>
-                  <span className="text-xs text-primary/50">
-                    {new Date(entry.timestamp).toLocaleTimeString()}
-                  </span>
+
+                  {entry.probs && (
+                    <div className="flex gap-1 text-[0.65rem] text-muted-foreground">
+                      {Object.entries(entry.probs)
+                        .filter(([,p])=>p>0.001)
+                        .map(([act,p])=>(
+                          <span key={act}>
+                            {act}: {(p*100).toFixed(0)}%
+                          </span>
+                        ))}
+                    </div>
+                  )}
                 </div>
               ))
             )}

@@ -1,9 +1,9 @@
 // ui/src/lib/policy.ts
 import { unpackInfosetKeyDense } from "./infoset";
 
-export const ACTIONS = ["FOLD","CHECK","CALL","RAISE","ALL-IN"] as const;
+export const ACTIONS = ["ALL-IN", "RAISE", "CALL", "CHECK", "FOLD"] as const;
 export type ActionU = typeof ACTIONS[number];
-export const ACTIONS_L = ["FOLD","CHECK","CALL","RAISE","ALL-IN"] as const;
+export const ACTIONS_L = ["ALL-IN", "RAISE", "CALL", "CHECK", "FOLD"] as const;
 export type ActionL = typeof ACTIONS_L[number];
 
 // Actions groupées pour la visualisation
@@ -16,10 +16,10 @@ export const PHASES = ["PREFLOP","FLOP","TURN","RIVER","SHOWDOWN"] as const;
 
 export const ACTION_COLORS: Record<ActionL, string> = {
   FOLD:   "#006DAA",      // Bleu
-  CHECK:  "#97e29b",      // Vert
-  CALL:   "#97e29b",      // Même vert que check
+  CHECK:  "#f0ead2",      // Beige
+  CALL:   "#99d98c",      // Vert
   RAISE:  "#D62828",      // Rouge
-  "ALL-IN": "#D62828"      // Même rouge que raise
+  "ALL-IN": "#930000"      // Rouge sombre
 };
 
 // Couleurs pour les groupes d'actions

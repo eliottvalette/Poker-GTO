@@ -1,9 +1,12 @@
 // ui/src/components/Legend.tsx
 "use client";
 import React from "react";
-import { GROUPED_ACTIONS, GROUP_COLORS, GROUPED_LABELS } from "@/lib/policy";
+import { GROUPED_ACTIONS, GROUP_COLORS, GROUPED_LABELS, ACTIONS_L, ACTION_COLORS } from "@/lib/policy";
 
-export default function Legend({ heatmapMode }: { heatmapMode: "action" | "visits" | false }) {
+export default function Legend({
+  heatmapMode,
+  detailed = false,
+}: { heatmapMode: "action" | "visits" | false; detailed?: boolean }) {
   if (heatmapMode === "visits") {
     return (
       <div className="flex gap-4 flex-wrap text-xs mt-2">
@@ -15,6 +18,19 @@ export default function Legend({ heatmapMode }: { heatmapMode: "action" | "visit
           <span className="inline-block w-4 h-3 rounded" style={{ background: "#22C55E" }} />
           <span className="uppercase tracking-wide">High Visits</span>
         </div>
+      </div>
+    );
+  }
+
+  if (detailed) {
+    return (
+      <div className="flex gap-4 flex-wrap text-xs mt-2">
+        {ACTIONS_L.map((a) => (
+          <div key={a} className="flex items-center gap-2">
+            <span className="inline-block w-4 h-3 rounded" style={{ background: ACTION_COLORS[a] }} />
+            <span className="uppercase tracking-wide">{a}</span>
+          </div>
+        ))}
       </div>
     );
   }

@@ -1,10 +1,13 @@
 // ui/src/components/Grid169.tsx
 "use client";
 import React from "react";
-import { GROUPED_ACTIONS, GROUP_COLORS, groupActions, type GridMix, type VisitCounts, calculateVisitStats } from "@/lib/policy";
+import {
+  GROUPED_ACTIONS, GROUP_COLORS, groupActions,
+  type GridMix, type VisitCounts, calculateVisitStats,
+  ACTIONS_L, ACTION_COLORS
+} from "@/lib/policy";
 
 const CARD_LABS = ["A","K","Q","J","T","9","8","7","6","5","4","3","2"] as const;
-type GroupedAction = typeof GROUPED_ACTIONS[number];
 
 const RED_HEX   = "#D62828"; // 100% raise/all-in
 const BLUE_HEX  = "#006DAA"; // 100% fold
@@ -30,34 +33,31 @@ function Cell({
   heatmapMode,
   labelThresholdPct,
   visitStats,
-}: { 
-  mix: GridMix; 
+  detailed,
+}: {
+  mix: GridMix;
   visitCount: number;
-  heatmapMode: "action" | "visits" | false; 
+  heatmapMode: "action" | "visits" | false;
   visitStats: { min: number; max: number; avg: number };
   labelThresholdPct: number;
+  detailed: boolean;
 }) {
-  const grouped = groupActions(mix);  
+  const grouped = groupActions(mix);
 
   if (heatmapMode === "action") {
     const fold = grouped.fold;
     const raise_allin = grouped.raise_allin;
     const denom = fold + raise_allin;
-
-    // t = 0 -> rouge (100% raise), t = 1 -> bleu (100% fold)
     const t = denom > 0 ? fold / denom : NaN;
     const bg = Number.isNaN(t) ? NO_DATA_BG : lerpColor(RED_HEX, BLUE_HEX, t);
-
     const mainPct = raise_allin / denom * 100;
 
     return (
-      <div
-        className="relative w-20 h-16 border border-border hover:ring-1 hover:ring-ring"
-        style={{ background: bg }}
-        title={`fold: ${(fold*100).toFixed(0)}% | raise/all-in: ${(raise_allin*100).toFixed(0)}%`}
-      >
+      <div className="relative w-20 h-16 border border-border hover:ring-1 hover:ring-ring"
+           style={{ background: bg }}
+           title={`fold: ${(fold*100).toFixed(0)}% | raise/all-in: ${(raise_allin*100).toFixed(0)}%`}>
         <div className="absolute inset-0 flex items-center justify-center text-sm font-semibold">
-          {Math.round(mainPct)}%
+          {Number.isFinite(mainPct) ? Math.round(mainPct) + "%" : "—"}
         </div>
       </div>
     );
@@ -67,13 +67,10 @@ function Cell({
     const maxVisits = visitStats.max;
     const intensity = maxVisits > 0 ? Math.min(1, visitCount / maxVisits) : 0;
     const bg = visitCount > 0 ? lerpColor(NO_DATA_BG, GREEN_HEX, intensity) : NO_DATA_BG;
-
     return (
-      <div
-        className="relative w-20 h-16 border border-border hover:ring-1 hover:ring-ring"
-        style={{ background: bg }}
-        title={`visits: ${visitCount.toLocaleString()}`}
-      >
+      <div className="relative w-20 h-16 border border-border hover:ring-1 hover:ring-ring"
+           style={{ background: bg }}
+           title={`visits: ${visitCount.toLocaleString()}`}>
         <div className="absolute inset-0 flex items-center justify-center text-sm font-semibold">
           {visitCount > 0 ? visitCount.toLocaleString() : "0"}
         </div>
@@ -82,8 +79,35 @@ function Cell({
   }
 
   // Mode barres
-  const order: { action: GroupedAction; p: number }[] =
-    ["raise_allin","check_call","fold"].map(a => ({ action: a as GroupedAction, p: grouped[a as GroupedAction] ?? 0 }));
+  if (detailed) {
+    // 5 segments non groupés
+    const order = ACTIONS_L.map(a => ({ action: a, p: mix[a] ?? 0 }));
+    let cursor = 0;
+    return (
+      <div className="relative w-20 h-16 bg-muted border border-border hover:ring-1 hover:ring-ring">
+        {order.map(({ action, p }) => {
+          if (p <= 0) return null;
+          const left = `${cursor * 100}%`;
+          const width = `${p * 100}%`;
+          cursor += p;
+          return (
+            <div
+              key={action}
+              className="absolute inset-y-0 flex items-center justify-center text-[10px] font-semibold"
+              style={{ left, width, background: ACTION_COLORS[action] }}
+              title={`${action}: ${(p*100).toFixed(0)}%`}
+            >
+              {p * 100 >= labelThresholdPct ? `${Math.round(p * 100)}%` : null}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Groupé (3 segments) — comportement actuel
+  const order: { action: typeof GROUPED_ACTIONS[number]; p: number }[] =
+    ["raise_allin","check_call","fold"].map(a => ({ action: a as typeof GROUPED_ACTIONS[number], p: grouped[a as keyof typeof grouped] ?? 0 }));
   let cursor = 0;
   return (
     <div className="relative w-20 h-16 bg-muted border border-border hover:ring-1 hover:ring-ring">
@@ -108,16 +132,18 @@ function Cell({
 }
 
 export default function Grid169({
-  gridMixes, 
+  gridMixes,
   visitCounts,
-  heatmapMode, 
-}: { 
-  gridMixes: GridMix[]; 
+  heatmapMode,
+  detailed = false,
+}: {
+  gridMixes: GridMix[];
   visitCounts: VisitCounts;
-  heatmapMode: "action" | "visits" | false; 
+  heatmapMode: "action" | "visits" | false;
+  detailed?: boolean;
 }) {
   const visitStats = calculateVisitStats(visitCounts);
-  
+
   return (
     <div className="overflow-auto">
       <div className="inline-grid" style={{ gridTemplateColumns: `auto repeat(13, 5rem)` }}>
@@ -138,6 +164,7 @@ export default function Grid169({
                   heatmapMode={heatmapMode}
                   labelThresholdPct={35}
                   visitStats={visitStats}
+                  detailed={detailed}
                 />
               );
             })}
