@@ -118,9 +118,9 @@ export default function Page() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Button 
-                  className={heatmapMode === "action" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90" : 
-                            heatmapMode === "visits" ? "bg-orange-600 text-white w-full hover:bg-orange-700" :
-                            "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80"} 
+                  className={heatmapMode === "action" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 cursor-pointer" : 
+                            heatmapMode === "visits" ? "bg-orange-600 text-white w-full hover:bg-orange-700 cursor-pointer" :
+                            "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 cursor-pointer"} 
                   onClick={() => setHeatmapMode(heatmapMode === false ? "action" : heatmapMode === "action" ? "visits" : false)}
                 >
                   {heatmapMode === "action" ? "Action Heatmap" : 
@@ -131,7 +131,7 @@ export default function Page() {
               <div className="space-y-2">
                 <Label htmlFor="phase">Phase</Label>
                 <Select value={String(phaseIdx)} onValueChange={(v) => setPhaseIdx(parseInt(v))}>
-                  <SelectTrigger>
+                  <SelectTrigger className="cursor-pointer">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -146,7 +146,7 @@ export default function Page() {
                 <div className="text-sm font-medium">Position</div>
                 <Tabs value={String(roleIdx)} onValueChange={(v)=>setRoleIdx(parseInt(v,10))}>
                   <TabsList className="grid w-full grid-cols-3">
-                    {ROLES.map((r, i)=>(<TabsTrigger key={r} value={String(i)}>{r}</TabsTrigger>))}
+                    {ROLES.map((r, i)=>(<TabsTrigger key={r} value={String(i)} className="cursor-pointer">{r}</TabsTrigger>))}
                   </TabsList>
                 </Tabs>
               </div>
@@ -157,9 +157,9 @@ export default function Page() {
           <Card className="bg-muted/30">
             <CardContent className="space-y-2">
               <div className="flex flex-col gap-2">
-                <Button variant="outline" className={mainTab === "overview" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 hover:text-primary-foreground" : "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 hover:text-secondary-foreground"} onClick={()=>setMainTab("overview")}>Overview</Button>
-                <Button variant="outline" className={mainTab === "case" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 hover:text-primary-foreground" : "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 hover:text-secondary-foreground"} onClick={()=>setMainTab("case")}>Cas précis</Button>
-                <Button variant="outline" className={mainTab === "test" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 hover:text-primary-foreground" : "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 hover:text-secondary-foreground"} onClick={()=>setMainTab("test")}>Test Live</Button>
+                <Button variant="outline" className={mainTab === "overview" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 hover:text-primary-foreground cursor-pointer" : "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 hover:text-secondary-foreground cursor-pointer"} onClick={()=>setMainTab("overview")}>Overview</Button>
+                <Button variant="outline" className={mainTab === "case" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 hover:text-primary-foreground cursor-pointer" : "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 hover:text-secondary-foreground cursor-pointer"} onClick={()=>setMainTab("case")}>Cas précis</Button>
+                <Button variant="outline" className={mainTab === "test" ? "bg-primary text-primary-foreground w-full hover:bg-primary/90 hover:text-primary-foreground cursor-pointer" : "bg-secondary text-secondary-foreground w-full hover:bg-secondary/80 hover:text-secondary-foreground cursor-pointer"} onClick={()=>setMainTab("test")}>Test Live</Button>
               </div>
             </CardContent>
           </Card>
@@ -169,8 +169,8 @@ export default function Page() {
       <SidebarInset>
         <main className="py-3 px-4 space-y-4">
           {mainTab === "overview" && (
-            <Card>
-              <CardHeader className="pb-2">
+            <Card className="gap-1">
+              <CardHeader className="pb-1">
                 <CardTitle>Mix d&apos;actions (13x13)</CardTitle>
                 <CardDescription>
                     Statistiques pondérées par visites: {weightedStats.totalVisits.toLocaleString()} visites totales 
@@ -190,7 +190,7 @@ export default function Page() {
                 {!policy ? <div className="text-muted-foreground">Chargement de <code>avg_policy.json.gz</code>…</div> : (
                   <>
                     <Legend heatmapMode={heatmapMode} />
-                    <div className="mt-3">
+                    <div className="mt-1">
                       <Grid169 
                         gridMixes={gridMixes} 
                         visitCounts={visitCounts}

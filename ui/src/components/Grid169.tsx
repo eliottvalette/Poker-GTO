@@ -37,7 +37,7 @@ function Cell({
   labelThresholdPct?: number;
   visitStats: { min: number; max: number; avg: number };
 }) {
-  const grouped = groupActions(mix);
+  const grouped = groupActions(mix);  
 
   if (heatmapMode === "action") {
     const fold = grouped.fold;
