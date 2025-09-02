@@ -10,6 +10,7 @@ type Seat = {
   bigBlind?: boolean;
   active?: boolean;
   cards?: string[];      // ["A♥","8♣","T♠","XX"]
+  netStackChange?: number;
 };
 
 export default function PokerTableFrame({
@@ -76,7 +77,7 @@ export default function PokerTableFrame({
       </div>
 
       <div className="absolute left-1/2 -translate-x-1/2 bottom-[14%] flex flex-col items-center">
-        <SeatChip {...hero} highlight />
+        <SeatChip {...hero} />
         {hero.cards?.length ? (
           <div className="mt-2 flex gap-2">
             {hero.cards.map((t, i) => <PlayingCard key={i} text={t} />)}
@@ -95,21 +96,25 @@ export default function PokerTableFrame({
 function SeatChip({
   label,
   stack,
+  netStackChange,
   active = true,
-  highlight = false,
 }: {
   label: string;
   stack: string;
+  netStackChange?: number;
   active?: boolean;
-  highlight?: boolean;
 }) {
+  const getBackgroundColor = () => {
+    if (netStackChange === undefined || netStackChange === 0) {
+      return "bg-card/80";
+    }
+    return netStackChange > 0 ? "bg-emerald-500/65" : "bg-rose-500/65";
+  };
+
   return (
     <div>
       <div
-        className={
-          "rounded-2xl px-3 py-1.5 shadow-lg backdrop-blur bg-card/80 ring-1 ring-border w-40 h-10 flex items-center" +
-          (highlight ? " outline outline-primary/60" : "")
-        }
+        className={`rounded-2xl px-3 py-1.5 shadow-lg backdrop-blur border border-border w-40 h-10 flex items-center ${getBackgroundColor()}`}
       >
         <div className="flex items-center justify-between w-full">
           <div

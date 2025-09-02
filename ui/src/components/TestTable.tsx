@@ -140,6 +140,7 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
                   : game.current_phase === "SHOWDOWN"
                   ? game.players[0].cards.map(c => c.toString())
                   : ["XX", "XX"], // face down
+              netStackChange: game.net_stack_changes[game.players[0].name],
             },
             {
               id: 1,
@@ -153,6 +154,7 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
                   : game.current_phase === "SHOWDOWN"
                   ? game.players[1].cards.map(c => c.toString())
                   : ["XX", "XX"],
+              netStackChange: game.net_stack_changes[game.players[1].name],
             },
             {
               id: 2,
@@ -165,6 +167,7 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
                   : game.current_phase === "SHOWDOWN"
                   ? game.players[2].cards.map(c => c.toString())
                   : ["XX", "XX"],
+              netStackChange: game.net_stack_changes[game.players[2].name],
             },
           ]}
           potLabel={`${game.main_pot.toFixed(2)} BB`}
@@ -198,6 +201,7 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
             </div>
           </div>
         </PokerTableFrame>
+
         <div className="flex flex-row gap-4 border-t border-border">
           <div className=" bg-card/40 p-4 border-r border-border w-4/5">
             <div className="mb-2 text-center font-semibold">Showdown — Résultats</div>
