@@ -55,7 +55,7 @@ export default function PokerTableFrame({
       </div>
 
       {/* board */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[5%] flex gap-1">
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[140%] flex gap-1">
         {board
           ? board.split(" ").map((t,i)=> <PlayingCard key={i} text={t} />)
           : <div className="text-muted-foreground/80 text-sm">-</div>}
@@ -65,6 +65,28 @@ export default function PokerTableFrame({
       <SeatChip style="left-[12%] top-[16%]" {...left} />
       <SeatChip style="right-[12%] top-[16%]" {...right} />
       <SeatChip style="left-1/2 -translate-x-1/2 bottom-[8%]" {...hero} highlight />
+
+      {/* cartes des villains */}
+      <div className="absolute left-[13.5%] top-[28%] flex gap-1">
+        {left.cards?.length ? (
+          left.cards.map((t,i)=><PlayingCard key={i} text={t} />)
+        ) : (
+          <>
+            <PlayingCardBack />
+            <PlayingCardBack />
+          </>
+        )}
+      </div>
+      <div className="absolute right-[13.5%] top-[28%] flex gap-1">
+        {right.cards?.length ? (
+          right.cards.map((t,i)=><PlayingCard key={i} text={t} />)
+        ) : (
+          <>
+            <PlayingCardBack />
+            <PlayingCardBack />
+          </>
+        )}
+      </div>
 
       {/* cartes du héros en bas */}
       {hero.cards?.length ? (
@@ -82,7 +104,7 @@ export default function PokerTableFrame({
 }
 
 function SeatChip({
-  style, label, stack, smallBlind, bigBlind, active=true, highlight=false,
+  style, label, stack, active=true, highlight=false,
 }: {
   style: string; label: string; stack: string;
   smallBlind?: boolean; bigBlind?: boolean; active?: boolean; highlight?: boolean;
@@ -96,37 +118,22 @@ function SeatChip({
             highlight ? "outline outline-primary/60" : ""
           )}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-30">
             <div
-              className="h-6 w-6 rounded-full grid place-items-center text-[0.625rem] font-bold"
+              className="h-6 w-8 rounded-full grid place-items-center text-[0.625rem] font-bold"
               style={{
                 background: active ? "var(--seat-active-bg)" : "var(--seat-inactive-bg)",
                 color: active ? "var(--seat-active-text)" : "var(--seat-inactive-text)"
               }}
             >
-              {label.slice(0,1)}
+              {label}
             </div>
             <div className="leading-[1.05]">
               <div className="text-[0.6875rem] text-foreground/80 font-medium">{label}</div>
               <div className="text-[0.6875rem] text-primary/90">{stack}</div>
             </div>
-          {smallBlind && <BlindBadge text="SB" />}
-          {bigBlind && <BlindBadge text="BB" />}
         </div>
       </div>
-    </div>
-  );
-}
-
-function BlindBadge({ text }: { text: "SB"|"BB" }) {
-  return (
-    <div
-      className={cn(
-        "ml-1 rounded-md px-1.5 py-0.5 text-[0.625rem] font-bold",
-        text === "SB" ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground"
-      )}
-    >
-      {text}
     </div>
   );
 }
@@ -166,6 +173,23 @@ function PlayingCard({ text }: { text: string}) {
         )}
       >
         <span className="text-xl">{s}</span>
+      </div>
+    </div>
+  );
+}
+
+function PlayingCardBack() {
+  return (
+    <div
+      className={cn(
+        "relative rounded-sm bg-stone-950 from-neutral-900 to-neutral-800 border border-neutral-800 shadow-lg",
+        "w-12 h-16"
+      )}
+    >
+      <div className="absolute inset-1 border border-neutral-800 rounded-sm" />
+      <div className="absolute inset-2 border border-neutral-800 rounded-sm" />
+      <div className="absolute inset-0 grid place-items-center">
+        <div className="text-neutral-800 text-xs font-bold">♠</div>
       </div>
     </div>
   );

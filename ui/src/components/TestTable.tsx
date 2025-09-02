@@ -103,6 +103,10 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
     force(n=>n+1);
   }
 
+  useEffect(() => {
+    newHand();
+  }, [heroSeat]); 
+
   const boardStr = game.community.map(c=>c.toString()).join(" ");
 
   return (
@@ -110,10 +114,14 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
       <UICard>
         <PokerTableFrame
           seats={[
-            { id:0, label:"SB", stack:`${game.players[0].stack.toFixed(1)} BB`, smallBlind:true, active:!game.players[0].has_folded },
-            { id:1, label:"BB", stack:`${game.players[1].stack.toFixed(1)} BB`, bigBlind:true,  active:!game.players[1].has_folded },
+            { id:0, label:"SB", stack:`${game.players[0].stack.toFixed(1)} BB`, smallBlind:true, active:!game.players[0].has_folded,
+              cards: game.current_phase==="SHOWDOWN" ? game.players[0].cards.map(c=>c.toString()) : undefined
+            },
+            { id:1, label:"BB", stack:`${game.players[1].stack.toFixed(1)} BB`, bigBlind:true,  active:!game.players[1].has_folded,
+              cards: game.current_phase==="SHOWDOWN" ? game.players[1].cards.map(c=>c.toString()) : undefined
+            },
             { id:2, label:"BTN", stack:`${game.players[2].stack.toFixed(1)} BB`, active:!game.players[2].has_folded,
-              cards: heroSeat===2 ? game.players[2].cards.map(c=>c.toString()) : undefined
+              cards: game.current_phase==="SHOWDOWN" ? game.players[2].cards.map(c=>c.toString()) : (heroSeat===2 ? game.players[2].cards.map(c=>c.toString()) : undefined)
             },
           ].map((s)=> s.id===heroSeat ? { ...s, cards: game.players[heroSeat].cards.map(c=>c.toString()) } : s)}
           potLabel={`${game.main_pot.toFixed(2)} BB`}
@@ -132,19 +140,13 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
             {game.current_phase!=="SHOWDOWN" && game.current_role===heroSeat && (
               <div className="ml-auto flex gap-2">
                 {game.update_available_actions(hero).map(a=>(
-                  <button
+                  <Button
                     key={a}
                     onClick={()=>onHeroAction(a)}
-                    className={[
-                      // bouton glossy style Winamax
-                      "px-4 py-2 rounded-xl font-semibold text-sm tracking-wide",
-                      "bg-gradient-to-b from-[#263b50] to-[#172636] text-white",
-                      "ring-1 ring-white/15 shadow-[inset_0_1px_0_0_rgba(255,255,255,.08),0_6px_20px_-4px_rgba(0,0,0,.6)]",
-                      "hover:from-[#2c4863] hover:to-[#193247] active:scale-[.98] transition",
-                    ].join(" ")}
+                    variant="default"
                   >
                     {a}
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
