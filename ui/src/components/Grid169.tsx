@@ -28,14 +28,14 @@ function Cell({
   mix,
   visitCount,
   heatmapMode,
-  labelThresholdPct = 18,
+  labelThresholdPct,
   visitStats,
 }: { 
   mix: GridMix; 
   visitCount: number;
   heatmapMode: "action" | "visits" | false; 
-  labelThresholdPct?: number;
   visitStats: { min: number; max: number; avg: number };
+  labelThresholdPct: number;
 }) {
   const grouped = groupActions(mix);  
 
@@ -56,7 +56,7 @@ function Cell({
         style={{ background: bg }}
         title={`fold: ${(fold*100).toFixed(0)}% | raise/all-in: ${(raise_allin*100).toFixed(0)}%`}
       >
-        <div className="absolute inset-0 flex items-center justify-center text-[8px] font-semibold">
+        <div className="absolute inset-0 flex items-center justify-center text-sm font-semibold">
           {Math.round(mainPct)}%
         </div>
       </div>
@@ -74,7 +74,7 @@ function Cell({
         style={{ background: bg }}
         title={`visits: ${visitCount.toLocaleString()}`}
       >
-        <div className="absolute inset-0 flex items-center justify-center text-[8px] font-semibold">
+        <div className="absolute inset-0 flex items-center justify-center text-sm font-semibold">
           {visitCount > 0 ? visitCount.toLocaleString() : "0"}
         </div>
       </div>
@@ -95,7 +95,7 @@ function Cell({
         return (
           <div
             key={action}
-            className="absolute inset-y-0 flex items-center justify-center text-[8px] font-semibold"
+            className="absolute inset-y-0 flex items-center justify-center text-xs font-semibold"
             style={{ left, width, background: GROUP_COLORS[action] }}
             title={`${action}: ${(p*100).toFixed(0)}%`}
           >
@@ -111,12 +111,10 @@ export default function Grid169({
   gridMixes, 
   visitCounts,
   heatmapMode, 
-  labelThresholdPct=18,
 }: { 
   gridMixes: GridMix[]; 
   visitCounts: VisitCounts;
   heatmapMode: "action" | "visits" | false; 
-  labelThresholdPct?: number; 
 }) {
   const visitStats = calculateVisitStats(visitCounts);
   
@@ -138,7 +136,7 @@ export default function Grid169({
                   mix={gridMixes[hidx]}
                   visitCount={visitCounts[hidx]}
                   heatmapMode={heatmapMode}
-                  labelThresholdPct={labelThresholdPct}
+                  labelThresholdPct={35}
                   visitStats={visitStats}
                 />
               );

@@ -195,7 +195,6 @@ export default function Page() {
                         gridMixes={gridMixes} 
                         visitCounts={visitCounts}
                         heatmapMode={heatmapMode} 
-                        labelThresholdPct={labelThreshold}
                       />
                     </div>
                   </>
