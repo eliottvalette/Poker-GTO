@@ -72,7 +72,7 @@ export function calculateVisitStats(visitCounts: VisitCounts): { min: number; ma
 }
 
 // Fonction pour calculer les statistiques pondérées par visites
-export function calculateWeightedStats(visitCounts: VisitCounts, phaseIdx?: number): { 
+export function calculateWeightedStats(visitCounts: VisitCounts): { 
   totalVisits: number; 
   avgVisitsPerHand: number; 
   coverage: number; // pourcentage de mains avec des visites
