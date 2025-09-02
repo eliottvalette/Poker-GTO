@@ -48,6 +48,9 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
   const [heroSeat, setHeroSeat] = useState<Seat>(2);
   const [game, setGame] = useState<PokerGame>(() => makeNewGame());
   const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>([]);
+  const [sessionPnL, setSessionPnL] = useState(0);
+  const [handId, setHandId] = useState(1);
+  const [scoredHandId, setScoredHandId] = useState<number | null>(null);
   const [, force] = useState(0); // re-render
 
   const addToHistory = useCallback((player: string, action: string) => {
@@ -81,6 +84,7 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
     const g = makeNewGame();
     setGame(g);
     setActionHistory([]);
+    setHandId(h => h + 1);
     force(n=>n+1);
   }
 
@@ -105,7 +109,17 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
 
   useEffect(() => {
     newHand();
-  }, [heroSeat]); 
+  }, [heroSeat]);
+
+  // créditer le P&L du héros quand un showdown se termine
+  useEffect(() => {
+    if (game.current_phase === "SHOWDOWN" && scoredHandId !== handId) {
+      const heroName = game.players[heroSeat].name;
+      const delta = game.net_stack_changes[heroName] ?? 0;
+      setSessionPnL(v => v + delta);
+      setScoredHandId(handId);
+    }
+  }, [game.current_phase, handId, heroSeat, scoredHandId, game]); 
 
   const boardStr = game.community.map(c=>c.toString()).join(" ");
 
@@ -184,8 +198,8 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
             </div>
           </div>
         </PokerTableFrame>
-        {game.current_phase === "SHOWDOWN" && (
-          <div className="border-t border-border bg-card/40 p-4">
+        <div className="flex flex-row gap-4 border-t border-border">
+          <div className=" bg-card/40 p-4 border-r border-border w-4/5">
             <div className="mb-2 text-center font-semibold">Showdown — Résultats</div>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -233,8 +247,28 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
                 .toFixed(2)}{" "}
               BB
             </div>
+            
           </div>
-        )}
+          <div className="flex flex-col justify-center items-center gap-2 w-1/5">
+            <h1>Total P&L (Héro)</h1>
+            <div className="text-sm text-muted-foreground">
+              Héro: {game.players[heroSeat].name}
+            </div>
+            <div
+              className={
+                sessionPnL > 0
+                  ? "font-semibold text-emerald-400"
+                  : sessionPnL < 0
+                  ? "font-semibold text-rose-400"
+                  : "font-semibold text-muted-foreground"
+              }
+            >
+              {sessionPnL >= 0 ? "+" : ""}
+              {sessionPnL.toFixed(2)} BB
+            </div>
+            <Button variant="secondary" onClick={()=>setSessionPnL(0)}>Reset</Button>
+          </div>
+        </div>
       </Card>
 
       {/* Historique des actions */}

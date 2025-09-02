@@ -33,7 +33,7 @@ export default function PokerTableFrame({
 
   return (
     <div
-      className={`relative mx-auto aspect-[16/9] w-[80%] rounded-3xl p-4 
+      className={`relative mx-auto aspect-[16/9] w-[80%] rounded-3xl px-4 pt-2 
               bg-[radial-gradient(ellipse_at_center,_#0b3866_0%,_#053056_50%,_#061c34_100%)] 
               shadow-inner ring-1 ring-border overflow-hidden`}
       >
@@ -50,7 +50,7 @@ export default function PokerTableFrame({
       </div>
 
       {/* board */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[5%] flex gap-1">
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[125%] flex gap-1">
         {board
           ? board.split(" ").map((t, i) => <PlayingCard key={i} text={t} />)
           : <div className="text-muted-foreground/80 text-sm">-</div>}
