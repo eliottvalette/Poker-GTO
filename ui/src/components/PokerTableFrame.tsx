@@ -34,7 +34,7 @@ export default function PokerTableFrame({
 
   return (
     <div
-      className={`relative mx-auto aspect-[16/9] w-[80%] rounded-3xl px-4 pt-2 
+      className={`relative mx-auto aspect-[16/9] w-[98%] rounded-3xl px-4 pt-2 
               bg-[radial-gradient(ellipse_at_center,_#0b3866_0%,_#053056_50%,_#061c34_100%)] 
               shadow-inner ring-1 ring-border overflow-hidden`}
       >
@@ -86,7 +86,7 @@ export default function PokerTableFrame({
       </div>
 
       {/* actions */}
-      <div className="absolute bottom-4 left-0 right-0 px-6">
+      <div className="absolute bottom-4 left-0 right-0 px-10">
         {children}
       </div>
     </div>

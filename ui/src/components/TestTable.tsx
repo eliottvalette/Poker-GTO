@@ -185,9 +185,9 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
           {/* barre d'actions */}
           <div className="grid grid-cols-3 gap-2 justify-items-center">
             <div className="flex gap-2">
-              <Button variant={heroSeat===0?"default":"secondary"} onClick={()=>setHeroSeat(0)}>Héro: SB</Button>
-              <Button variant={heroSeat===1?"default":"secondary"} onClick={()=>setHeroSeat(1)}>Héro: BB</Button>
-              <Button variant={heroSeat===2?"default":"secondary"} onClick={()=>setHeroSeat(2)}>Héro: BTN</Button>
+              <Button variant={heroSeat===0?"default":"secondary"} onClick={()=>setHeroSeat(0)}>SB</Button>
+              <Button variant={heroSeat===1?"default":"secondary"} onClick={()=>setHeroSeat(1)}>BB</Button>
+              <Button variant={heroSeat===2?"default":"secondary"} onClick={()=>setHeroSeat(2)}>BTN</Button>
             </div>
 
             <Button onClick={newHand} className="w-35">Nouvelle main</Button>
@@ -209,8 +209,13 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
                             onHeroAction(a);
                           }}
                           variant="default"
+                          className="relative w-20 text-sm text-black overflow-hidden bg-white border border-border hover:bg-white"
                         >
-                          {a} {pct > 0 ? `(${pct.toFixed(0)}%)` : ""}
+                          <span className="relative z-10">{a}</span>
+                          <span
+                            className="absolute inset-y-0 left-0 bg-muted-foreground/80"
+                            style={{ width: `${pct}%` }}
+                          />
                         </Button>
                       );
                     });
