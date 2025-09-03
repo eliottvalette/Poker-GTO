@@ -201,7 +201,7 @@ class CFRPlusSolver:
             if not legal_actions or len(legal_actions) < 2:
                 raise RuntimeError(f"[CFR+] Aucune action légale.\n{format_game_state_for_debug(game)}")
 
-            if current_role == hero_role and game.current_phase == "PREFLOP":
+            if current_role == hero_role and game.current_phase != "PREFLOP":
                 probabilities = self.strategy_from_regret(infoset_key, legal_actions)
 
                 action_utilities = [0.0] * N_ACTIONS
