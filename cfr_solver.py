@@ -106,7 +106,6 @@ class CFRPlusSolver:
         init.phase = "PREFLOP"
         init.community_cards = []
 
-        random.seed(self.rng.randrange(10**9))
         game = PokerGameExpresso(init)
         game.deal_small_and_big_blind()
         return game
@@ -203,7 +202,7 @@ class CFRPlusSolver:
             if not legal_actions or len(legal_actions) < 2:
                 raise RuntimeError(f"[CFR+] Aucune action légale.\n{format_game_state_for_debug(game)}")
 
-            if current_role == hero_role and game.current_phase != "PREFLOP":
+            if current_role == hero_role:
                 probabilities = self.strategy_from_regret(infoset_key, legal_actions)
 
                 action_utilities = [0.0] * N_ACTIONS
@@ -264,8 +263,6 @@ class CFRPlusSolver:
 
         with trange(1, iterations + 1, desc="CFR+ Training", unit="iter") as progress_bar:
             for iteration_index in progress_bar:
-                self.rng.seed(self.seed + 7919 * iteration_index)
-
                 for hero_role in (0, 1, 2):
                     game = self.new_game()
                     self.traverse(game, hero_role=hero_role, reach_probability=1.0)

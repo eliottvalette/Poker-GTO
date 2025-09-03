@@ -198,8 +198,10 @@ export class PokerGame {
     if (toCall <= 0) mask.CALL = false;
     else if (toCall >= p.stack) { mask.CALL = false; mask["ALL-IN"]=true; }
 
-    const minRaiseTo = this.current_maximum_bet===0 ? this.big_blind
-      : this.current_maximum_bet + Math.max(this.last_raise_amount, this.big_blind);
+    // même logique que le Python : baseline = 3 * BB
+    const minRaiseTo = this.current_maximum_bet===0
+      ? this.big_blind * 3
+      : this.current_maximum_bet + Math.max(this.last_raise_amount, this.big_blind * 3);
     const addReq = minRaiseTo - p.current_player_bet;
     if (addReq <= 0 || p.stack < addReq || this.number_raise_this_game_phase >= 4) mask.RAISE = false;
 
@@ -249,7 +251,10 @@ export class PokerGame {
       if (p.stack===0) p.is_all_in = true;
     } else if (action==="RAISE") {
       const prevMax = this.current_maximum_bet;
-      const minRaiseTo = prevMax===0 ? this.big_blind : prevMax + Math.max(this.last_raise_amount, this.big_blind);
+      // même logique que le Python : baseline = 3 * BB
+      const minRaiseTo = prevMax===0
+        ? this.big_blind * 3
+        : prevMax + Math.max(this.last_raise_amount, this.big_blind * 3);
       const addReq = Math.max(0, minRaiseTo - p.current_player_bet);
       if (addReq<=0 || addReq>p.stack) throw new Error("Invalid raise");
       p.stack -= addReq; p.current_player_bet = minRaiseTo; p.total_bet += addReq; this.main_pot += addReq;

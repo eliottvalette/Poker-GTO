@@ -124,11 +124,11 @@ class PokerGameExpresso:
         
         # Si le joueur ne peut pas couvrir le min-raise, on désactive RAISE plus bas
         if current_maximum_bet == 0:
-            min_raise = self.big_blind
+            raise_amount = self.big_blind * 3
         else:
-            min_raise = current_maximum_bet + max(self.last_raise_amount, self.big_blind)
+            raise_amount = current_maximum_bet + max(self.last_raise_amount, self.big_blind * 3)
         
-        add_required = min_raise - player.current_player_bet
+        add_required = raise_amount - player.current_player_bet
         if add_required <= 0 or player.stack < add_required:
             self.action_masks[player_role]["RAISE"] = False
 
@@ -169,7 +169,7 @@ class PokerGameExpresso:
                 add_required = target_to - player.current_player_bet
 
                 # min raise ≈ 2× le gap à caller si une mise existe, sinon BB
-                min_raise = self.big_blind if current_maximum_bet == 0 else 2 * max(0.0, current_maximum_bet - player.current_player_bet)
+                min_raise = self.big_blind * 3 if current_maximum_bet == 0 else 2 * max(0.0, current_maximum_bet - player.current_player_bet)
 
                 if add_required < min_raise or player.stack < add_required:
                     self.masks[player_role][action] = False
@@ -503,14 +503,13 @@ class PokerGameExpresso:
                 print(f"[GAME_OPTI] {player.name} raise.")
 
             prev_max = self.current_maximum_bet
-            gap = max(0.0, prev_max - player.current_player_bet)
 
             # min raise-to (valeur ABSOLUE à atteindre)
             if prev_max == 0:
-                raise_amount = self.big_blind
+                raise_amount = self.big_blind * 3
             else:
                 # au moins la dernière taille de relance légale (classique NLHE)
-                raise_amount = prev_max + max(self.last_raise_amount, self.big_blind)
+                raise_amount = prev_max + max(self.last_raise_amount, self.big_blind * 3)
 
             # impossible de « descendre » sous sa mise actuelle
             raise_amount = max(raise_amount, player.current_player_bet)
