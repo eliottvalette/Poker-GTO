@@ -49,8 +49,14 @@ export const BOARD_BUCKET_LABELS = [
 ] as const;
 
 export const HEROBOARD_LABELS = [
-  "AIR","DRAW","PAIR","STRONG_PAIR","OVERPAIR",
-  "STRONG_PAIR_DRAW","COMBO_DRAW","MADE_STRAIGHT_FLUSH"
+  "AIR",
+  "DRAW",
+  "PAIR",
+  "STRONG_PAIR",
+  "OVERPAIR",
+  "STRONG_PAIR_DRAW",
+  "COMBO_DRAW",
+  "MADE_STRAIGHT_FLUSH"
 ] as const;
 
 // Raccourci lisible pour une clé

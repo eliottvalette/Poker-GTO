@@ -315,8 +315,6 @@ class PokerGameExpresso:
             if everyone_capped and at_most_one_live and len(in_game_players) > 1:
                 if DEBUG_OPTI_ULTIMATE:
                     print("Moving to showdown (all-in present, no further betting possible)")
-                while len(self.community_cards) < 5 and self.remaining_deck:
-                    self.community_cards.append(self.remaining_deck.pop())
                 self.handle_showdown()
                 return
 
@@ -324,8 +322,6 @@ class PokerGameExpresso:
         if (len(all_in_players) == len(in_game_players)) and (len(in_game_players) > 1):
             if DEBUG_OPTI_ULTIMATE:
                 print("Moving to showdown (all remaining players are all-in)")
-            while len(self.community_cards) < 5 and self.remaining_deck:
-                self.community_cards.append(self.remaining_deck.pop())
             self.handle_showdown()
             return
 
@@ -771,7 +767,6 @@ class PokerGameExpresso:
         return round(value, decimals)
     
     def snapshot(self):
-        # Copie *légère* des champs mutés par process_action/phase/showdown
         players_state = [
             (p.stack, p.current_player_bet, p.total_bet,
              p.is_active, p.has_folded, p.is_all_in, p.has_acted)
@@ -786,8 +781,8 @@ class PokerGameExpresso:
             "current_maximum_bet": self.current_maximum_bet,
             "main_pot": self.main_pot,
             "players": players_state,
-            "community_cards": list(self.community_cards),   # copie rapide (≤5)
-            "remaining_deck": list(self.remaining_deck),     # 52 max
+            "community_cards": tuple(self.community_cards),  # IMMUTABLE
+            "remaining_deck":  tuple(self.remaining_deck),   # IMMUTABLE
             "net_stack_changes": dict(self.net_stack_changes),
             "final_stacks": dict(self.final_stacks),
         }
@@ -800,13 +795,16 @@ class PokerGameExpresso:
         self.current_role = snap["current_role"]
         self.current_maximum_bet = snap["current_maximum_bet"]
         self.main_pot = snap["main_pot"]
+
         for p, st in zip(self.players, snap["players"]):
             (p.stack, p.current_player_bet, p.total_bet,
              p.is_active, p.has_folded, p.is_all_in, p.has_acted) = st
-        self.community_cards = snap["community_cards"]
-        self.remaining_deck = snap["remaining_deck"]
-        self.net_stack_changes = snap["net_stack_changes"]
-        self.final_stacks = snap["final_stacks"]
+
+        # RE-COPIES NEUVES → on ne réutilise jamais l'objet du snapshot
+        self.community_cards = list(snap["community_cards"])
+        self.remaining_deck  = list(snap["remaining_deck"])
+        self.net_stack_changes = dict(snap["net_stack_changes"])
+        self.final_stacks      = dict(snap["final_stacks"])
 
 
 if __name__ == "__main__":
