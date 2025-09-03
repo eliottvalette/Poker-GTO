@@ -33,16 +33,18 @@ function makeNewGame(): PokerGame {
   return g;
 }
 
-function sampleAction(dist: Record<string, number>, legal: Action[]): Action {
-  const mix = normalize(Object.fromEntries(legal.map(a=>[a, dist[a] ?? 0])));
-  const xs = legal.map(a => mix[a]);
-  const s = xs.reduce((a,b)=>a+b,0);
-  let r = Math.random() * (s > 0 ? s : 1);
-  for (let i=0;i<legal.length;i++){
-    r -= xs[i] || 0;
-    if (r<=0) return legal[i];
+function sampleAction(distribution: Record<string, number>, legalActions: Action[]): Action {
+  const normalizedDistribution = normalize(
+    Object.fromEntries(legalActions.map(action => [action, distribution[action] ?? 0]))
+  );
+  const actionProbabilities = legalActions.map(action => normalizedDistribution[action]);
+  const totalProbability = actionProbabilities.reduce((sum, prob) => sum + prob, 0);
+  let randomValue = Math.random() * (totalProbability > 0 ? totalProbability : 1);
+  for (let i = 0; i < legalActions.length; i++) {
+    randomValue -= actionProbabilities[i] || 0;
+    if (randomValue <= 0) return legalActions[i];
   }
-  return legal[legal.length-1];
+  throw new Error("No action selected");
 }
 
 export default function TestTable({ policy }: { policy: Policy | null }) {
