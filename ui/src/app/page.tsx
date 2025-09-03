@@ -131,16 +131,11 @@ export default function Page() {
 
               <div className="space-y-2">
                 <Label htmlFor="phase">Phase</Label>
-                <Select value={String(phaseIdx)} onValueChange={(v) => setPhaseIdx(parseInt(v))}>
-                  <SelectTrigger className="cursor-pointer">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PHASES.slice(0, 4).map((phase, i) => (
-                      <SelectItem key={phase} value={String(i)}>{phase}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Tabs value={String(phaseIdx)} onValueChange={(v) => setPhaseIdx(parseInt(v))}>
+                  <TabsList className="grid w-full grid-rows-4 h-27">
+                    {PHASES.slice(0, 4).map((phase, i)=>(<TabsTrigger key={phase} value={String(i)} className="cursor-pointer rounded-sm w-[100%]">{phase}</TabsTrigger>))}
+                  </TabsList>
+                </Tabs>
               </div>
 
               <div className="space-y-2">
