@@ -80,7 +80,6 @@ def format_game_state_for_debug(game: PokerGameExpresso) -> str:
         f"board=[{board}]"
     )
 
-
 class CFRPlusSolver:
     def __init__(self, seed, stacks):
         self.seed = seed
