@@ -62,7 +62,7 @@ export default function PokerTableFrame({
         <SeatChip {...left} />
         {left.cards?.length ? (
           <div className="mt-2 flex gap-1">
-            {left.cards.map((t, i) => <PlayingCard key={i} text={t} />)}
+            {left.cards.map((t, i) => <PlayingCard key={i} text={t} active={left.active} />)}
           </div>
         ) : null}
       </div>
@@ -71,7 +71,7 @@ export default function PokerTableFrame({
         <SeatChip {...right} />
         {right.cards?.length ? (
           <div className="mt-2 flex gap-1">
-            {right.cards.map((t, i) => <PlayingCard key={i} text={t} />)}
+            {right.cards.map((t, i) => <PlayingCard key={i} text={t} active={right.active} />)}
           </div>
         ) : null}
       </div>
@@ -80,7 +80,7 @@ export default function PokerTableFrame({
         <SeatChip {...hero} />
         {hero.cards?.length ? (
           <div className="mt-2 flex gap-2">
-            {hero.cards.map((t, i) => <PlayingCard key={i} text={t} />)}
+            {hero.cards.map((t, i) => <PlayingCard key={i} text={t} active={hero.active} />)}
           </div>
         ) : null}
       </div>
@@ -138,7 +138,10 @@ function SeatChip({
 
 
 /* ===== cartes style casino ===== */
-function PlayingCard({ text }: { text: string }) {
+function PlayingCard({ text, active }: { text: string, active?: boolean }) {
+  if (active === false) {
+    return 
+  }
   if (text === "XX") {
     return (
       <div className="w-16 h-23 rounded-sm border border-neutral-700 shadow-lg bg-neutral-950 grid place-items-center">
