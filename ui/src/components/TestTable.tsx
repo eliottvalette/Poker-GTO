@@ -137,6 +137,7 @@ export default function TestTable({ policy }: { policy: Policy | null }) {
     <div className="space-y-4">
       <Card>
         <PokerTableFrame
+          phase={game.current_phase}
           seats={[
             {
               id: 0,

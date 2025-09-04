@@ -19,6 +19,7 @@ export default function PokerTableFrame({
   potLabel,
   heroSeat,
   board,
+  phase,
 }: {
   children?: React.ReactNode;
   seats: Seat[];
@@ -26,6 +27,7 @@ export default function PokerTableFrame({
   heroSeat: number;
   board: string;
   className?: string;
+  phase?: string;
 }) {
   const order = [heroSeat, (heroSeat + 1) % 3, (heroSeat + 2) % 3];
   const hero = seats.find(s => s.id === order[0])!;
@@ -62,7 +64,7 @@ export default function PokerTableFrame({
         <SeatChip {...left} />
         {left.cards?.length ? (
           <div className="mt-2 flex gap-1">
-            {left.cards.map((t, i) => <PlayingCard key={i} text={t} active={left.active} />)}
+            {left.cards.map((t, i) => <PlayingCard key={i} text={t} active={left.active} phase={phase} />)}
           </div>
         ) : null}
       </div>
@@ -71,7 +73,7 @@ export default function PokerTableFrame({
         <SeatChip {...right} />
         {right.cards?.length ? (
           <div className="mt-2 flex gap-1">
-            {right.cards.map((t, i) => <PlayingCard key={i} text={t} active={right.active} />)}
+            {right.cards.map((t, i) => <PlayingCard key={i} text={t} active={right.active} phase={phase} />)}
           </div>
         ) : null}
       </div>
@@ -80,7 +82,7 @@ export default function PokerTableFrame({
         <SeatChip {...hero} />
         {hero.cards?.length ? (
           <div className="mt-2 flex gap-2">
-            {hero.cards.map((t, i) => <PlayingCard key={i} text={t} active={hero.active} />)}
+            {hero.cards.map((t, i) => <PlayingCard key={i} text={t} active={hero.active} phase={phase} />)}
           </div>
         ) : null}
       </div>
@@ -138,8 +140,8 @@ function SeatChip({
 
 
 /* ===== cartes style casino ===== */
-function PlayingCard({ text, active }: { text: string, active?: boolean }) {
-  if (active === false) {
+function PlayingCard({ text, active, phase }: { text: string, active?: boolean, phase?: string }) {
+  if (active === false && phase !== "SHOWDOWN") {
     return 
   }
   if (text === "XX") {
