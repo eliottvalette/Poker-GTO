@@ -107,86 +107,54 @@ def load_policy(path: str) -> Dict:
         raw = json.load(f)
     return raw
 
-def train(model: Model, policy: dict, epochs: int = 5, batch_size: int = 32, lr: float = 0.001, val_split: float = 0.2):
-    """Train the model on policy data with validation"""
+def train(model: Model, policy: dict, epochs: int = 100, batch_size: int = 32, lr: float = 0.001):
+    """Train the model on policy data"""
     
     # Create dataset and dataloader
     print("Preparing dataset...")
     dataset = PolicyDataset(policy)
-    
-    # Split dataset into train and validation
-    dataset_size = len(dataset)
-    val_size = int(dataset_size * val_split)
-    train_size = dataset_size - val_size
-    
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     
     # Loss function and optimizer
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
     
-    print(f"Training on {train_size} samples, validating on {val_size} samples")
+    print(f"Training on {len(dataset)} samples")
     print(f"Batch size: {batch_size}")
     print(f"Learning rate: {lr}")
     print(f"Epochs: {epochs}")
-    print(f"Total batches per epoch: {len(train_dataloader)}")
+    print(f"Total batches per epoch: {len(dataloader)}")
+    
+    model.train()
     
     for epoch in range(epochs):
-        # Training phase
-        model.train()
-        total_train_loss = 0.0
-        num_train_batches = 0
+        total_loss = 0.0
+        num_batches = 0
         
-        train_pbar = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{epochs} [Train]", leave=False)
-        for batch_features, batch_targets in train_pbar:
+        epoch_pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{epochs}", leave=False)
+        for batch_features, batch_targets in epoch_pbar:
             optimizer.zero_grad()            
             # Forward pass
             outputs = model(batch_features)
             
-            # Calculate loss
+            # Calculate loss (using KL divergence for probability distributions)
             loss = criterion(outputs, batch_targets)
             
             # Backward pass
             loss.backward()
             optimizer.step()
             
-            total_train_loss += loss.item()
-            num_train_batches += 1
+            total_loss += loss.item()
+            num_batches += 1
             
             # Update progress bar
-            train_pbar.set_postfix({
-                'train_loss': f'{loss.item():.6f}',
-                'avg_train_loss': f'{total_train_loss/num_train_batches:.6f}'
+            epoch_pbar.set_postfix({
+                'loss': f'{loss.item():.6f}',
+                'avg_loss': f'{total_loss/num_batches:.6f}'
             })
         
-        avg_train_loss = total_train_loss / num_train_batches
-        
-        # Validation phase
-        model.eval()
-        total_val_loss = 0.0
-        num_val_batches = 0
-        
-        with torch.no_grad():
-            val_pbar = tqdm(val_dataloader, desc=f"Epoch {epoch+1}/{epochs} [Val]", leave=False)
-            for batch_features, batch_targets in val_pbar:
-                outputs = model(batch_features)
-                loss = criterion(outputs, batch_targets)
-                
-                total_val_loss += loss.item()
-                num_val_batches += 1
-                
-                val_pbar.set_postfix({
-                    'val_loss': f'{loss.item():.6f}',
-                    'avg_val_loss': f'{total_val_loss/num_val_batches:.6f}'
-                })
-        
-        avg_val_loss = total_val_loss / num_val_batches
-        
-        print(f"Epoch {epoch+1}/{epochs}")
-        print(f"  Train Loss: {avg_train_loss:.6f}")
-        print(f"  Val Loss: {avg_val_loss:.6f}")
+        avg_loss = total_loss / num_batches
+        print(f"Epoch {epoch+1}/{epochs}, Average Loss: {avg_loss:.6f}")
     
     print("Training completed!")
 
@@ -251,7 +219,7 @@ if __name__ == "__main__":
     
     # Train model
     print("\nStarting training...")
-    train(model, policy_data, epochs=5, batch_size=64, lr=0.001)
+    train(model, policy_data, epochs=50, batch_size=64, lr=0.001)
     
     # Evaluate model
     print("\nEvaluating model...")
