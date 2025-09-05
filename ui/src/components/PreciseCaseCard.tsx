@@ -218,6 +218,7 @@ export default function PreciseCaseCard({ policy }: Props) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[120px]">Key</TableHead>
                 <TableHead className="w-[120px]">Phase</TableHead>
                 <TableHead className="w-[80px]">Pos</TableHead>
                 <TableHead className="w-[90px]">Main</TableHead>
@@ -239,6 +240,7 @@ export default function PreciseCaseCard({ policy }: Props) {
                     className={isSelected ? "bg-accent/50" : "cursor-pointer"}
                     onClick={()=> setSelectedKey(kStr)}
                   >
+                    <TableCell>{row.key}</TableCell>
                     <TableCell>{row.phase}</TableCell>
                     <TableCell>{row.role}</TableCell>
                     <TableCell>{row.hand}</TableCell>
