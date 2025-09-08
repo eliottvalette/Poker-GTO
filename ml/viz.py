@@ -80,7 +80,7 @@ def generate_preflop_heatmap(model, role_id, save_path) -> str:
                 p_fold = float(probs[FOLD_IDX])
                 p_raise = float(probs[RAISE_IDX])
                 p_allin = float(probs[ALLIN_IDX])
-                ratio = (p_raise + p_allin) / max(p_fold, eps)
+                ratio = (p_raise + p_allin) / max(p_fold + p_raise + p_allin, eps)
                 values[i, j] = ratio
 
     plt.figure(figsize=(10, 8))
@@ -136,8 +136,8 @@ def generate_preflop_heatmap_model_exhaustive(model, role_id, save_path) -> str:
             x = infoset_to_features(key).unsqueeze(0)
             probs = model(x)[0].cpu().numpy()
             p_fold = float(probs[FOLD_IDX])
-            p_raise_allin = float(probs[RAISE_IDX] + probs[ALLIN_IDX])
-            ratio = p_raise_allin / max(p_fold, eps)
+            p_raiseallin= float(probs[RAISE_IDX] + probs[ALLIN_IDX])
+            ratio = p_raiseallin / max(p_fold + p_raiseallin, eps)
             sums[hand_idx] += ratio
             counts[hand_idx] += 1
 
@@ -155,37 +155,6 @@ def generate_preflop_heatmap_model_exhaustive(model, role_id, save_path) -> str:
     ax.set_xlabel("Low card (cols) — suited above diagonal, offsuit below")
     ax.set_ylabel("High card (rows)")
     ax.set_title("Preflop mean (RAISE+ALL-IN)/FOLD — exhaustive model avg (BTN)")
-    plt.tight_layout()
-
-    plt.savefig(save_path, dpi=160)
-    plt.close()
-    return save_path
-
-def generate_preflop_heatmap_from_policy(role_id, save_path) -> str:
-    """Generate heatmap using the mean of (RAISE+ALL-IN)/FOLD per hand,
-    weighted by number of infosets for that hand (i.e., simple average over infosets),
-    based on the saved policy JSON.
-    """
-    sums = np.zeros(169, dtype=np.float64)
-    counts = np.zeros(169, dtype=np.int64)
-
-    values = np.zeros((13, 13), dtype=np.float32)
-    for hand_idx in range(169):
-        i, j = grid_coords_from_hand_index(hand_idx)
-        if counts[hand_idx] > 0:
-            values[i, j] = float(sums[hand_idx] / counts[hand_idx])
-        else:
-            values[i, j] = 0.0
-
-    plt.figure(figsize=(10, 8))
-    ax = sns.heatmap(values, annot=False, cmap="magma", cbar=True)
-    ax.set_xticks(np.arange(13) + 0.5)
-    ax.set_yticks(np.arange(13) + 0.5)
-    ax.set_xticklabels(RANK_LABELS, rotation=0)
-    ax.set_yticklabels(RANK_LABELS, rotation=0)
-    ax.set_xlabel("Low card (cols) — suited above diagonal, offsuit below")
-    ax.set_ylabel("High card (rows)")
-    ax.set_title("Preflop mean (RAISE+ALL-IN)/FOLD, weighted by infoset count")
     plt.tight_layout()
 
     plt.savefig(save_path, dpi=160)
