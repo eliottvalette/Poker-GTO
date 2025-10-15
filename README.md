@@ -1,77 +1,76 @@
 # GTO_Bot
 
-Projet d'expérimentations autour d'un solver CFR+ (3-handed NLHE), d'un modèle ML qui approxime la policy, et d'une UI Next.js pour explorer les résultats.
+Experimental project around a CFR+ solver (3-handed NLHE), an ML model approximating the policy, and a Next.js UI to explore the results.
 
-## Aperçu
-- CFR+ externe 3-handed minimal-raise dans `cfr_solver.py` s'appuie sur `poker_game_expresso.PokerGameExpresso` et les clés infosets compactes dans `infoset.py`.
-- La policy moyenne est sérialisée en JSON gzippé compact (bitmask + valeurs quantifiées) dans `policy/avg_policy.json.gz` et dupliquée pour l'UI dans `ui/public/avg_policy.json.gz`.
-- Un modèle PyTorch (`ml/model.py`) est entraîné à approximer cette policy avec `ml/train.py`. Des visualisations (ex: heatmap préflop) sont dans `ml/viz.py`.
-- L'UI (`ui/`) est une app Next.js/TypeScript qui charge la policy depuis `public/avg_policy.json.gz`.
+## Overview
+- External-sampling CFR+ (3-handed, minimal-raise) in `cfr_solver.py` relies on `poker_game_expresso.PokerGameExpresso` and compact infoset keys in `infoset.py`.
+- The average policy is serialized as compact gzipped JSON (bitmask + quantized values) in `policy/avg_policy.json.gz` and duplicated for the UI in `ui/public/avg_policy.json.gz`.
+- A PyTorch model (`ml/model.py`) is trained to approximate this policy with `ml/train.py`. Visualizations (e.g., preflop heatmap) are in `ml/viz.py`.
+- The UI (`ui/`) is a Next.js/TypeScript app that loads the policy from `public/avg_policy.json.gz`.
 
-
-## Installation Python (core + ML)
+## Python setup (core + ML)
 ```bash
-# Créer un venv et installer les dépendances (exemple)
+# Create a venv and install dependencies (example)
 python -m venv .venv
 source .venv/bin/activate
 pip install torch numpy pandas treys tqdm seaborn matplotlib
 ```
 
-## Lancer l'entraînement CFR+
-`cfr_solver.py` entraîne le solver, sauvegarde la policy et exporte une version utilisable par l'UI.
+## Run CFR+ training
+`cfr_solver.py` trains the solver, saves the policy, and exports a copy for the UI.
 
 ```bash
 python cfr_solver.py
 ```
-Sorties principales:
+Main outputs:
 - `policy/avg_policy.json.gz`
 - `ui/public/avg_policy.json.gz`
 - `policy/avg_policy.csv` (via `stats_policy.extraction_policy_data()`)
 
-Paramètres clés (éditer dans `cfr_solver.py`):
-- `iterations` (défaut 1_000_000)
-- `stacks` (ex: `(100, 100, 100)`)
-- `SAVE_EVERY` pour checkpoints (0 = désactivé)
+Key parameters (edit in `cfr_solver.py`):
+- `iterations` (default 1_000_000)
+- `stacks` (e.g., `(100, 100, 100)`)
+- `SAVE_EVERY` for checkpoints (0 = disabled)
 
-## Analyse et export CSV
+## Analyze and export to CSV
 ```bash
-python stats_policy.py  # lit policy/avg_policy.json.gz et écrit policy/avg_policy.csv
+python stats_policy.py  # reads policy/avg_policy.json.gz and writes policy/avg_policy.csv
 ```
 
-`stats_policy.py` reconstruit les distributions d'actions, décode les clés infosets et produit un CSV rapide à explorer.
+`stats_policy.py` reconstructs action distributions, decodes infoset keys, and produces a CSV for quick exploration.
 
-## Entraîner le modèle ML sur la policy
+## Train the ML model on the policy
 ```bash
 cd ml
-python train.py  # lit ../policy/avg_policy.json.gz, entraîne et sauvegarde trained_policy_model.pth
+python train.py  # reads ../policy/avg_policy.json.gz, trains, and saves trained_policy_model.pth
 ```
-Points notables:
-- Entrée: one-hot 224 dims (phase, rôle, main 169, board 31, 3 scalaires normalisés, hero-vs-board 11)
-- Sortie: 5 actions canon `FOLD, CHECK, CALL, RAISE, ALL-IN`
-- Perte: MSE sur distributions (softmax en sortie du modèle)
+Notes:
+- Input: 224-dim one-hot features (phase, role, hand 169, board 31, 3 normalized scalars, hero-vs-board 11)
+- Output: 5 canonical actions `FOLD, CHECK, CALL, RAISE, ALL-IN`
+- Loss: MSE over distributions (model outputs softmax)
 
-## Visualisations (heatmap préflop)
-Depuis `ml/`:
+## Visualizations (preflop heatmap)
+From `ml/`:
 ```bash
-python viz.py  # produit ml/preflop_heatmap.png à partir de trained_policy_model.pth
+python viz.py  # produces ml/preflop_heatmap.png using trained_policy_model.pth
 ```
-Vous pouvez ajuster `role_id` et les paramètres/buckets dans `ml/viz.py`.
+You can adjust `role_id` and bucketing parameters in `ml/viz.py`.
 
-## UI Next.js
-L'UI vit dans `ui/`. Elle lit `public/avg_policy.json.gz`.
+## Next.js UI
+The UI lives in `ui/`. It reads `public/avg_policy.json.gz`.
 
 ```bash
 cd ui
 npm install
-npm run dev  # lance l'UI en mode développement
+npm run dev  # start UI in development mode
 ```
 
-Sources clés dans `ui/src/`:
+Key sources in `ui/src/`:
 - `lib/policy.ts`, `lib/infoset.ts`, `lib/game.ts`: parsing/logic
-- `components/` et `app/` pour les pages et widgets
+- `components/` and `app/` for pages and widgets
 
-## Format de la policy (compacte)
-Chaque entrée de `avg_policy.json.gz` est:
+## Policy format (compact)
+Each entry in `avg_policy.json.gz` is:
 ```json
 {
   "<infoset_key_u64>": {
@@ -80,29 +79,41 @@ Chaque entrée de `avg_policy.json.gz` est:
   }
 }
 ```
-- `bitmask`: indique quelles actions (par index) sont présentes
-- `q_i`: valeurs entières quantifiées (0..255), somme ajustée à 255
-- Reconstruction: `prob[action] = q_i / sum(q)` selon l'ordre des bits
+- `bitmask`: which actions (by index) are present
+- `q_i`: quantized integers (0..255), sum adjusted to 255
+- Rebuild: `prob[action] = q_i / sum(q)` in the order of set bits
 
-Les champs de l'infoset sont packés dans un `u64` (voir `infoset.py`):
-- `PHASE` (3 bits), `ROLE` (2), `HAND` (8, index 13x13), `BOARD` (5), `POT` (8), `RATIO` (8), `SPR` (8), `HEROBOARD` (4)
+Infoset fields are packed into a `u64` (see `infoset.py`):
+- `PHASE` (3 bits), `ROLE` (2), `HAND` (8, 13x13 index), `BOARD` (5), `POT` (8), `RATIO` (8), `SPR` (8), `HEROBOARD` (4)
 
-## Structure des répertoires (extraits)
+## Directory structure (excerpt)
 ```
 GTO_Bot/
-  cfr_solver.py                # Entraînement CFR+, export policy
-  poker_game_expresso.py       # Environnement 3-handed + logique des actions/pots
-  infoset.py                   # Bucketing, pack/unpack u64, mapping 169
-  policy.py                    # Chargement/sampling d'une policy moyenne compacte
-  stats_policy.py              # Décodage policy -> CSV et stats
-  utils.py                     # Évaluation de mains (Treys) et I/O ranges
+  cfr_solver.py                # CFR+ training, policy export
+  poker_game_expresso.py       # 3-handed env + betting/pot logic
+  infoset.py                   # Bucketing, u64 pack/unpack, 169 mapping
+  policy.py                    # Load/sample compact average policy
+  stats_policy.py              # Decode policy -> CSV and stats
+  utils.py                     # Hand evaluation (Treys) and range I/O
   ml/
-    model.py                   # Réseau PyTorch
-    train.py                   # Pipeline d'entraînement sur la policy
-    viz.py                     # Heatmaps et visualisations
+    model.py                   # PyTorch network
+    train.py                   # Training pipeline on policy
+    viz.py                     # Heatmaps and visualizations
   policy/
-    avg_policy.json.gz         # Policy moyenne (sortie solver)
-    avg_policy.csv             # Export tabulaire
-  ui/                          # App Next.js/TypeScript
-    public/avg_policy.json.gz  # Copie de la policy pour l'UI
+    avg_policy.json.gz         # Average policy (solver output)
+    avg_policy.csv             # Tabular export
+  ui/                          # Next.js/TypeScript app
+    public/avg_policy.json.gz  # Policy copy for the UI
 ```
+
+## Screenshots
+
+### Preflop Heatmap
+The preflop range visualization (aggregate raise/all-in vs fold ratio across 13x13 hand grid).
+
+![Preflop Heatmap](heatmap.png)
+
+### Live Test Board
+Interactive live testing table in the web UI where you can play against the GTO policy.
+
+![Live Test Board](board.png)
