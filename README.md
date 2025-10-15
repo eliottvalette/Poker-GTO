@@ -8,6 +8,18 @@ Experimental project around a CFR+ solver (3-handed NLHE), an ML model approxima
 - A PyTorch model (`ml/model.py`) is trained to approximate this policy with `ml/train.py`. Visualizations (e.g., preflop heatmap) are in `ml/viz.py`.
 - The UI (`ui/`) is a Next.js/TypeScript app that loads the policy from `public/avg_policy.json.gz`.
 
+## Screenshots
+
+### Preflop Heatmap
+The preflop range visualization (aggregate raise/all-in vs fold ratio across 13x13 hand grid).
+
+![Preflop Heatmap](heatmap.png)
+
+### Live Test Board
+Interactive live testing table in the web UI where you can play against the GTO policy.
+
+![Live Test Board](board.png)
+
 ## Python setup (core + ML)
 ```bash
 # Create a venv and install dependencies (example)
@@ -105,15 +117,3 @@ GTO_Bot/
   ui/                          # Next.js/TypeScript app
     public/avg_policy.json.gz  # Policy copy for the UI
 ```
-
-## Screenshots
-
-### Preflop Heatmap
-The preflop range visualization (aggregate raise/all-in vs fold ratio across 13x13 hand grid).
-
-![Preflop Heatmap](heatmap.png)
-
-### Live Test Board
-Interactive live testing table in the web UI where you can play against the GTO policy.
-
-![Live Test Board](board.png)
