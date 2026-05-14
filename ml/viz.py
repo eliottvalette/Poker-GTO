@@ -17,7 +17,7 @@ from ml.model import Model
 # Constants
 RANK_LABELS = ["A","K","Q","J","T","9","8","7","6","5","4","3","2"]
 PHASE_PREFLOP = 0
-BOARD_BUCKET_PF = 3
+BOARD_BUCKET_PF = 0
 HEROBOARD_PF = 0
 
 # Indices must match ACTIONS order in training

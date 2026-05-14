@@ -39,7 +39,6 @@ export function handLabel169(idx: number): string {
 
 // Buckets lisibles
 export const BOARD_BUCKET_LABELS = [
-  "PF",
   "RB_NP_LO","RB_NP_MID","RB_NP_HI",
   "RB_PR_LO","RB_PR_MID","RB_PR_HI",
   "TT_NP_LO","TT_NP_MID","TT_NP_HI",
@@ -50,14 +49,21 @@ export const BOARD_BUCKET_LABELS = [
 
 export const HEROBOARD_LABELS = [
   "AIR",
+  "LOW_PAIR",
+  "MID_PAIR",
+  "TOP_PAIR_PLUS",
   "DRAW",
   "PAIR",
-  "STRONG_PAIR",
   "OVERPAIR",
   "STRONG_PAIR_DRAW",
   "COMBO_DRAW",
-  "MADE_STRAIGHT_FLUSH"
+  "MADE_STRAIGHT_FLUSH",
 ] as const;
+
+export function boardBucketLabel(phase: number, board: number): string {
+  if (phase === 0) return "PF";
+  return BOARD_BUCKET_LABELS[board] ?? String(board);
+}
 
 // Raccourci lisible pour une clé
 export function prettyInfosetRow(kStr: string) {
@@ -67,7 +73,7 @@ export function prettyInfosetRow(kStr: string) {
     phase: PHASE_NAMES[f.phase] ?? String(f.phase),
     role: ROLE_NAMES[f.role] ?? String(f.role),
     hand: handLabel169(f.hand),
-    board: BOARD_BUCKET_LABELS[f.board] ?? String(f.board),
+    board: boardBucketLabel(f.phase, f.board),
     heroboard: HEROBOARD_LABELS[f.heroboard] ?? String(f.heroboard),
     pot: `bucket ${f.pot}`,
     ratio: `bucket ${f.ratio}`,

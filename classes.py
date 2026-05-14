@@ -3,7 +3,12 @@
 # Classes simplifiées pour la gestion des cartes et du deck
 # ------------------------------------------------------------
 
-from typing import List
+from typing import List, Tuple
+
+_R2S = {
+    14: "A", 13: "K", 12: "Q", 11: "J", 10: "T",
+    9: "9", 8: "8", 7: "7", 6: "6", 5: "5", 4: "4", 3: "3", 2: "2",
+}
 
 class Card:
     __slots__ = ("rank", "suit", "id")
@@ -45,6 +50,26 @@ class Deck:
             for j in range(i+1, 52):
                 combos.append((self.cards[i], self.cards[j]))
         return combos
+
+
+def card_id_to_rank_suit(card_id: int) -> Tuple[int, int]:
+    return card_id // 4 + 2, card_id % 4
+
+
+def combo_to_169(card_1_id: int, card_2_id: int) -> str:
+    rank_1, suit_1 = card_id_to_rank_suit(card_1_id)
+    rank_2, suit_2 = card_id_to_rank_suit(card_2_id)
+
+    if rank_1 == rank_2:
+        return f"{_R2S[rank_1]}{_R2S[rank_2]}"
+
+    high_rank, low_rank = (rank_1, rank_2) if rank_1 >= rank_2 else (rank_2, rank_1)
+    suited = suit_1 == suit_2
+    return f"{_R2S[high_rank]}{_R2S[low_rank]}{'s' if suited else 'o'}"
+
+
+DECK = tuple(range(52))
+ALL_COMBOS = tuple((i, j) for i in range(52) for j in range(i + 1, 52))
 
 
 # ------------------------------------------------------------

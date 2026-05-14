@@ -318,6 +318,9 @@ class NodeEV:
 # ======================
 class SpinGoPushFoldSolver:
     def __init__(self, config: ExpressoConfig, saved_ranges: Dict[str, Set[Tuple[int,int]]] = None):
+        if saved_ranges is None:
+            saved_ranges = {}
+
         self.config = config
         self.node = NodeEV(config)
         self.BTN_shove: Set[Tuple[int,int]] = saved_ranges.get("BTN_shove", set())

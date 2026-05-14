@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { ROLES, PHASES, ACTIONS, normalize, type GridMix, calculateWeightedStats, calculatePhaseStats } from "@/lib/policy";
 import { unpackInfosetKeyDense } from "@/lib/infoset";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Grid169 from "@/components/Grid169";
 import Legend from "@/components/Legend";
 import PreciseCaseCard from "@/components/PreciseCaseCard";

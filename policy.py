@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import random
 import gzip
-from typing import Dict, List
+from typing import Dict, List, Any
 from infoset import build_infoset_key_fast
 from poker_game_expresso import PokerGameExpresso
 
@@ -24,6 +24,16 @@ def _decode_compact_entry(entry: list[int]) -> Dict[str, float]:
             idx_q += 1
     return dist
 
+
+def _extract_compact_policy(value: Any) -> list[int] | None:
+    if isinstance(value, list) and value and isinstance(value[0], int):
+        return value
+    if isinstance(value, dict):
+        policy = value.get("policy")
+        if isinstance(policy, list) and policy and isinstance(policy[0], int):
+            return policy
+    return None
+
 class AveragePolicy:
     def __init__(self, policy: Dict[int, Dict[str, float]], seed: int = 123):
         self.policy = policy
@@ -31,15 +41,17 @@ class AveragePolicy:
 
     @staticmethod
     def load(path: str, seed: int = 123) -> "AveragePolicy":
-        # GZIP + format compact OBLIGATOIRES
+        # GZIP + compact policy. Supports legacy [mask,q...] and current
+        # {"policy":[mask,q...], "visits":n} entries.
         with gzip.open(path, "rt", encoding="utf-8") as f:
             raw = json.load(f)
         pol: Dict[int, Dict[str, float]] = {}
         for k, v in raw.items():
             key = int(k)
-            if not isinstance(v, list) or not v or not isinstance(v[0], int):
+            compact_policy = _extract_compact_policy(v)
+            if compact_policy is None:
                 continue
-            dist = _decode_compact_entry(v)
+            dist = _decode_compact_entry(compact_policy)
             if dist:
                 pol[key] = dist
         return AveragePolicy(pol, seed=seed)

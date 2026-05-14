@@ -6,7 +6,10 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from typing import Dict, List
-from model import Model
+try:
+    from .model import Model
+except ImportError:
+    from model import Model
 import sys
 import os
 from tqdm import tqdm

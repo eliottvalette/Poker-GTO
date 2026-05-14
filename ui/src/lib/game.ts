@@ -239,6 +239,7 @@ export class PokerGame {
     if (p !== this.players[this.current_role]) throw new Error("Not player's turn");
     const legal = this.update_available_actions(p);
     if (!legal.includes(action)) throw new Error(`Illegal action ${action}`);
+    const phaseBeforeAction = this.current_phase;
 
     if (action==="FOLD") {
       p.has_folded = true;
@@ -280,7 +281,9 @@ export class PokerGame {
     }
     p.has_acted = true;
     this.check_phase_completion();
-    if (this.current_phase!=="SHOWDOWN") this.next_player();
+    if (this.current_phase !== "SHOWDOWN" && this.current_phase === phaseBeforeAction) {
+      this.next_player();
+    }
   }
 
   private everyoneAllInOrCapped(): boolean {
