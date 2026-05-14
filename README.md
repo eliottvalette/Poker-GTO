@@ -34,6 +34,23 @@ pip install torch numpy pandas treys tqdm seaborn matplotlib
 ```bash
 python cfr_solver.py
 ```
+
+For the faster parallel runner, use:
+
+```bash
+python scripts/parallel_cfr.py \
+  --save-policy policy/avg_policy.json.gz \
+  --save-ui-copy ui/public/avg_policy.json.gz
+```
+
+Default parallel settings are tuned for the current benchmarked tradeoff:
+- `mode=sync`
+- `workers=os.cpu_count()`
+- `total_iterations=1_000_000`
+- `iterations_per_worker=1_000`
+- no automatic warm-start; pass `--warm-start policy/avg_policy.json.gz` explicitly if you want to preserve/continue an existing average policy
+
+Use `--mode independent` for maximum throughput when you accept a more aggressive approximation, or `--mode sequential` for baseline benchmarks.
 Main outputs:
 - `policy/avg_policy.json.gz`
 - `ui/public/avg_policy.json.gz`

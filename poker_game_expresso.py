@@ -33,6 +33,7 @@ GAME_PHASES = [
 HAND_RANKS_IDX = {name: i for i, name in enumerate(HAND_RANKS)}
 PLAYER_ACTIONS_IDX = {name: i for i, name in enumerate(PLAYER_ACTIONS)}
 GAME_PHASES_IDX = {name: i for i, name in enumerate(GAME_PHASES)}
+_FULL_DECK = tuple(Card(r, s) for r in range(2, 15) for s in range(4))
 
 class GameInit:
     stacks_init: List[int]                   # ex: [25, 25, 25]
@@ -56,10 +57,11 @@ class PokerGameExpresso:
         self.starting_stack = 100
 
         self.main_pot = float(init.main_pot)
+        self.rng = getattr(init, "rng", rd)
 
         self.community_cards = init.community_cards.copy()
-        self.remaining_deck = [Card(r, s) for r in range(2, 15) for s in range(4)]
-        rd.shuffle(self.remaining_deck)
+        self.remaining_deck = list(_FULL_DECK)
+        self.rng.shuffle(self.remaining_deck)
         # Retire d'éventuelles cartes déjà au board
         known_board = {c.id for c in self.community_cards}
         self.remaining_deck = [c for c in self.remaining_deck if c.id not in known_board]
@@ -72,7 +74,6 @@ class PokerGameExpresso:
         self.players = self.initialize_simulated_players(init)
 
         self.current_maximum_bet = max(p.current_player_bet for p in self.players)
-        self.action_masks = {0: {a: False for a in PLAYER_ACTIONS}, 1: {a: False for a in PLAYER_ACTIONS}, 2: {a: False for a in PLAYER_ACTIONS}}
         
         self.action_history = {p.name: [] for p in self.players}
 
@@ -93,47 +94,28 @@ class PokerGameExpresso:
             print("========== FIN INITIALISATION ==========\n")
 
     def update_available_actions(self, player: Player, current_maximum_bet: float, number_raise_this_game_phase: int, main_pot: float, phase: str):
-        player_role = player.role
+        if phase == "SHOWDOWN" or player.is_all_in:
+            return ()
 
-        if player.is_all_in:
-            for action in PLAYER_ACTIONS:
-                self.action_masks[player_role][action] = False
-            return []
+        can_check = player.current_player_bet >= current_maximum_bet
+        can_fold = not can_check
 
-        for action in PLAYER_ACTIONS:
-            self.action_masks[player_role][action] = True
-        
-        if player.current_player_bet < current_maximum_bet:
-            self.action_masks[player_role]["CHECK"] = False
-        
-        if self.action_masks[player_role]["CHECK"]:
-            self.action_masks[player_role]["FOLD"] = False
-        
-        # Gestion de CALL / ALL-IN
         call_amount = current_maximum_bet - player.current_player_bet
+        can_call = False
         if call_amount <= 0:
-            # Pas de mise à suivre → CALL désactivé
-            self.action_masks[player_role]["CALL"] = False
+            can_call = False
         elif call_amount >= player.stack:
-            # Le joueur ne peut que faire tapis (ALL-IN est en réalité un call avec tout son stack)
-            self.action_masks[player_role]["CALL"] = False
-            self.action_masks[player_role]["ALL-IN"] = True
+            can_call = False
         else:
-            # Le joueur peut payer normalement
-            self.action_masks[player_role]["CALL"] = True
+            can_call = True
         
-        # Si le joueur ne peut pas couvrir le min-raise, on désactive RAISE plus bas
         if current_maximum_bet == 0:
             raise_amount = self.big_blind * 3
         else:
             raise_amount = current_maximum_bet + max(self.last_raise_amount, self.big_blind * 3)
         
         add_required = raise_amount - player.current_player_bet
-        if add_required <= 0 or player.stack < add_required:
-            self.action_masks[player_role]["RAISE"] = False
-
-        if number_raise_this_game_phase >= 4:
-            self.action_masks[player_role]["RAISE"] = False
+        can_raise = add_required > 0 and player.stack >= add_required and number_raise_this_game_phase < 4
         
         """
         pot_raise_actions = [
@@ -174,15 +156,17 @@ class PokerGameExpresso:
                 if add_required < min_raise or player.stack < add_required:
                     self.masks[player_role][action] = False
         """
-        
-        
-        if phase == "SHOWDOWN":
-            for action in PLAYER_ACTIONS:
-                self.action_masks[player_role][action] = False
-
-        action_mask = self.action_masks[player_role]
-        # ordre canonique constant → tuple (pas de nouvelle liste)
-        return tuple(a for a in ("FOLD","CHECK","CALL","RAISE","ALL-IN") if action_mask[a])
+        actions = []
+        if can_fold:
+            actions.append("FOLD")
+        if can_check:
+            actions.append("CHECK")
+        if can_call:
+            actions.append("CALL")
+        if can_raise:
+            actions.append("RAISE")
+        actions.append("ALL-IN")
+        return tuple(actions)
 
     def deal_cards(self):
         """
@@ -294,49 +278,58 @@ class PokerGameExpresso:
         3. Cas particuliers : un seul joueur reste, tous all-in, ou BB preflop
         """
 
-        # Récupérer les joueurs actifs
-        in_game_players = [p for p in self.players if p.is_active and not p.has_folded]
-        all_in_players = [p for p in in_game_players if p.is_all_in]
+        in_game_count = 0
+        all_in_count = 0
+        not_all_in_count = 0
+        any_all_in = False
+        everyone_capped = True
+        betting_round_complete = True
+
+        for player in self.players:
+            if not player.is_active or player.has_folded:
+                continue
+
+            in_game_count += 1
+            if player.is_all_in:
+                all_in_count += 1
+                any_all_in = True
+            else:
+                not_all_in_count += 1
+
+            if not (player.is_all_in or player.current_player_bet == self.current_maximum_bet):
+                everyone_capped = False
+
+            if not player.has_acted:
+                betting_round_complete = False
+            elif player.current_player_bet < self.current_maximum_bet and not player.is_all_in:
+                betting_round_complete = False
 
         # Victoire directe si un seul joueur actif
-        if len(in_game_players) == 1:
+        if in_game_count == 1:
             if DEBUG_OPTI_ULTIMATE:
                 print("Moving to showdown (only one player remains)")
             self.handle_showdown()
             return
 
         # Cas all-in : showdown forcé si plus de mise possible
-        if any(p.is_all_in for p in in_game_players):
-            everyone_capped = all(
-                p.is_all_in or p.current_player_bet == self.current_maximum_bet
-                for p in in_game_players
-            )
-            at_most_one_live = sum(1 for p in in_game_players if not p.is_all_in) <= 1
-            if everyone_capped and at_most_one_live and len(in_game_players) > 1:
+        if any_all_in:
+            if everyone_capped and not_all_in_count <= 1 and in_game_count > 1:
                 if DEBUG_OPTI_ULTIMATE:
                     print("Moving to showdown (all-in present, no further betting possible)")
                 self.handle_showdown()
                 return
 
         # Tous les joueurs restants sont all-in
-        if (len(all_in_players) == len(in_game_players)) and (len(in_game_players) > 1):
+        if (all_in_count == in_game_count) and (in_game_count > 1):
             if DEBUG_OPTI_ULTIMATE:
                 print("Moving to showdown (all remaining players are all-in)")
             self.handle_showdown()
             return
 
         # Vérification des actions des joueurs
-        for player in in_game_players:
-            if not player.has_acted:
-                if DEBUG_OPTI_ULTIMATE:
-                    print(f"{player.name} n'a pas encore agi")
-                self.next_player()
-                return
-            if player.current_player_bet < self.current_maximum_bet and not player.is_all_in:
-                if DEBUG_OPTI_ULTIMATE:
-                    print("Un des joueurs en jeu n'a pas égalisé la mise maximale")
-                self.next_player()
-                return
+        if not betting_round_complete:
+            self.next_player()
+            return
 
         # Ici, toutes les conditions pour avancer la phase sont remplies
         if self.current_phase == "RIVER":
@@ -669,8 +662,8 @@ class PokerGameExpresso:
         # Complète le board à 5 cartes
         while len(self.community_cards) < 5:
             if not self.remaining_deck:
-                self.remaining_deck = [Card(r, s) for r in range(2, 15) for s in range(4)]
-                rd.shuffle(self.remaining_deck)
+                self.remaining_deck = list(_FULL_DECK)
+                self.rng.shuffle(self.remaining_deck)
                 known = {c.id for p in self.players for c in getattr(p, "cards", [])} | {c.id for c in self.community_cards}
                 self.remaining_deck = [c for c in self.remaining_deck if c.id not in known]
             self.community_cards.append(self.remaining_deck.pop())

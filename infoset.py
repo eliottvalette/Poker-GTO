@@ -40,6 +40,7 @@ LABEL_TO_169IDX = {label: i for i, label in enumerate(_LABELS_169)}
 
 PHASE_TO_ID = {"PREFLOP":0,"FLOP":1,"TURN":2,"RIVER":3,"SHOWDOWN":4}
 ROLE_LABELS = ["SB", "BB", "BTN"]
+RANK_TO_GRID_INDEX = {14:0,13:1,12:2,11:3,10:4,9:5,8:6,7:7,6:8,5:9,4:10,3:11,2:12}
 
 def hand169_idx(card_1: Card, card_2: Card) -> tuple[int, str]:
     label = combo_label_169(card_1, card_2)
@@ -213,8 +214,7 @@ def build_infoset_key_fast(game, hero) -> int:
 
     # Hand 169 idx
     card_1, card_2 = hero.cards
-    rank_to_index = {14:0,13:1,12:2,11:3,10:4,9:5,8:6,7:7,6:8,5:9,4:10,3:11,2:12}
-    i, j = rank_to_index[card_1.rank], rank_to_index[card_2.rank]
+    i, j = RANK_TO_GRID_INDEX[card_1.rank], RANK_TO_GRID_INDEX[card_2.rank]
     suited = (card_1.suit == card_2.suit)
     if i == j:
         # paire: diagonale
@@ -232,9 +232,10 @@ def build_infoset_key_fast(game, hero) -> int:
     # Sizing
     pot_bb    = float(game.main_pot)
     tocall_bb = max(0.0, float(game.current_maximum_bet - hero.current_player_bet))
-    live      = [p for p in game.players if p.is_active and not p.has_folded]
-    eff       = min([min(hero.stack, op.stack) for op in live if op is not hero],
-                    default=hero.stack)
+    eff = hero.stack
+    for op in game.players:
+        if op is not hero and op.is_active and not op.has_folded:
+            eff = min(eff, hero.stack, op.stack)
 
     # Buckets
     pot_q   = qlog_bb(pot_bb)

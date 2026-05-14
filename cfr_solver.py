@@ -104,6 +104,7 @@ class CFRPlusSolver:
         init.main_pot = 0
         init.phase = "PREFLOP"
         init.community_cards = []
+        init.rng = self.rng
 
         game = PokerGameExpresso(init)
         game.deal_small_and_big_blind()
@@ -376,36 +377,81 @@ class CFRPlusSolver:
 # Exécution principale
 # =========================
 if __name__ == "__main__":
+    import argparse
     import gc
+    from scripts import parallel_cfr
+
     gc.collect()
 
     print("CFR+ Solver - 3-handed NLHE")
     print("=" * 50)
 
-    seed = int(time.time())
-    stacks = (100, 100, 100)
-    iterations = 1_000_000
+    parser = argparse.ArgumentParser(description="CFR+ solver entrypoint. Uses parallel sync training by default.")
+    parser.add_argument("--sequential", action="store_true", help="use the legacy single-process trainer")
+    parser.add_argument("--mode", choices=("sync", "independent", "sequential"), default="sync")
+    parser.add_argument("--workers", type=int, default=max(1, os.cpu_count() or 1))
+    parser.add_argument("--iterations", type=int, default=1_000_000)
+    parser.add_argument("--iterations-per-worker", type=int, default=parallel_cfr.DEFAULT_ITERATIONS_PER_WORKER)
+    parser.add_argument("--rounds", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=int(time.time()))
+    parser.add_argument("--stacks", type=parallel_cfr.parse_stacks, default=(100, 100, 100))
+    parser.add_argument("--warm-start", default="", help="optional policy path to preserve/continue average strategy")
+    parser.add_argument("--save-policy", default="policy/avg_policy.json.gz")
+    parser.add_argument("--save-ui-copy", default="ui/public/avg_policy.json.gz")
+    parser.add_argument("--skip-csv", action="store_true", help="skip avg_policy.csv extraction after training")
+    args, unknown_args = parser.parse_known_args()
+    if unknown_args:
+        print(f"[WARN] Ignoring unknown arguments: {' '.join(unknown_args)}")
+
+    seed = args.seed
+    stacks = args.stacks
+    iterations = args.iterations
 
     print("Configuration:")
     print(f"  Seed: {seed}")
     print(f"  Stacks: {stacks}")
     print(f"  Itérations: {iterations}")
+    print(f"  Mode: {'sequential' if args.sequential else args.mode}")
+    if not args.sequential:
+        print(f"  Workers: {args.workers}")
+        print(f"  Iterations/worker/round: {args.iterations_per_worker}")
+        print(f"  Warm-start: {args.warm_start or 'disabled'}")
     print()
 
-    solver = CFRPlusSolver(seed=seed, stacks=stacks)
-    solver.warm_start_from_policy("policy/avg_policy.json.gz")
+    if args.sequential:
+        solver = CFRPlusSolver(seed=seed, stacks=stacks)
+        if args.warm_start:
+            solver.warm_start_from_policy(args.warm_start)
 
-    if PROFILE:
-        profiler = cProfile.Profile()
-        profiler.enable()
+        if PROFILE:
+            profiler = cProfile.Profile()
+            profiler.enable()
 
-    solver.train(iterations=iterations)
+        solver.train(iterations=iterations)
 
-    if PROFILE:
-        profiler.disable()
-        profiler.dump_stats("profiling/cfr_solver_profile.prof")
+        if PROFILE:
+            profiler.disable()
+            profiler.dump_stats("profiling/cfr_solver_profile.prof")
+    else:
+        parallel_args = [
+            "--mode", args.mode,
+            "--workers", str(args.workers),
+            "--iterations-per-worker", str(args.iterations_per_worker),
+            "--total-iterations", str(args.iterations),
+            "--seed", str(args.seed),
+            "--stacks", ",".join(str(stack) for stack in args.stacks),
+            "--save-policy", args.save_policy,
+            "--save-ui-copy", args.save_ui_copy,
+        ]
+        if args.rounds is not None:
+            parallel_args.extend(["--rounds", str(args.rounds)])
+        if args.warm_start:
+            parallel_args.extend(["--warm-start", args.warm_start])
 
-    extraction_policy_data()
+        parallel_cfr.main(parallel_args)
+
+    if not args.skip_csv:
+        extraction_policy_data(args.save_policy)
 
     print(f"\nEntraînement terminé avec succès!")
-    print(f"Policy sauvegardée dans: policy/avg_policy.json.gz")
+    print(f"Policy sauvegardée dans: {args.save_policy}")

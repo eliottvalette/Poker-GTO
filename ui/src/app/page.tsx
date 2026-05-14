@@ -49,7 +49,7 @@ export default function Page() {
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [phaseIdx, setPhaseIdx] = useState<number>(0);
   const [roleIdx, setRoleIdx] = useState<number>(0);
-  const [heatmapMode, setHeatmapMode] = useState<"action" | "visits" | false>(false);
+  const [heatmapMode, setHeatmapMode] = useState<"action" | "visits" | false>("action");
   const [detailedMode, setDetailedMode] = useState(false);
   const [mainTab, setMainTab] = useState<"overview"|"case"|"test">("overview");
   
@@ -170,13 +170,15 @@ export default function Page() {
                   <div>
                     <CardTitle>Mix d&apos;actions (13x13)</CardTitle>
                     <CardDescription>
-                        Statistiques pondérées par visites: {weightedStats.totalVisits.toLocaleString()} visites totales 
-                        ({weightedStats.avgVisitsPerHand.toFixed(0)} visites/mains en moyenne)
+                        Vue actuelle ({PHASES[phaseIdx]} / {ROLES[roleIdx]}): {weightedStats.totalVisits.toLocaleString()} visites sauvegardées 
+                        ({weightedStats.avgVisitsPerHand.toFixed(0)} / main)
                         <br />
                         <span className="text-sm">
+                          Toutes positions + tous buckets:{" "}
                           {PHASES.slice(0, 4).map(phase => (
                             <span key={phase}>
-                              {phase}: {phaseStats[phase]?.avgVisitsPerHand.toFixed(0) || '0'} visites/mains
+                              {phase}: {(phaseStats[phase]?.totalVisits ?? 0).toLocaleString()} total
+                              {" "}({phaseStats[phase]?.avgVisitsPerHand.toFixed(0) || "0"} / main)
                               {phase !== 'RIVER' ? ' | ' : ''}
                             </span>
                           ))}
