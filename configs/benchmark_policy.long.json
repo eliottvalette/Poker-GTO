@@ -1,0 +1,22 @@
+{
+  "policy": "policy/avg_policy.json.gz",
+  "old_policy": "git:HEAD:policy/avg_policy.json.gz",
+  "hands": 10000,
+  "seed": 20260515,
+  "stacks": [100, 100, 100],
+  "policy_epsilon": 0.0,
+  "max_decisions": 250,
+  "out_dir": "benchmarks/long_{timestamp}",
+  "rotate_seats": true,
+  "duplicate_deals": true,
+  "enabled_scenarios": [
+    "current_vs_2x_random",
+    "current_vs_2x_calling_station",
+    "current_vs_2x_nit",
+    "current_vs_2x_aggro",
+    "current_vs_2x_shove_fold",
+    "current_vs_old_vs_random",
+    "current_vs_old_vs_station",
+    "current_vs_2x_old"
+  ]
+}
