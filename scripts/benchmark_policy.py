@@ -20,6 +20,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+import config
 from cfr_solver import ACTION_INDEX, ACTIONS
 from infoset import build_infoset_key_fast
 from infoset import hero_vs_board_bucket
@@ -27,7 +28,6 @@ from poker_game_expresso import GameInit
 from poker_game_expresso import PokerGameExpresso
 
 Policy = dict[int, list[float]]
-DEFAULT_CONFIG_PATH = ROOT_DIR / "configs" / "benchmark_policy.json"
 
 
 @dataclass(frozen=True)
@@ -67,12 +67,13 @@ class Bot(Protocol):
         ...
 
 
-def load_policy_from_source(source: str) -> Policy:
-    if source.startswith("git:"):
-        _, ref, path = source.split(":", 2)
+def load_policy_from_source(source: str | Path) -> Policy:
+    source_value = str(source)
+    if source_value.startswith("git:"):
+        _, ref, path = source_value.split(":", 2)
         data = subprocess.check_output(["git", "show", f"{ref}:{path}"], cwd=ROOT_DIR)
     else:
-        data = Path(source).read_bytes()
+        data = Path(source_value).read_bytes()
 
     raw = json.loads(gzip.decompress(data).decode("utf-8"))
     policy: Policy = {}
@@ -506,70 +507,26 @@ def parse_stacks(value: str) -> tuple[int, int, int]:
         raise argparse.ArgumentTypeError("stacks must be integers") from exc
 
 
-def normalize_config(raw_config: dict[str, object]) -> dict[str, object]:
-    config = dict(raw_config)
-
-    if "rotate_seats" in config:
-        config["no_rotate_seats"] = not bool(config.pop("rotate_seats"))
-    if "duplicate_deals" in config:
-        config["no_duplicate_deals"] = not bool(config.pop("duplicate_deals"))
-
-    stacks = config.get("stacks")
-    if isinstance(stacks, list):
-        if len(stacks) != 3:
-            raise SystemExit("config.stacks must contain exactly 3 values")
-        config["stacks"] = tuple(int(value) for value in stacks)
-    elif isinstance(stacks, str):
-        config["stacks"] = parse_stacks(stacks)
-
-    output_dir = config.get("out_dir")
-    if isinstance(output_dir, str) and output_dir:
-        config["out_dir"] = Path(output_dir)
-
-    return config
-
-
-def load_config_defaults(config_path: Path) -> dict[str, object]:
-    if not config_path.exists():
-        return {}
-    with config_path.open("r", encoding="utf-8") as file:
-        raw_config = json.load(file)
-    if not isinstance(raw_config, dict):
-        raise SystemExit(f"{config_path} must contain a JSON object")
-    return normalize_config(raw_config)
-
-
-def build_parser(defaults: dict[str, object] | None = None) -> argparse.ArgumentParser:
-    if defaults is None:
-        defaults = {}
-
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Benchmark saved CFR policies against simple poker bots.")
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH, help="JSON config file")
-    parser.add_argument("--policy", default=defaults.get("policy", "policy/avg_policy.json.gz"), help="current policy path")
+    parser.add_argument("--policy", default=config.BENCHMARK_POLICY, help="current policy path")
     parser.add_argument(
         "--old-policy",
-        default=defaults.get("old_policy", "git:HEAD:policy/avg_policy.json.gz"),
+        default=config.BENCHMARK_OLD_POLICY,
         help="old policy path or git source like git:HEAD:policy/avg_policy.json.gz; use '' to disable",
     )
-    parser.add_argument("--hands", type=int, default=defaults.get("hands", 1000), help="base deals per scenario")
-    parser.add_argument("--seed", type=int, default=defaults.get("seed", 20260515))
-    parser.add_argument("--stacks", type=parse_stacks, default=defaults.get("stacks", (100, 100, 100)))
-    parser.add_argument("--policy-epsilon", type=float, default=defaults.get("policy_epsilon", 0.0))
-    parser.add_argument("--max-decisions", type=int, default=defaults.get("max_decisions", 250))
-    parser.add_argument("--out-dir", type=Path, default=defaults.get("out_dir"))
-    parser.add_argument("--enabled-scenarios", nargs="*", default=defaults.get("enabled_scenarios"))
-    parser.add_argument("--no-rotate-seats", action="store_true", default=defaults.get("no_rotate_seats", False))
-    parser.add_argument("--no-duplicate-deals", action="store_true", default=defaults.get("no_duplicate_deals", False))
+    parser.add_argument("--hands", type=int, default=config.BENCHMARK_HANDS, help="base deals per scenario")
+    parser.add_argument("--seed", type=int, default=config.BENCHMARK_SEED)
+    parser.add_argument("--stacks", type=parse_stacks, default=config.STACKS)
+    parser.add_argument("--policy-epsilon", type=float, default=config.BENCHMARK_POLICY_EPSILON)
+    parser.add_argument("--max-decisions", type=int, default=config.BENCHMARK_MAX_DECISIONS)
+    parser.add_argument("--out-dir", type=Path, default=config.BENCHMARK_OUT_DIR)
+    parser.add_argument("--enabled-scenarios", nargs="*", default=list(config.BENCHMARK_SCENARIOS))
     return parser
 
 
 def main() -> None:
-    config_parser = argparse.ArgumentParser(add_help=False)
-    config_parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
-    config_args, _ = config_parser.parse_known_args()
-
-    defaults = load_config_defaults(config_args.config)
-    args = build_parser(defaults).parse_args()
+    args = build_parser().parse_args()
     if args.hands < 1:
         raise SystemExit("--hands must be >= 1")
     if args.max_decisions < 1:
@@ -595,17 +552,16 @@ def main() -> None:
 
     output_dir = resolve_output_dir(args.out_dir)
 
-    config = {
-        "config_file": str(args.config),
-        "policy": args.policy,
-        "old_policy": args.old_policy if old_policy is not None else "",
+    run_config = {
+        "policy": str(args.policy),
+        "old_policy": str(args.old_policy) if old_policy is not None else "",
         "hands": args.hands,
         "seed": args.seed,
         "stacks": args.stacks,
         "policy_epsilon": args.policy_epsilon,
         "max_decisions": args.max_decisions,
-        "rotate_seats": not args.no_rotate_seats,
-        "duplicate_deals": not args.no_duplicate_deals,
+        "rotate_seats": True,
+        "duplicate_deals": True,
         "enabled_scenarios": args.enabled_scenarios,
         "scenarios": list(scenarios),
     }
@@ -615,12 +571,12 @@ def main() -> None:
         hands=args.hands,
         seed=args.seed,
         stacks=args.stacks,
-        rotate_seats=not args.no_rotate_seats,
-        duplicate_deals=not args.no_duplicate_deals,
+        rotate_seats=True,
+        duplicate_deals=True,
         max_decisions=args.max_decisions,
     )
     metrics = summarize_results(results)
-    write_outputs(output_dir, results, metrics, config)
+    write_outputs(output_dir, results, metrics, run_config)
 
     print(f"output_dir={output_dir}")
     for metric in metrics:

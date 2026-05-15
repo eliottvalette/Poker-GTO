@@ -15,7 +15,10 @@ import os
 from tqdm import tqdm
 
 # Add parent directory to path to import infoset
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
+import config
 from infoset import unpack_infoset_key_dense
 
 # Constants from CFR solver
@@ -208,7 +211,7 @@ if __name__ == "__main__":
     
     # Load policy data
     print("Loading policy data...")
-    policy_path = "../policy/avg_policy.json.gz"
+    policy_path = config.ML_POLICY_PATH
     policy_data = load_policy(policy_path)
     
     print(f"Loaded policy with {len(policy_data)} infosets")
@@ -222,15 +225,22 @@ if __name__ == "__main__":
     
     # Train model
     print("\nStarting training...")
-    train(model, policy_data, epochs=50, batch_size=64, lr=0.001)
+    train(
+        model,
+        policy_data,
+        epochs=config.ML_EPOCHS,
+        batch_size=config.ML_BATCH_SIZE,
+        lr=config.ML_LEARNING_RATE,
+    )
     
     # Evaluate model
     print("\nEvaluating model...")
-    evaluate_model(model, policy_data)
+    evaluate_model(model, policy_data, num_samples=config.ML_EVAL_SAMPLES)
     
     # Save trained model
     print("\nSaving model...")
-    torch.save(model.state_dict(), "trained_policy_model.pth")
-    print("Model saved to trained_policy_model.pth")
+    config.ML_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(model.state_dict(), config.ML_MODEL_PATH)
+    print(f"Model saved to {config.ML_MODEL_PATH}")
     
     print("\nTraining pipeline completed successfully!")

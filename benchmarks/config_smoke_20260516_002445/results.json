@@ -1,0 +1,2657 @@
+{
+  "config": {
+    "policy": "/Users/eliottvalette/Documents/ML/GTO_Bot/policy/avg_policy.json.gz",
+    "old_policy": "git:HEAD:policy/avg_policy.json.gz",
+    "hands": 2,
+    "seed": 20260515,
+    "stacks": [
+      100,
+      100,
+      100
+    ],
+    "policy_epsilon": 0.0,
+    "max_decisions": 250,
+    "rotate_seats": true,
+    "duplicate_deals": true,
+    "enabled_scenarios": [
+      "current_vs_2x_random",
+      "current_vs_2x_calling_station",
+      "current_vs_2x_nit",
+      "current_vs_2x_aggro",
+      "current_vs_2x_shove_fold",
+      "current_vs_old_vs_random",
+      "current_vs_old_vs_station",
+      "current_vs_2x_old"
+    ],
+    "scenarios": [
+      "current_vs_2x_random",
+      "current_vs_2x_calling_station",
+      "current_vs_2x_nit",
+      "current_vs_2x_aggro",
+      "current_vs_2x_shove_fold",
+      "current_vs_old_vs_random",
+      "current_vs_old_vs_station",
+      "current_vs_2x_old"
+    ]
+  },
+  "metrics": [
+    {
+      "scenario": "current_vs_2x_aggro",
+      "bot": "aggro",
+      "hands": 24,
+      "total_bb": -34.0,
+      "bb_per_100": -141.66666666666669,
+      "winrate_pct": 41.666666666666664,
+      "mean_bb_per_hand": -1.4166666666666667,
+      "variance_bb_per_hand": 1061.949275362318,
+      "stdev_bb_per_hand": 32.58756320074145,
+      "ci95_bb_per_100": 1303.7740627744074
+    },
+    {
+      "scenario": "current_vs_2x_aggro",
+      "bot": "policy_current",
+      "hands": 12,
+      "total_bb": 34.0,
+      "bb_per_100": 283.33333333333337,
+      "winrate_pct": 16.666666666666668,
+      "mean_bb_per_hand": 2.8333333333333335,
+      "variance_bb_per_hand": 123.33333333333336,
+      "stdev_bb_per_hand": 11.105554165971789,
+      "ci95_bb_per_100": 628.3558793479307
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "bot": "calling_station",
+      "hands": 24,
+      "total_bb": -384.0,
+      "bb_per_100": -1600.0,
+      "winrate_pct": 33.333333333333336,
+      "mean_bb_per_hand": -16.0,
+      "variance_bb_per_hand": 624.4782608695652,
+      "stdev_bb_per_hand": 24.98956303878812,
+      "ci95_bb_per_100": 999.7907462223704
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "bot": "policy_current",
+      "hands": 12,
+      "total_bb": 384.0,
+      "bb_per_100": 3200.0,
+      "winrate_pct": 33.333333333333336,
+      "mean_bb_per_hand": 32.0,
+      "variance_bb_per_hand": 2528.2727272727275,
+      "stdev_bb_per_hand": 50.28193241386738,
+      "ci95_bb_per_100": 2844.9681470230485
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "bot": "nit",
+      "hands": 24,
+      "total_bb": -1.0,
+      "bb_per_100": -4.166666666666666,
+      "winrate_pct": 33.333333333333336,
+      "mean_bb_per_hand": -0.041666666666666664,
+      "variance_bb_per_hand": 0.36775362318840576,
+      "stdev_bb_per_hand": 0.6064269314504475,
+      "ci95_bb_per_100": 24.26213028947736
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "bot": "policy_current",
+      "hands": 12,
+      "total_bb": 1.0,
+      "bb_per_100": 8.333333333333332,
+      "winrate_pct": 33.333333333333336,
+      "mean_bb_per_hand": 0.08333333333333333,
+      "variance_bb_per_hand": 0.3106060606060606,
+      "stdev_bb_per_hand": 0.5573204290227127,
+      "ci95_bb_per_100": 31.533371772671813
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "bot": "policy_current",
+      "hands": 12,
+      "total_bb": 0.0,
+      "bb_per_100": 0.0,
+      "winrate_pct": 33.333333333333336,
+      "mean_bb_per_hand": 0.0,
+      "variance_bb_per_hand": 928.2727272727273,
+      "stdev_bb_per_hand": 30.467568450283775,
+      "ci95_bb_per_100": 1723.8649669398192
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "bot": "policy_old",
+      "hands": 24,
+      "total_bb": 0.0,
+      "bb_per_100": 0.0,
+      "winrate_pct": 33.333333333333336,
+      "mean_bb_per_hand": 0.0,
+      "variance_bb_per_hand": 887.9130434782609,
+      "stdev_bb_per_hand": 29.797869780879655,
+      "ci95_bb_per_100": 1192.1630809558746
+    },
+    {
+      "scenario": "current_vs_2x_random",
+      "bot": "policy_current",
+      "hands": 12,
+      "total_bb": 88.0,
+      "bb_per_100": 733.3333333333333,
+      "winrate_pct": 16.666666666666668,
+      "mean_bb_per_hand": 7.333333333333333,
+      "variance_bb_per_hand": 2217.333333333333,
+      "stdev_bb_per_hand": 47.08856903042747,
+      "ci95_bb_per_100": 2664.2866045362143
+    },
+    {
+      "scenario": "current_vs_2x_random",
+      "bot": "random",
+      "hands": 24,
+      "total_bb": -88.0,
+      "bb_per_100": -366.66666666666663,
+      "winrate_pct": 41.666666666666664,
+      "mean_bb_per_hand": -3.6666666666666665,
+      "variance_bb_per_hand": 1561.9275362318845,
+      "stdev_bb_per_hand": 39.52122893119449,
+      "ci95_bb_per_100": 1581.1784665227294
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "bot": "policy_current",
+      "hands": 12,
+      "total_bb": -5.0,
+      "bb_per_100": -41.66666666666667,
+      "winrate_pct": 16.666666666666668,
+      "mean_bb_per_hand": -0.4166666666666667,
+      "variance_bb_per_hand": 0.3106060606060606,
+      "stdev_bb_per_hand": 0.5573204290227127,
+      "ci95_bb_per_100": 31.533371772671813
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "bot": "shove_fold",
+      "hands": 24,
+      "total_bb": 5.0,
+      "bb_per_100": 20.833333333333336,
+      "winrate_pct": 41.666666666666664,
+      "mean_bb_per_hand": 0.20833333333333334,
+      "variance_bb_per_hand": 439.6286231884059,
+      "stdev_bb_per_hand": 20.967322747275244,
+      "ci95_bb_per_100": 838.8676193835604
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "bot": "policy_current",
+      "hands": 12,
+      "total_bb": -10.5,
+      "bb_per_100": -87.5,
+      "winrate_pct": 33.333333333333336,
+      "mean_bb_per_hand": -0.875,
+      "variance_bb_per_hand": 472.41477272727275,
+      "stdev_bb_per_hand": 21.73510461735284,
+      "ci95_bb_per_100": 1229.7793131659473
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "bot": "policy_old",
+      "hands": 12,
+      "total_bb": -10.5,
+      "bb_per_100": -87.5,
+      "winrate_pct": 33.333333333333336,
+      "mean_bb_per_hand": -0.875,
+      "variance_bb_per_hand": 472.41477272727275,
+      "stdev_bb_per_hand": 21.73510461735284,
+      "ci95_bb_per_100": 1229.7793131659473
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "bot": "random",
+      "hands": 12,
+      "total_bb": 21.0,
+      "bb_per_100": 175.0,
+      "winrate_pct": 33.333333333333336,
+      "mean_bb_per_hand": 1.75,
+      "variance_bb_per_hand": 942.3409090909091,
+      "stdev_bb_per_hand": 30.697571713262747,
+      "ci95_bb_per_100": 1736.8786266277689
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "bot": "calling_station",
+      "hands": 12,
+      "total_bb": 291.5,
+      "bb_per_100": 2429.166666666667,
+      "winrate_pct": 83.33333333333333,
+      "mean_bb_per_hand": 24.291666666666668,
+      "variance_bb_per_hand": 1723.0549242424238,
+      "stdev_bb_per_hand": 41.509696749583995,
+      "ci95_bb_per_100": 2348.6321900505013
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "bot": "policy_current",
+      "hands": 12,
+      "total_bb": -145.75,
+      "bb_per_100": -1214.5833333333335,
+      "winrate_pct": 16.666666666666668,
+      "mean_bb_per_hand": -12.145833333333334,
+      "variance_bb_per_hand": 533.573390151515,
+      "stdev_bb_per_hand": 23.099207565445077,
+      "ci95_bb_per_100": 1306.9607031857222
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "bot": "policy_old",
+      "hands": 12,
+      "total_bb": -145.75,
+      "bb_per_100": -1214.5833333333335,
+      "winrate_pct": 16.666666666666668,
+      "mean_bb_per_hand": -12.145833333333334,
+      "variance_bb_per_hand": 533.573390151515,
+      "stdev_bb_per_hand": 23.099207565445077,
+      "ci95_bb_per_100": 1306.9607031857222
+    }
+  ],
+  "hands": [
+    {
+      "scenario": "current_vs_2x_random",
+      "table_hand_index": 0,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "random",
+        "random"
+      ],
+      "net_chips_by_role": [
+        -8.0,
+        -100.0,
+        108.0
+      ],
+      "net_bb_by_role": [
+        -4.0,
+        -50.0,
+        54.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_random",
+      "table_hand_index": 1,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "random",
+        "random"
+      ],
+      "net_chips_by_role": [
+        -8.0,
+        -100.0,
+        108.0
+      ],
+      "net_bb_by_role": [
+        -4.0,
+        -50.0,
+        54.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_random",
+      "table_hand_index": 2,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "random",
+        "policy_current",
+        "random"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        -2.0,
+        102.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        -1.0,
+        51.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_random",
+      "table_hand_index": 3,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "random",
+        "random",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        -100.0,
+        200.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        -50.0,
+        100.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_random",
+      "table_hand_index": 4,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "random",
+        "policy_current",
+        "random"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        -2.0,
+        102.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        -1.0,
+        51.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_random",
+      "table_hand_index": 5,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "random",
+        "random",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        -100.0,
+        200.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        -50.0,
+        100.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_random",
+      "table_hand_index": 6,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "random",
+        "random"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        -2.0,
+        102.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        -1.0,
+        51.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_random",
+      "table_hand_index": 7,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "random",
+        "random"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        -2.0,
+        102.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        -1.0,
+        51.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_random",
+      "table_hand_index": 8,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "random",
+        "policy_current",
+        "random"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -2.0,
+        3.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -1.0,
+        1.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_random",
+      "table_hand_index": 9,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "random",
+        "random",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -2.0,
+        2.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_random",
+      "table_hand_index": 10,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "random",
+        "policy_current",
+        "random"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -2.0,
+        3.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -1.0,
+        1.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_random",
+      "table_hand_index": 11,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "random",
+        "random",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -2.0,
+        2.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "table_hand_index": 12,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "calling_station",
+        "calling_station"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        3.0,
+        -2.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        1.5,
+        -1.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "table_hand_index": 13,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "calling_station",
+        "calling_station"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        3.0,
+        -2.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        1.5,
+        -1.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "table_hand_index": 14,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "calling_station",
+        "policy_current",
+        "calling_station"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        200.0,
+        -100.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        100.0,
+        -50.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "table_hand_index": 15,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "calling_station",
+        "calling_station",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -2.0,
+        2.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "table_hand_index": 16,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "calling_station",
+        "policy_current",
+        "calling_station"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        200.0,
+        -100.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        100.0,
+        -50.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "table_hand_index": 17,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "calling_station",
+        "calling_station",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -2.0,
+        2.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "table_hand_index": 18,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "calling_station",
+        "calling_station"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -2.0,
+        3.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -1.0,
+        1.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "table_hand_index": 19,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "calling_station",
+        "calling_station"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -2.0,
+        3.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -1.0,
+        1.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "table_hand_index": 20,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "calling_station",
+        "policy_current",
+        "calling_station"
+      ],
+      "net_chips_by_role": [
+        -14.0,
+        -14.0,
+        28.0
+      ],
+      "net_bb_by_role": [
+        -7.0,
+        -7.0,
+        14.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "table_hand_index": 21,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "calling_station",
+        "calling_station",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        -100.0,
+        200.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        -50.0,
+        100.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "table_hand_index": 22,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "calling_station",
+        "policy_current",
+        "calling_station"
+      ],
+      "net_chips_by_role": [
+        -14.0,
+        -14.0,
+        28.0
+      ],
+      "net_bb_by_role": [
+        -7.0,
+        -7.0,
+        14.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_calling_station",
+      "table_hand_index": 23,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "calling_station",
+        "calling_station",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        -100.0,
+        200.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        -50.0,
+        100.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "table_hand_index": 24,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "nit",
+        "nit"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "table_hand_index": 25,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "nit",
+        "nit"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "table_hand_index": 26,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "nit",
+        "policy_current",
+        "nit"
+      ],
+      "net_chips_by_role": [
+        -2.0,
+        2.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "table_hand_index": 27,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "nit",
+        "nit",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        2.0,
+        -2.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        1.0,
+        -1.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "table_hand_index": 28,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "nit",
+        "policy_current",
+        "nit"
+      ],
+      "net_chips_by_role": [
+        -2.0,
+        2.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "table_hand_index": 29,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "nit",
+        "nit",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        2.0,
+        -2.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        1.0,
+        -1.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "table_hand_index": 30,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "nit",
+        "nit"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "table_hand_index": 31,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "nit",
+        "nit"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "table_hand_index": 32,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "nit",
+        "policy_current",
+        "nit"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "table_hand_index": 33,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "nit",
+        "nit",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "table_hand_index": 34,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "nit",
+        "policy_current",
+        "nit"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_nit",
+      "table_hand_index": 35,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "nit",
+        "nit",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_aggro",
+      "table_hand_index": 36,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "aggro",
+        "aggro"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -100.0,
+        101.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -50.0,
+        50.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_aggro",
+      "table_hand_index": 37,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "aggro",
+        "aggro"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -100.0,
+        101.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -50.0,
+        50.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_aggro",
+      "table_hand_index": 38,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "aggro",
+        "policy_current",
+        "aggro"
+      ],
+      "net_chips_by_role": [
+        102.0,
+        -2.0,
+        -100.0
+      ],
+      "net_bb_by_role": [
+        51.0,
+        -1.0,
+        -50.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_aggro",
+      "table_hand_index": 39,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "aggro",
+        "aggro",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -14.0,
+        28.0,
+        -14.0
+      ],
+      "net_bb_by_role": [
+        -7.0,
+        14.0,
+        -7.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_aggro",
+      "table_hand_index": 40,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "aggro",
+        "policy_current",
+        "aggro"
+      ],
+      "net_chips_by_role": [
+        102.0,
+        -2.0,
+        -100.0
+      ],
+      "net_bb_by_role": [
+        51.0,
+        -1.0,
+        -50.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_aggro",
+      "table_hand_index": 41,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "aggro",
+        "aggro",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -14.0,
+        28.0,
+        -14.0
+      ],
+      "net_bb_by_role": [
+        -7.0,
+        14.0,
+        -7.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_aggro",
+      "table_hand_index": 42,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "aggro",
+        "aggro"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -44.0,
+        45.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -22.0,
+        22.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_aggro",
+      "table_hand_index": 43,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "aggro",
+        "aggro"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -44.0,
+        45.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -22.0,
+        22.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_aggro",
+      "table_hand_index": 44,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "aggro",
+        "policy_current",
+        "aggro"
+      ],
+      "net_chips_by_role": [
+        -26.0,
+        52.0,
+        -26.0
+      ],
+      "net_bb_by_role": [
+        -13.0,
+        26.0,
+        -13.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_aggro",
+      "table_hand_index": 45,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "aggro",
+        "aggro",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -32.0,
+        32.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -16.0,
+        16.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_aggro",
+      "table_hand_index": 46,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "aggro",
+        "policy_current",
+        "aggro"
+      ],
+      "net_chips_by_role": [
+        -26.0,
+        52.0,
+        -26.0
+      ],
+      "net_bb_by_role": [
+        -13.0,
+        26.0,
+        -13.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_aggro",
+      "table_hand_index": 47,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "aggro",
+        "aggro",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -32.0,
+        32.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -16.0,
+        16.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "table_hand_index": 48,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "shove_fold",
+        "shove_fold"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        101.0,
+        -100.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        50.5,
+        -50.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "table_hand_index": 49,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "shove_fold",
+        "shove_fold"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        101.0,
+        -100.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        50.5,
+        -50.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "table_hand_index": 50,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "shove_fold",
+        "policy_current",
+        "shove_fold"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -2.0,
+        3.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -1.0,
+        1.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "table_hand_index": 51,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "shove_fold",
+        "shove_fold",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        3.0,
+        -2.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        1.5,
+        -1.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "table_hand_index": 52,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "shove_fold",
+        "policy_current",
+        "shove_fold"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -2.0,
+        3.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -1.0,
+        1.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "table_hand_index": 53,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "shove_fold",
+        "shove_fold",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        3.0,
+        -2.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        1.5,
+        -1.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "table_hand_index": 54,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "shove_fold",
+        "shove_fold"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "table_hand_index": 55,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "shove_fold",
+        "shove_fold"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "table_hand_index": 56,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "shove_fold",
+        "policy_current",
+        "shove_fold"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "table_hand_index": 57,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "shove_fold",
+        "shove_fold",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "table_hand_index": 58,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "shove_fold",
+        "policy_current",
+        "shove_fold"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_shove_fold",
+      "table_hand_index": 59,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "shove_fold",
+        "shove_fold",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "table_hand_index": 60,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "policy_old",
+        "random"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "table_hand_index": 61,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "random",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -20.0,
+        20.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -10.0,
+        10.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "table_hand_index": 62,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "policy_current",
+        "random"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "table_hand_index": 63,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "random",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -20.0,
+        20.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -10.0,
+        10.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "table_hand_index": 64,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "random",
+        "policy_current",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "table_hand_index": 65,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "random",
+        "policy_old",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "table_hand_index": 66,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "policy_old",
+        "random"
+      ],
+      "net_chips_by_role": [
+        2.0,
+        -2.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        1.0,
+        -1.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "table_hand_index": 67,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "random",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        102.0,
+        -2.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        51.0,
+        -1.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "table_hand_index": 68,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "policy_current",
+        "random"
+      ],
+      "net_chips_by_role": [
+        2.0,
+        -2.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        1.0,
+        -1.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "table_hand_index": 69,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "random",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        102.0,
+        -2.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        51.0,
+        -1.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "table_hand_index": 70,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "random",
+        "policy_current",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        -2.0,
+        102.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        -1.0,
+        51.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_random",
+      "table_hand_index": 71,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "random",
+        "policy_old",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        -2.0,
+        102.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        -1.0,
+        51.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "table_hand_index": 72,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "policy_old",
+        "calling_station"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        -100.0,
+        200.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        -50.0,
+        100.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "table_hand_index": 73,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "calling_station",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        108.0,
+        -8.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        54.0,
+        -4.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "table_hand_index": 74,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "policy_current",
+        "calling_station"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        -100.0,
+        200.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        -50.0,
+        100.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "table_hand_index": 75,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "calling_station",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        108.0,
+        -8.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        54.0,
+        -4.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "table_hand_index": 76,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "calling_station",
+        "policy_current",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -20.0,
+        -2.0,
+        22.0
+      ],
+      "net_bb_by_role": [
+        -10.0,
+        -1.0,
+        11.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "table_hand_index": 77,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "calling_station",
+        "policy_old",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -20.0,
+        -2.0,
+        22.0
+      ],
+      "net_bb_by_role": [
+        -10.0,
+        -1.0,
+        11.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "table_hand_index": 78,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "policy_old",
+        "calling_station"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        0.5,
+        0.5
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.25,
+        0.25
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "table_hand_index": 79,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "calling_station",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "table_hand_index": 80,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "policy_current",
+        "calling_station"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        0.5,
+        0.5
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.25,
+        0.25
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "table_hand_index": 81,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "calling_station",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        1.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        0.5,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "table_hand_index": 82,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "calling_station",
+        "policy_current",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        2.0,
+        -2.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        1.0,
+        -1.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_old_vs_station",
+      "table_hand_index": 83,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "calling_station",
+        "policy_old",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        2.0,
+        -2.0,
+        0.0
+      ],
+      "net_bb_by_role": [
+        1.0,
+        -1.0,
+        0.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "table_hand_index": 84,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "policy_old",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -2.0,
+        3.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -1.0,
+        1.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "table_hand_index": 85,
+      "base_deal_index": 0,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "policy_old",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -2.0,
+        3.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -1.0,
+        1.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "table_hand_index": 86,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "policy_current",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -2.0,
+        3.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -1.0,
+        1.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "table_hand_index": 87,
+      "base_deal_index": 0,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "policy_old",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -2.0,
+        3.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -1.0,
+        1.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "table_hand_index": 88,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "policy_current",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -2.0,
+        3.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -1.0,
+        1.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "table_hand_index": 89,
+      "base_deal_index": 0,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "policy_old",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -1.0,
+        -2.0,
+        3.0
+      ],
+      "net_bb_by_role": [
+        -0.5,
+        -1.0,
+        1.5
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "table_hand_index": 90,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        1,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "policy_old",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        102.0,
+        -2.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        51.0,
+        -1.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "table_hand_index": 91,
+      "base_deal_index": 1,
+      "seat_order": [
+        0,
+        2,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_current",
+        "policy_old",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        102.0,
+        -2.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        51.0,
+        -1.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "table_hand_index": 92,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        0,
+        2
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "policy_current",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        102.0,
+        -2.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        51.0,
+        -1.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "table_hand_index": 93,
+      "base_deal_index": 1,
+      "seat_order": [
+        1,
+        2,
+        0
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "policy_old",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        102.0,
+        -2.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        51.0,
+        -1.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "table_hand_index": 94,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        0,
+        1
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "policy_current",
+        "policy_old"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        102.0,
+        -2.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        51.0,
+        -1.0
+      ]
+    },
+    {
+      "scenario": "current_vs_2x_old",
+      "table_hand_index": 95,
+      "base_deal_index": 1,
+      "seat_order": [
+        2,
+        1,
+        0
+      ],
+      "bot_names_by_role": [
+        "policy_old",
+        "policy_old",
+        "policy_current"
+      ],
+      "net_chips_by_role": [
+        -100.0,
+        102.0,
+        -2.0
+      ],
+      "net_bb_by_role": [
+        -50.0,
+        51.0,
+        -1.0
+      ]
+    }
+  ]
+}

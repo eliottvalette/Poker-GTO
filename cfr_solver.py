@@ -249,7 +249,12 @@ class CFRPlusSolver:
     # -------------------------
     # Entraînement
     # -------------------------
-    def train(self, iterations: int = 1000) -> None:
+    def train(
+        self,
+        iterations: int = 1000,
+        save_policy_path: str = "policy/avg_policy.json.gz",
+        save_ui_copy_path: str = "ui/public/avg_policy.json.gz",
+    ) -> None:
         print(f"\n{'='*80}")
         print(f"DÉMARRAGE ENTRAÎNEMENT CFR+")
         print(f"{'='*80}")
@@ -259,7 +264,9 @@ class CFRPlusSolver:
         print(f"{'='*80}\n")
 
         start_time = time.time()
-        os.makedirs('policy', exist_ok=True)
+        os.makedirs(os.path.dirname(save_policy_path) or ".", exist_ok=True)
+        if save_ui_copy_path:
+            os.makedirs(os.path.dirname(save_ui_copy_path) or ".", exist_ok=True)
 
         with trange(1, iterations + 1, desc="CFR+ Training", unit="iter") as progress_bar:
             for iteration_index in progress_bar:
@@ -268,11 +275,13 @@ class CFRPlusSolver:
                     self.traverse(game, hero_role=hero_role, reach_probability=1.0)
 
                 if SAVE_EVERY > 0 and (iteration_index % SAVE_EVERY == 0):
-                    self.save_policy_json(f"policy/avg_policy_iter_{iteration_index}.json.gz")
+                    save_dir = os.path.dirname(save_policy_path) or "."
+                    self.save_policy_json(os.path.join(save_dir, f"avg_policy_iter_{iteration_index}.json.gz"))
 
-        self.save_policy_json("policy/avg_policy.json.gz")
-        self.save_policy_json("ui/public/avg_policy.json.gz")
-        self.print_training_summary(iterations, "policy/avg_policy.json.gz")
+        self.save_policy_json(save_policy_path)
+        if save_ui_copy_path:
+            self.save_policy_json(save_ui_copy_path)
+        self.print_training_summary(iterations, save_policy_path)
 
         end_time = time.time()
         print(f"Temps total: {end_time - start_time:.2f}s")
@@ -379,6 +388,7 @@ class CFRPlusSolver:
 if __name__ == "__main__":
     import argparse
     import gc
+    import config
     from scripts import parallel_cfr
 
     gc.collect()
@@ -388,17 +398,31 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="CFR+ solver entrypoint. Uses parallel sync training by default.")
     parser.add_argument("--sequential", action="store_true", help="use the legacy single-process trainer")
-    parser.add_argument("--mode", choices=("sync", "independent", "sequential"), default="sync")
-    parser.add_argument("--workers", type=int, default=max(1, int(os.cpu_count() * 0.8) or 1))
-    parser.add_argument("--iterations", type=int, default=1_000_000)
-    parser.add_argument("--iterations-per-worker", type=int, default=parallel_cfr.DEFAULT_ITERATIONS_PER_WORKER)
-    parser.add_argument("--rounds", type=int, default=None)
-    parser.add_argument("--seed", type=int, default=int(time.time()))
-    parser.add_argument("--stacks", type=parallel_cfr.parse_stacks, default=(100, 100, 100))
-    parser.add_argument("--warm-start", default="policy/avg_policy.json.gz", help="optional policy path to preserve/continue average strategy")
-    parser.add_argument("--save-policy", default="policy/avg_policy.json.gz")
-    parser.add_argument("--save-ui-copy", default="ui/public/avg_policy.json.gz")
-    parser.add_argument("--skip-csv", action="store_true", help="skip avg_policy.csv extraction after training")
+    default_workers = config.CFR_WORKERS
+    if default_workers is None:
+        default_workers = max(1, int(os.cpu_count() * 0.8) or 1)
+    default_seed = int(time.time()) if config.SEED is None else config.SEED
+
+    parser.add_argument("--mode", choices=("sync", "independent", "sequential"), default=config.CFR_MODE)
+    parser.add_argument("--workers", type=int, default=default_workers)
+    parser.add_argument("--iterations", type=int, default=config.CFR_ITERATIONS)
+    parser.add_argument("--iterations-per-worker", type=int, default=config.CFR_ITERATIONS_PER_WORKER)
+    parser.add_argument("--rounds", type=int, default=config.CFR_ROUNDS)
+    parser.add_argument("--seed", type=int, default=default_seed)
+    parser.add_argument("--stacks", type=parallel_cfr.parse_stacks, default=config.STACKS)
+    parser.add_argument(
+        "--warm-start",
+        default="" if config.CFR_WARM_START is None else str(config.CFR_WARM_START),
+        help="optional policy path to preserve/continue average strategy",
+    )
+    parser.add_argument("--save-policy", default=str(config.CFR_SAVE_POLICY))
+    parser.add_argument("--save-ui-copy", default=str(config.CFR_SAVE_UI_COPY))
+    parser.add_argument(
+        "--skip-csv",
+        action="store_true",
+        default=config.CFR_SKIP_CSV,
+        help="skip avg_policy.csv extraction after training",
+    )
     args, unknown_args = parser.parse_known_args()
     if unknown_args:
         print(f"[WARN] Ignoring unknown arguments: {' '.join(unknown_args)}")
@@ -427,7 +451,11 @@ if __name__ == "__main__":
             profiler = cProfile.Profile()
             profiler.enable()
 
-        solver.train(iterations=iterations)
+        solver.train(
+            iterations=iterations,
+            save_policy_path=args.save_policy,
+            save_ui_copy_path=args.save_ui_copy,
+        )
 
         if PROFILE:
             profiler.disable()
