@@ -2,13 +2,13 @@
   "architecture": "card embeddings + numeric MLP + full-history GRU + 64-wide head",
   "advantage_parameters_per_player": 16401,
   "average_policy_parameters": 16401,
-  "smoke_seconds": 0.4786549999844283,
+  "smoke_seconds": 0.7615919169038534,
   "smoke_metrics": [
     {
       "version": 1,
-      "nodes": 40,
+      "nodes": 31,
       "advantage_samples": 4,
-      "strategy_samples": 5,
+      "strategy_samples": 4,
       "values": [
         1.0,
         0.5,
@@ -28,16 +28,16 @@
         "heldout_samples": 1.0
       },
       "average_policy": {
-        "train_loss": 0.022843625396490097,
-        "heldout_loss": 0.001427382230758667,
-        "training_samples": 4.0,
+        "train_loss": 0.016434580087661743,
+        "heldout_loss": 0.001381516456604004,
+        "training_samples": 3.0,
         "heldout_samples": 1.0
       },
       "policy_change_l1_on_replay_probes": null
     },
     {
       "version": 2,
-      "nodes": 37,
+      "nodes": 32,
       "advantage_samples": 6,
       "strategy_samples": 4,
       "values": [
@@ -47,39 +47,45 @@
         -2.0
       ],
       "advantage_0": {
-        "train_loss": 2.4334394931793213,
+        "train_loss": 2.433439254760742,
         "heldout_loss": 2.409411907196045,
         "training_samples": 3.0,
         "heldout_samples": 1.0
       },
       "advantage_1": {
-        "train_loss": 0.21352246403694153,
+        "train_loss": 0.21352247893810272,
         "heldout_loss": 0.4448609948158264,
         "training_samples": 5.0,
         "heldout_samples": 1.0
       },
       "average_policy": {
-        "train_loss": 0.19647274911403656,
-        "heldout_loss": 0.008655577898025513,
-        "training_samples": 7.0,
+        "train_loss": 0.17156390845775604,
+        "heldout_loss": 0.010210266336798668,
+        "training_samples": 6.0,
         "heldout_samples": 2.0
       },
-      "policy_change_l1_on_replay_probes": 0.2059086263179779
+      "policy_change_l1_on_replay_probes": 0.19331766664981842
     }
   ],
-  "mean_serialized_sample_bytes": 3788.6315789473683,
-  "process_peak_rss_mib": 285.734375,
+  "mean_serialized_sample_bytes": 3771.3333333333335,
+  "process_peak_rss_mib": 256.921875,
   "conditional_subgame_best_response": {
-    "policy_value_bb": 0.9317715080305248,
-    "best_response_value_bb": 1.8022269627747765,
-    "best_response_gain_bb": 0.8704554547442517,
+    "policy_value_bb": 0.9331774954888997,
+    "best_response_value_bb": 1.8025103113072731,
+    "best_response_gain_bb": 0.8693328158183734,
     "nodes": 9.0
   },
   "tiny_tournament_value": 0.25,
   "tiny_tournament_nodes": 7,
   "tiny_tournament_samples": 2,
-  "full_25bb_probe": "Traversal budget exceeded: nodes=101/100, depth=96/100",
+  "full_25bb_probe": "Traversal budget exceeded: nodes=101/100, depth=96/100, hand=43, street=PREFLOP, actor=None, settled_prunes=0",
   "full_probe_nodes": 101,
-  "full_probe_seconds": 0.33028524997644126,
+  "full_probe_seconds": 0.3420648330356926,
+  "full_25bb_average_probe": {
+    "result": "completed",
+    "nodes": 19,
+    "samples": 9,
+    "seconds": 0.014137084130197763
+  },
   "readiness": "SMOKE-TRAIN READY"
 }

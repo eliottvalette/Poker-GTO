@@ -14,6 +14,17 @@ Strategy = Callable[[Observation], tuple[float, ...]]
 SampleSink = Callable[[Observation, tuple[float, ...], float], None]
 
 
+def hand_root(state: GameState) -> HandState:
+    """Extract an isolated current hand; tournament continuation is never a leaf target."""
+    if isinstance(state, TournamentState):
+        if state.hand is None:
+            raise ValueError("Hand traversal requires an existing tournament hand; call start_hand explicitly")
+        return state.hand.clone()
+    if not isinstance(state, HandState):
+        raise TypeError(f"Expected HandState or TournamentState, received {type(state).__name__}")
+    return state.clone()
+
+
 class TraversalBudgetExceeded(RuntimeError):
     """Budget exhaustion is an explicit failure, never a fabricated leaf value."""
 
@@ -45,6 +56,19 @@ def sample_index(strategy: tuple[float, ...], rng: random.Random) -> int:
     raise ValueError(f"Sampling failed: distribution sum={sum(strategy)} threshold={threshold}")
 
 
+def settled_value(state: HandState, player: int) -> float | None:
+    if not isinstance(state, HandState):
+        raise TypeError("Learning payoff requires an extracted HandState; tournament winner utility is unsupported")
+    if player not in state.players:
+        raise ValueError(f"Traversal player {player} not seated: {tuple(state.players)}")
+    if state.terminal:
+        return state.utility(player)
+    participant = state.players[player]
+    if participant.folded:
+        return participant.stack - state.initial_stacks[player]
+    return None
+
+
 @dataclass
 class Traversal:
     strategy: Strategy
@@ -52,36 +76,40 @@ class Traversal:
     max_nodes: int = 10000
     max_depth: int = 300
     nodes: int = field(default=0, init=False)
+    settled_prunes: int = field(default=0, init=False)
+    max_depth_seen: int = field(default=0, init=False)
 
-    def _visit(self, state: GameState, depth: int) -> bool:
+    def _visit(self, state: HandState, depth: int) -> bool:
         self.nodes += 1
+        self.max_depth_seen = max(self.max_depth_seen, depth)
         if self.nodes > self.max_nodes or depth > self.max_depth:
-            raise TraversalBudgetExceeded(f"Traversal budget exceeded: nodes={self.nodes}/{self.max_nodes}, depth={depth}/{self.max_depth}")
+            raise TraversalBudgetExceeded(
+                f"Traversal budget exceeded: nodes={self.nodes}/{self.max_nodes}, "
+                f"depth={depth}/{self.max_depth}, hand={state.hand_number}, "
+                f"street={state.street}, "
+                f"actor={state.current_player}, settled_prunes={self.settled_prunes}"
+            )
         return state.terminal
 
-    def _decision(self, state: GameState) -> GameState:
-        if isinstance(state, TournamentState) and (state.hand is None or state.hand.terminal):
-            state = state.clone()
-            state.start_hand()  # Chance sampled from injected, branch-local RNG.
-        return state
-
-    def _children(self, state: GameState):
-        hand = state if isinstance(state, HandState) else state.hand
-        return legal_actions(hand)
+    def _children(self, state: HandState):
+        return legal_actions(state)
 
     @staticmethod
-    def child(state: GameState, action) -> GameState:
-        child = state.clone()
-        action.apply(child if isinstance(child, HandState) else child.hand)
+    def child(state: GameState, action) -> HandState:
+        child = hand_root(state)
+        action.apply(child)
         return child
 
     def regrets(self, state: GameState, traverser: int, sink: SampleSink, depth: int = 0) -> float:
-        if self._visit(state, depth):
-            return state.utility(traverser)
-        state = self._decision(state)
-        # Blind posting can finish a hand with short stacks before any decision.
-        if isinstance(state, TournamentState) and state.hand.terminal:
-            return self.regrets(state, traverser, sink, depth + 1)
+        if depth == 0:
+            state = hand_root(state)
+        elif not isinstance(state, HandState):
+            raise TypeError("Recursive traversal must remain inside its extracted hand")
+        terminal = self._visit(state, depth)
+        settled = settled_value(state, traverser)
+        if settled is not None:
+            self.settled_prunes += int(not terminal)
+            return settled
         obs = observe(state)
         strategy = self.strategy(obs)
         validate_strategy(strategy, obs.legal_mask)
@@ -101,11 +129,13 @@ class Traversal:
 
     def average(self, state: GameState, player: int, sink: SampleSink, own_reach: float = 1.0,
                 sample_reach: float = 1.0, depth: int = 0) -> None:
-        if self._visit(state, depth):
-            return
-        state = self._decision(state)
-        if isinstance(state, TournamentState) and state.hand.terminal:
-            self.average(state, player, sink, own_reach, sample_reach, depth + 1)
+        if depth == 0:
+            state = hand_root(state)
+        elif not isinstance(state, HandState):
+            raise TypeError("Recursive traversal must remain inside its extracted hand")
+        terminal = self._visit(state, depth)
+        if settled_value(state, player) is not None:
+            self.settled_prunes += int(not terminal)
             return
         obs = observe(state)
         strategy = self.strategy(obs)
@@ -117,13 +147,17 @@ class Traversal:
                 raise ValueError(f"Nonfinite average importance weight: {weight}")
             if weight > 0:
                 sink(obs, strategy, weight)
-            for action in actions:
-                p = strategy[ACTION_IDS.index(action.action_id)]
-                if own_reach * p > 0:
-                    self.average(self.child(state, action), player, sink, own_reach * p, sample_reach, depth + 1)
-        else:
-            action = self.rng.choice(actions)  # Full support even when strategy probability is zero.
-            self.average(self.child(state, action), player, sink, own_reach, sample_reach / len(actions), depth + 1)
+        # Sample every player's action with full support. The prefix probability
+        # corrects both own and opponent sampling; chance reach cancels in the
+        # normalized average at a perfect-recall infoset. This preserves the
+        # original reach-weighted average without enumerating its own-action tree.
+        action = self.rng.choice(actions)
+        if state.current_player == player:
+            own_reach *= strategy[ACTION_IDS.index(action.action_id)]
+        if own_reach > 0:
+            self.average(self.child(state, action), player, sink, own_reach,
+                         sample_reach / len(actions), depth + 1)
+
 
 
 class ExternalSamplingMCCFR:
@@ -154,15 +188,18 @@ class ExternalSamplingMCCFR:
         regrets, averages = [], []
         values = []
         nodes = 0
+        max_depth_seen = 0
         rng_state = self.rng.getstate()
         try:
             for player in players:
                 walk = Traversal(strategy, self.rng, self.max_nodes, self.max_depth)
                 values.append(walk.regrets(root_factory(self.rng), player, lambda o, t, w: regrets.append((o, t, w))))
                 nodes += walk.nodes
+                max_depth_seen = max(max_depth_seen, walk.max_depth_seen)
                 walk = Traversal(strategy, self.rng, self.max_nodes, self.max_depth)
                 walk.average(root_factory(self.rng), player, lambda o, t, w: averages.append((o, t, w)))
                 nodes += walk.nodes
+                max_depth_seen = max(max_depth_seen, walk.max_depth_seen)
         except Exception:
             self.rng.setstate(rng_state)
             raise
@@ -178,5 +215,6 @@ class ExternalSamplingMCCFR:
                 vector[i] += weight * v
         self.iteration += 1
         return {"nodes": float(nodes), "mean_value": sum(values) / len(values),
+                "max_depth_seen": float(max_depth_seen),
                 "mean_positive_regret": sum(max(v, 0) for row in self.regret_sum.values() for v in row)
                 / max(1, len(self.regret_sum) * self.iteration)}

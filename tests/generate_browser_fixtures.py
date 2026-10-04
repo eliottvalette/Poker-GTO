@@ -11,8 +11,9 @@ from pathlib import Path
 import random
 
 from actions import ACTION_IDS, legal_actions
+from blind_schedule import BlindSchedule, BlindStage
 from infoset import NUMERIC_NAMES, observe
-from poker_game_expresso import HandState
+from poker_game_expresso import BlindLevel, HandState
 from tournament import TournamentState
 from utils import rank7
 
@@ -23,7 +24,8 @@ def snapshot(state: HandState | TournamentState) -> dict:
         raise ValueError("Parity snapshot requires a started hand")
     result = {
         "players": [asdict(p) for p in hand.players.values()],
-        "button": hand.button, "board": hand.board.copy(), "street": hand.street,
+        "button": hand.button, "hand_number": hand.hand_number,
+        "blind_level_index": hand.blind_level_index, "blinds": asdict(hand.blinds), "board": hand.board.copy(), "street": hand.street,
         "pot": hand.pot, "highest": hand.highest, "last_full_raise": hand.last_full_raise,
         "pending": sorted(hand.pending), "current_player": hand.current_player,
         "terminal": hand.terminal, "showdown": hand.showdown,
@@ -34,7 +36,8 @@ def snapshot(state: HandState | TournamentState) -> dict:
     if isinstance(state, TournamentState):
         result["tournament"] = {"button": state.button, "hand_number": state.hand_number,
                                 "active": list(state.active), "terminal": state.terminal,
-                                "winner": state.winner, "total_chips": state.total_chips}
+                                "winner": state.winner, "total_chips": state.total_chips,
+                                "blind_level_index": state.blind_level_index, "blinds": asdict(state.blinds)}
     return result
 
 
@@ -46,12 +49,14 @@ def arranged_deck(private: list[int], board: list[int]) -> list[int]:
 def fixture(name: str, stacks: list[float], button: int = 0,
             actions: list[tuple[str, float | None]] | None = None,
             deck: list[int] | None = None, seed: int = 7,
-            random_actions: bool = False) -> dict:
+            random_actions: bool = False, blinds: BlindLevel = BlindLevel(),
+            hand_number: int = 1, blind_level_index: int = 0) -> dict:
     rng = random.Random(seed)
     if deck is None:
         deck = list(range(52))
         rng.shuffle(deck)
-    h = HandState.start(dict(enumerate(stacks)), button, rng, deck=deck)
+    h = HandState.start(dict(enumerate(stacks)), button, rng, blinds, deck=deck,
+                        hand_number=hand_number, blind_level_index=blind_level_index)
     initial = snapshot(h)
     steps = []
     for category, amount in actions or []:
@@ -68,6 +73,7 @@ def fixture(name: str, stacks: list[float], button: int = 0,
     if not h.terminal:
         raise ValueError(f"Parity fixture {name} exceeded its 120-action budget")
     return {"name": name, "stacks": stacks, "button": button, "deck": deck,
+            "blinds": asdict(blinds), "hand_number": hand_number, "blind_level_index": blind_level_index,
             "initial": initial, "steps": steps}
 
 
@@ -77,7 +83,8 @@ def tournament_fixture(button: int, eliminated: int) -> dict:
     holes = {eliminated: [0, 1], survivors[0]: [48, 49], survivors[1]: [44, 45]}
     private = [c for i in range(3) for c in holes[i]]
     stacks = [1.0 if i == eliminated else 25.0 for i in range(3)]
-    t = TournamentState(dict(enumerate(stacks)), button=button, rng=random.Random(0))
+    t = TournamentState(dict(enumerate(stacks)), button=button, rng=random.Random(0),
+                        blind_schedule=BlindSchedule.fixed())
     decks = [arranged_deck(private, board)]
     steps = []
     for hand_no in range(3):
@@ -99,7 +106,27 @@ def tournament_fixture(button: int, eliminated: int) -> dict:
         if not t.hand.terminal:
             raise ValueError("Tournament parity fixture exceeded its hand action budget")
     return {"name": f"hu_button_{button}_eliminated_{eliminated}", "stacks": stacks,
-            "button": button, "steps": steps}
+            "button": button, "schedule": [{"first_hand": 1, "blinds": asdict(BlindLevel())}], "steps": steps}
+
+
+def progression_fixture() -> dict:
+    schedule = BlindSchedule((BlindStage(1, BlindLevel()), BlindStage(2, BlindLevel(1, 2)),
+                              BlindStage(3, BlindLevel(2, 4))))
+    t = TournamentState(rng=random.Random(0), blind_schedule=schedule)
+    steps = []
+    for number in range(1, 5):
+        deck = list(range(52))
+        random.Random(number).shuffle(deck)
+        t.start_hand(deck=deck)
+        steps.append({"operation": "start", "deck": deck, "expected": snapshot(t)})
+        t.hand.act("FOLD")
+        steps.append({"operation": "action", "action": {"category": "FOLD", "amount_to": None},
+                      "expected": snapshot(t)})
+        t.hand.act("FOLD")
+        steps.append({"operation": "action", "action": {"category": "FOLD", "amount_to": None},
+                      "expected": snapshot(t)})
+    return {"name": "progressive_blinds_current_hand_context", "stacks": [25, 25, 25], "button": 0,
+            "schedule": [asdict(stage) for stage in schedule.stages], "steps": steps}
 
 
 def generate_fixtures() -> dict:
@@ -114,6 +141,12 @@ def generate_fixtures() -> dict:
         fixture("folded_contribution", [25, 25, 25], actions=[("RAISE", 3), ("CALL", None), ("RAISE", 8), ("FOLD", None), ("CALL", None)]),
         fixture("royal_board_split", [1, 1, 1], deck=arranged_deck([0, 1, 4, 5, 8, 9], [32, 36, 40, 44, 48])),
         fixture("short_call", [1, 25]),
+        fixture("hu_short_allin_bb_below_sb", [25, 0.25]),
+        fixture("hu_dry_pot_nominal_blind_cap", [25, 20], blinds=BlindLevel(16, 32),
+                hand_number=51, blind_level_index=5),
+        fixture("three_handed_short_bb_nominal_call", [25, 25, 0.25]),
+        fixture("raised_blind_current_bb", [25, 25, 25], blinds=BlindLevel(1, 2),
+                hand_number=11, blind_level_index=1),
         fixture("checked_short_allin", [25, 25, 1.4], actions=[("CALL", None), ("CALL", None), ("CHECK", None), ("CHECK", None), ("RAISE", 0.4), ("CALL", None)]),
     ]
     for count in (2, 3):
@@ -147,7 +180,7 @@ def generate_fixtures() -> dict:
     if not all(a > b for a, b in zip(ranks, ranks[1:])):
         raise ValueError(f"Category parity representatives out of order: {ranks}")
     return {"version": 1, "category_cards": category_cards, "actions": list(ACTION_IDS), "numeric_names": list(NUMERIC_NAMES),
-            "hands": cases, "tournaments": [tournament_fixture(b, e) for b in range(3) for e in range(3)],
+            "hands": cases, "tournaments": [tournament_fixture(b, e) for b in range(3) for e in range(3)] + [progression_fixture()],
             "evaluations": evaluations}
 
 

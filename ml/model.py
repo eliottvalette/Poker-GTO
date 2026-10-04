@@ -6,7 +6,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from actions import ACTION_IDS
 from infoset import HISTORY_WIDTH, NUMERIC_NAMES, STATE_VERSION, Observation
 
-MODEL_ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_v2"
+MODEL_ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_v3"
 
 
 def encode_batch(observations: list[Observation]) -> dict[str, torch.Tensor]:

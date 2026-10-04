@@ -13,7 +13,7 @@ export type TableView = {
   to_call_bb: number; actor: number | null; hand_terminal: boolean;
   tournament_terminal: boolean; winner: number | null;
   hand_results_bb: Record<number, number>; hero_result_bb: number;
-  total_chips_bb: number; blinds: { small: number; big: number };
+  total_chips_bb: number; blind_level_index: number; chip_unit_big_blind: number; blinds: { small: number; big: number };
   legal_actions: SolverAction[]; history: ActionEvent[];
   policy: { status: "unavailable" | "experimental"; reason: string; probabilities: Record<string, number> | null };
 };
@@ -64,24 +64,31 @@ export class BrowserTable {
     const t = this.tournament, hand = t.hand;
     if (!hand) throw new Error("Table has no current hand");
     const active = t.active;
+    const bigBlind = hand.blinds.big;
     const players = t.original_players.map(id => {
       const p = hand.players[id];
       return {
-        player_id: id, stack_bb: p?.stack ?? t.stacks[id], active: active.includes(id),
-        position: p?.position ?? null, folded: p?.folded ?? false, bet_bb: p?.street_bet ?? 0,
+        player_id: id, stack_bb: (p?.stack ?? t.stacks[id]) / bigBlind, active: active.includes(id),
+        position: p?.position ?? null, folded: p?.folded ?? false, bet_bb: (p?.street_bet ?? 0) / bigBlind,
         cards: p && (id === this.hero || (hand.showdown && !p.folded)) ? [...p.cards] : [],
       };
     });
     return {
       hero: this.hero, hand_number: t.hand_number, button: t.button, active_players: [...active],
-      players, board: [...hand.board], street: hand.street, pot_bb: hand.pot,
-      to_call_bb: hand.terminal ? 0 : hand.toCall(), actor: hand.current_player,
+      players, board: [...hand.board], street: hand.street, pot_bb: hand.pot / bigBlind,
+      to_call_bb: hand.terminal ? 0 : hand.toCall() / bigBlind, actor: hand.current_player,
       hand_terminal: hand.terminal, tournament_terminal: t.terminal, winner: t.winner,
-      hand_results_bb: hand.terminal ? Object.fromEntries(t.original_players.map(id => [id, hand.players[id] ? hand.utility(id) : 0])) : {},
-      hero_result_bb: (hand.terminal ? (hand.players[this.hero]?.stack ?? t.stacks[this.hero]) : t.stacks[this.hero]) - 25,
-      total_chips_bb: t.total_chips, blinds: { ...t.blinds },
-      legal_actions: hand.current_player === this.hero ? legalActions(hand) : [],
-      history: hand.history.map(event => ({ ...event })),
+      hand_results_bb: hand.terminal ? Object.fromEntries(t.original_players.map(id => [id, hand.players[id] ? hand.utility(id) / bigBlind : 0])) : {},
+      // Historical sum uses each settled hand's own BB unit.
+      hero_result_bb: [...t.completed, ...(hand.terminal ? [hand] : [])]
+        .reduce((total, previous) => total + (previous.players[this.hero] ? previous.utility(this.hero) / previous.blinds.big : 0), 0),
+      total_chips_bb: t.total_chips / bigBlind, blind_level_index: hand.blind_level_index,
+      chip_unit_big_blind: bigBlind, blinds: { small: hand.blinds.small / bigBlind, big: 1 },
+      legal_actions: hand.current_player === this.hero ? legalActions(hand).map(action => ({ ...action,
+        amount_to: action.amount_to === null ? null : action.amount_to / bigBlind })) : [],
+      history: hand.history.map(event => ({ ...event, amount_to: event.amount_to / bigBlind,
+        amount_added: event.amount_added / bigBlind, pot_before: event.pot_before / bigBlind,
+        pot_after: event.pot_after / bigBlind, highest_before: event.highest_before / bigBlind })),
       policy: { status: "unavailable", reason: "No compatible average policy loaded", probabilities: null },
     };
   }

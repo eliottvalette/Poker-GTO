@@ -24,6 +24,52 @@ function validateSeats(stacks: Record<number, number>): void {
   if (ids(stacks).some(i => !Number.isInteger(i) || i < 0 || i > 2)) throw new Error(`Expected player IDs 0..2: ${JSON.stringify(stacks)}`);
 }
 
+/** Explicit hand-index schedule; chip values are never rescaled between levels. */
+export class BlindStage {
+  readonly first_hand: number;
+  readonly blinds: Readonly<BlindLevel>;
+  constructor(firstHand: number, blinds: BlindLevel) {
+    if (!Number.isInteger(firstHand) || firstHand < 1) throw new Error(`Blind stage first_hand must be positive: ${firstHand}`);
+    validateBlinds(blinds);
+    this.first_hand = firstHand;
+    this.blinds = Object.freeze({ ...blinds });
+    Object.freeze(this);
+  }
+}
+
+export class BlindSchedule {
+  readonly stages: readonly BlindStage[];
+  constructor(stages: readonly BlindStage[]) {
+    if (!stages.length || stages[0].first_hand !== 1) throw new Error("Blind schedule must begin at hand 1");
+    this.stages = Object.freeze(stages.map(stage => new BlindStage(stage.first_hand, stage.blinds)));
+    for (let i = 1; i < this.stages.length; i++) {
+      const previous = this.stages[i - 1], stage = this.stages[i];
+      if (stage.first_hand <= previous.first_hand) throw new Error("Blind stage first_hand values must strictly increase");
+      if (stage.blinds.small < previous.blinds.small || stage.blinds.big < previous.blinds.big
+          || (stage.blinds.small === previous.blinds.small && stage.blinds.big === previous.blinds.big)) {
+        throw new Error("Blind stages must be non-decreasing with at least one blind increasing");
+      }
+    }
+    Object.freeze(this);
+  }
+  static fixed(blinds: BlindLevel = { small: 0.5, big: 1 }): BlindSchedule {
+    return new BlindSchedule([new BlindStage(1, blinds)]);
+  }
+  forHand(handNumber: number): [number, BlindLevel] {
+    if (!Number.isInteger(handNumber) || handNumber < 1) throw new Error(`Hand number must be positive: ${handNumber}`);
+    let index = 0;
+    for (let i = 1; i < this.stages.length && this.stages[i].first_hand <= handNumber; i++) index = i;
+    return [index, { ...this.stages[index].blinds }];
+  }
+}
+
+/** Explicit simulation preset, not an official Expresso blind timetable. */
+export const DEFAULT_SIMULATION_SCHEDULE = new BlindSchedule([
+  new BlindStage(1, { small: 0.5, big: 1 }), new BlindStage(11, { small: 1, big: 2 }),
+  new BlindStage(21, { small: 2, big: 4 }), new BlindStage(31, { small: 4, big: 8 }),
+  new BlindStage(41, { small: 8, big: 16 }), new BlindStage(51, { small: 16, big: 32 }),
+]);
+
 /** Cloneable deterministic PRNG; supplied-deck parity does not depend on Python's RNG algorithm. */
 export class SeededRNG {
   private state: number;
@@ -50,6 +96,8 @@ export class SeededRNG {
 export class HandState {
   players: Record<number, HandPlayer> = {};
   button = 0;
+  hand_number = 1;
+  blind_level_index = 0;
   blinds: BlindLevel = { small: 0.5, big: 1 };
   deck: number[] = [];
   total_chips = 0;
@@ -67,9 +115,14 @@ export class HandState {
   awards: Record<number, number> = {};
 
   static start(stacks: Record<number, number>, button: number, rng: SeededRNG,
-    blinds: BlindLevel = { small: 0.5, big: 1 }, deck?: number[]): HandState {
+    blinds: BlindLevel = { small: 0.5, big: 1 }, deck?: number[],
+    metadata: { hand_number: number; blind_level_index: number } = { hand_number: 1, blind_level_index: 0 }): HandState {
     validateSeats(stacks);
     validateBlinds(blinds);
+    if (!Number.isInteger(metadata.hand_number) || metadata.hand_number < 1
+        || !Number.isInteger(metadata.blind_level_index) || metadata.blind_level_index < 0) {
+      throw new Error(`Invalid hand metadata: ${JSON.stringify(metadata)}`);
+    }
     const seats = ids(stacks);
     if (![2, 3].includes(seats.length) || !seats.includes(button)) throw new Error(`Expected 2/3 active seats and live button: ${JSON.stringify(stacks)}, ${button}`);
     if (Object.values(stacks).some(s => !Number.isFinite(s) || s <= 0)) throw new Error(`Active stacks must be finite and positive: ${JSON.stringify(stacks)}`);
@@ -79,6 +132,7 @@ export class HandState {
     const order = [...seats.slice(seats.indexOf(button)), ...seats.slice(0, seats.indexOf(button))];
     const roles: Position[] = seats.length === 2 ? ["SB", "BB"] : ["BTN", "SB", "BB"];
     const hand = new HandState();
+    hand.hand_number = metadata.hand_number; hand.blind_level_index = metadata.blind_level_index;
     hand.button = button; hand.blinds = { ...blinds }; hand.deck = cards;
     hand.initial_stacks = { ...stacks }; hand.total_chips = sum(Object.values(stacks));
     hand.highest = blinds.big; hand.last_full_raise = blinds.big;
@@ -114,7 +168,12 @@ export class HandState {
     if (this.terminal || this.current_player === null) throw new Error("Terminal hand has no acting player");
     return this.players[this.current_player];
   }
-  toCall(player: HandPlayer = this.actor): number { return Math.max(0, this.highest - player.street_bet); }
+  toCall(player: HandPlayer = this.actor): number {
+    const opponents = Object.values(this.players).filter(p => p.player_id !== player.player_id && !p.folded);
+    const callable = opponents.some(p => p.stack > EPS) ? this.highest
+      : Math.min(this.highest, Math.max(0, ...opponents.map(p => p.street_bet)));
+    return Math.max(0, callable - player.street_bet);
+  }
   get minRaiseTo(): number { return this.highest + this.last_full_raise; }
   canRaise(): boolean {
     const p = this.actor;
@@ -210,6 +269,8 @@ export class HandState {
     return this.players[player].stack - this.initial_stacks[player];
   }
   assertInvariants(): void {
+    if (!Number.isInteger(this.hand_number) || this.hand_number < 1
+        || !Number.isInteger(this.blind_level_index) || this.blind_level_index < 0) throw new Error("Invalid hand metadata");
     if (!STREETS.includes(this.street) || (!this.terminal && this.board.length !== [0, 3, 4, 5][STREETS.indexOf(this.street)])) throw new Error(`Invalid street/board contract: ${this.street}, ${this.board}`);
     if (!this.players[this.button] || ![2, 3].includes(ids(this.players).length)) throw new Error(`Invalid live seats/button: ${ids(this.players)}, ${this.button}`);
     for (const i of this.pending) if (!this.players[i] || this.players[i].folded || this.players[i].stack <= EPS) throw new Error(`Invalid pending actors: ${[...this.pending]}`);
@@ -229,6 +290,9 @@ export class TournamentState {
   stacks: Record<number, number>;
   button: number;
   blinds: BlindLevel;
+  blind_level_index = 0;
+  blind_schedule: BlindSchedule;
+  readonly payout: "winner_take_all";
   rng: SeededRNG;
   hand_number = 0;
   hand: HandState | null = null;
@@ -236,9 +300,12 @@ export class TournamentState {
   total_chips: number;
   original_players: number[];
   constructor(stacks: Record<number, number> = { 0: 25, 1: 25, 2: 25 }, button = 0,
-    rng = new SeededRNG(0), blinds: BlindLevel = { small: 0.5, big: 1 }) {
-    validateSeats(stacks); validateBlinds(blinds);
-    this.stacks = { ...stacks }; this.button = button; this.blinds = { ...blinds }; this.rng = rng;
+    rng = new SeededRNG(0), blindSchedule: BlindSchedule = DEFAULT_SIMULATION_SCHEDULE, payout = "winner_take_all") {
+    validateSeats(stacks);
+    if (!(blindSchedule instanceof BlindSchedule)) throw new Error("Tournament requires an explicit BlindSchedule");
+    if (payout !== "winner_take_all") throw new Error(`Unsupported tournament payout: ${payout}`);
+    this.payout = "winner_take_all"; this.blind_schedule = blindSchedule;
+    this.stacks = { ...stacks }; this.button = button; this.blinds = blindSchedule.forHand(1)[1]; this.rng = rng;
     if (![2, 3].includes(ids(stacks).length) || Object.values(stacks).some(v => !Number.isFinite(v) || v < 0)) throw new Error(`Expected 2/3 finite nonnegative tournament stacks: ${JSON.stringify(stacks)}`);
     if (!this.active.includes(button)) throw new Error(`Button ${button} must be active: ${this.active}`);
     this.total_chips = sum(Object.values(stacks)); this.original_players = ids(stacks);
@@ -274,7 +341,9 @@ export class TournamentState {
     }
     if (this.terminal) throw new Error(`Tournament already won by player ${this.winner}`);
     this.hand_number++;
-    this.hand = HandState.start(Object.fromEntries(this.active.map(i => [i, this.stacks[i]])), this.button, this.rng, this.blinds, deck);
+    [this.blind_level_index, this.blinds] = this.blind_schedule.forHand(this.hand_number);
+    this.hand = HandState.start(Object.fromEntries(this.active.map(i => [i, this.stacks[i]])), this.button, this.rng, this.blinds, deck,
+      { hand_number: this.hand_number, blind_level_index: this.blind_level_index });
     this.assertInvariants(); return this.hand;
   }
   act(actionId: string): void {

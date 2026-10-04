@@ -1,4 +1,4 @@
-"""Authoritative no-limit Hold'em hand rules. All amounts are actual BB."""
+"""No-limit Hold'em rules in fixed physical chip units equal to the initial BB."""
 from __future__ import annotations
 
 import copy
@@ -68,10 +68,13 @@ class HandState:
     terminal: bool = False
     showdown: bool = False
     awards: dict[int, float] = field(default_factory=dict)
+    hand_number: int = 1
+    blind_level_index: int = 0
 
     @classmethod
     def start(cls, stacks: Mapping[int, float], button: int, rng: random.Random,
-              blinds: BlindLevel = BlindLevel(), deck: list[int] | None = None) -> HandState:
+              blinds: BlindLevel = BlindLevel(), deck: list[int] | None = None, *,
+              hand_number: int = 1, blind_level_index: int = 0) -> HandState:
         if len(stacks) not in (2, 3) or button not in stacks:
             raise ValueError(f"Expected 2 or 3 active seats and live button, got {stacks}, {button}")
         if any(not math.isfinite(s) or s <= 0 for s in stacks.values()):
@@ -88,7 +91,8 @@ class HandState:
         players = {i: HandPlayer(i, float(stacks[i]), roles[order.index(i)],
                                 (cards.pop(), cards.pop())) for i in seats}
         hand = cls(players, button, blinds, cards, sum(stacks.values()), dict(stacks),
-                   highest=blinds.big, last_full_raise=blinds.big)
+                   highest=blinds.big, last_full_raise=blinds.big,
+                   hand_number=hand_number, blind_level_index=blind_level_index)
         for role, amount in (("SB", blinds.small), ("BB", blinds.big)):
             p = next(p for p in players.values() if p.position == role)
             before = hand.pot
@@ -120,7 +124,13 @@ class HandState:
 
     def to_call(self, p: HandPlayer | None = None) -> float:
         p = self.actor if p is None else p
-        return max(0.0, self.highest - p.street_bet)
+        opponents = [q for q in self.players.values() if q.player_id != p.player_id and not q.folded]
+        highest = self.highest
+        if not any(q.stack > EPS for q in opponents):
+            # A lone actionable player matches actual all-in wagers, not an
+            # unposted portion of a short blind. There is no dry side pot.
+            highest = min(highest, max((q.street_bet for q in opponents), default=0.0))
+        return max(0.0, highest - p.street_bet)
 
     @property
     def min_raise_to(self) -> float:
@@ -253,11 +263,15 @@ class HandState:
         self.current_player = None
 
     def utility(self, player: int) -> float:
+        """Settled chip EV: final minus initial stack, in fixed initial-BB units."""
         if not self.terminal:
             raise ValueError("Hand utility requested before settlement")
         return self.players[player].stack - self.initial_stacks[player]
 
     def assert_invariants(self) -> None:
+        if (type(self.hand_number) is not int or self.hand_number < 1
+                or type(self.blind_level_index) is not int or self.blind_level_index < 0):
+            raise ValueError(f"Invalid hand/blind context: hand_number={self.hand_number!r}, blind_level_index={self.blind_level_index!r}")
         if self.street not in STREETS or (not self.terminal and len(self.board) != (0, 3, 4, 5)[STREETS.index(self.street)]):
             raise ValueError(f"Invalid street/board contract: {self.street}, board={self.board}")
         if self.button not in self.players or len(self.players) not in (2, 3):
@@ -273,6 +287,10 @@ class HandState:
         chips = sum(p.stack for p in self.players.values()) + self.pot
         if not math.isclose(chips, self.total_chips, abs_tol=EPS):
             raise ValueError(f"Chip conservation failed: {chips} != {self.total_chips}")
+        if self.terminal:
+            utility_sum = sum(self.players[i].stack - self.initial_stacks[i] for i in self.players)
+            if not math.isclose(utility_sum, 0.0, abs_tol=EPS):
+                raise ValueError(f"Settled hand utilities must be zero-sum: sum={utility_sum}, initial_stacks={self.initial_stacks}")
         if not self.terminal and not math.isclose(sum(p.contribution for p in self.players.values()), self.pot, abs_tol=EPS):
             raise ValueError("Pot must equal total hand contributions")
         cards = [c for p in self.players.values() for c in p.cards] + self.board + self.deck

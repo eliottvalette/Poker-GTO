@@ -3,7 +3,7 @@ import { EVENTS, HISTORY_WIDTH, NUMERIC_NAMES, POSITIONS, STATE_VERSION,
   validateObservation, type Observation } from "./poker/observation";
 
 const INPUTS = ["cards", "street", "position", "numeric", "history", "mask"] as const;
-const ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_v2";
+const ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_v3";
 
 export type PolicyManifest = {
   version: number;
@@ -18,6 +18,10 @@ export type PolicyManifest = {
   positions: string[];
   events: string[];
   normalization_bb: number;
+  amount_units: "current_big_blinds";
+  utility_units: "initial_big_blind_chips";
+  history_scope: "current_hand";
+  payout_scope: "winner_take_all";
   card_encoding: string;
   card_slots: number;
   unknown_card: number;
@@ -50,15 +54,17 @@ export function validatePolicyManifest(raw: unknown): PolicyManifest {
   const fields = ["version", "state_version", "architecture", "model_sha256", "objective", "iteration",
     "supported_player_counts", "actions", "numeric_names", "positions", "events", "normalization_bb",
     "card_encoding", "card_slots", "unknown_card", "card_vocabulary", "history_width", "full_history",
-    "batch_size", "inputs", "output", "validation_max_absolute_error"];
-  if (!equalArray(Object.keys(raw).sort(), fields.sort()) || manifest.version !== 1 || manifest.state_version !== STATE_VERSION
+    "batch_size", "inputs", "output", "validation_max_absolute_error", "amount_units", "utility_units", "history_scope", "payout_scope"];
+  if (!equalArray(Object.keys(raw).sort(), fields.sort()) || manifest.version !== 2 || manifest.state_version !== STATE_VERSION
       || manifest.architecture !== ARCHITECTURE || typeof manifest.model_sha256 !== "string"
-      || !/^[a-f0-9]{64}$/.test(manifest.model_sha256) || !["tournament_winner", "hand_chip_delta"].includes(manifest.objective)
+      || !/^[a-f0-9]{64}$/.test(manifest.model_sha256) || manifest.objective !== "hand_chip_delta"
       || !Number.isInteger(manifest.iteration) || manifest.iteration < 1 || !Array.isArray(manifest.supported_player_counts)
       || !manifest.supported_player_counts.length || manifest.supported_player_counts.some(count => count !== 2 && count !== 3)
       || new Set(manifest.supported_player_counts).size !== manifest.supported_player_counts.length
       || !equalArray(manifest.actions, ACTION_IDS) || !equalArray(manifest.numeric_names, NUMERIC_NAMES)
       || !equalArray(manifest.positions, POSITIONS) || !equalArray(manifest.events, EVENTS)
+      || manifest.amount_units !== "current_big_blinds" || manifest.utility_units !== "initial_big_blind_chips"
+      || manifest.history_scope !== "current_hand" || manifest.payout_scope !== "winner_take_all"
       || manifest.normalization_bb !== 25 || manifest.card_encoding !== "rank_index_times_4_plus_suit_index"
       || manifest.card_slots !== 7 || manifest.unknown_card !== 52 || manifest.card_vocabulary !== 53
       || manifest.history_width !== HISTORY_WIDTH || manifest.full_history !== true || manifest.batch_size !== 1

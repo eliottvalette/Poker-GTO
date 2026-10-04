@@ -71,4 +71,4 @@ def benchmark_tournaments(policy: Callable, tournaments: int, seed: int,
         hands += t.hand_number
         decisions += count
     return {"tournaments": tournaments, "hero_wins": wins, "hands": hands, "decisions": decisions,
-            "starting_stack_bb": 25.0, "total_chips_bb": 75.0, "opponents": opponents}
+            "starting_stack_bb": 25.0, "initial_total_bb": 75.0, "total_chips": 75.0, "chip_unit": "initial_big_blind", "opponents": opponents}

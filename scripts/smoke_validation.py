@@ -53,6 +53,17 @@ def run_smoke_validation() -> dict:
         full_result = "completed"
     except TraversalBudgetExceeded as error:
         full_result = str(error)
+    full_probe_seconds = time.perf_counter() - before
+    average_walk = Traversal(lambda o: regret_matching([0] * len(ACTION_IDS), o.legal_mask),
+                             random.Random(1), 300, 150)
+    average_samples = []
+    before = time.perf_counter()
+    try:
+        average_walk.average(full.clone(), 0, lambda o, target, weight: average_samples.append(weight))
+        average_result = "completed"
+    except TraversalBudgetExceeded as error:
+        average_result = str(error)
+    average_seconds = time.perf_counter() - before
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return {"architecture": "card embeddings + numeric MLP + full-history GRU + 64-wide head",
             "advantage_parameters_per_player": sum(p.numel() for p in AdvantageNetwork().parameters()),
@@ -61,10 +72,12 @@ def run_smoke_validation() -> dict:
             "mean_serialized_sample_bytes": serialized_bytes / len(samples),
             "process_peak_rss_mib": rss / (1024**2 if sys.platform == "darwin" else 1024),
             "conditional_subgame_best_response": metrics,
-            "tiny_tournament_value": tiny_value, "tiny_tournament_nodes": walk.nodes,
-            "tiny_tournament_samples": len(tournament_samples),
-            "full_25bb_probe": full_result, "full_probe_nodes": bounded.nodes,
-            "full_probe_seconds": time.perf_counter() - before,
+            "short_hand_chip_value": tiny_value, "short_hand_nodes": walk.nodes,
+            "short_hand_samples": len(tournament_samples),
+            "hand_25bb_probe": full_result, "full_probe_nodes": bounded.nodes,
+            "full_probe_seconds": full_probe_seconds,
+            "hand_25bb_average_probe": {"result": average_result, "nodes": average_walk.nodes,
+                                       "samples": len(average_samples), "seconds": average_seconds},
             "readiness": "SMOKE-TRAIN READY"}
 
 

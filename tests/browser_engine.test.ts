@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
-import { HandState, TournamentState, SeededRNG } from "../ui/src/lib/poker/engine";
+import { HandState, TournamentState, SeededRNG, BlindSchedule, BlindStage } from "../ui/src/lib/poker/engine";
 import { rank7 } from "../ui/src/lib/poker/evaluator";
 import { ACTION_IDS, legalActions } from "../ui/src/lib/poker/actions";
 import { NUMERIC_NAMES, observe } from "../ui/src/lib/poker/observation";
@@ -10,11 +10,13 @@ import { NUMERIC_NAMES, observe } from "../ui/src/lib/poker/observation";
 type Command = { category: string; amount_to: number | null };
 type Snapshot = Record<string, unknown>;
 type HandFixture = {
-  name: string; stacks: number[]; button: number; deck: number[]; initial: Snapshot;
+  name: string; stacks: number[]; button: number; deck: number[];
+  blinds: {small: number; big: number}; hand_number: number; blind_level_index: number; initial: Snapshot;
   steps: { action: Command; expected: Snapshot }[];
 };
 type TournamentFixture = {
   name: string; stacks: number[]; button: number;
+  schedule: {first_hand: number; blinds: {small: number; big: number}}[];
   steps: { operation: "start" | "action"; deck?: number[]; action?: Command; expected: Snapshot }[];
 };
 type Fixtures = {
@@ -55,7 +57,8 @@ function snapshot(state: HandState | TournamentState): Snapshot {
       player_id: p.player_id, stack: p.stack, position: p.position, cards: p.cards,
       street_bet: p.street_bet, contribution: p.contribution, folded: p.folded, acted_at: p.acted_at,
     })),
-    button: hand.button, board: hand.board, street: hand.street,
+    button: hand.button, hand_number: hand.hand_number, blind_level_index: hand.blind_level_index,
+    blinds: hand.blinds, board: hand.board, street: hand.street,
     pot: hand.pot, highest: hand.highest, last_full_raise: hand.last_full_raise,
     pending: [...hand.pending].sort((a, b) => a - b), current_player: hand.current_player,
     terminal: hand.terminal, showdown: hand.showdown, awards: hand.awards,
@@ -70,7 +73,8 @@ function snapshot(state: HandState | TournamentState): Snapshot {
   }
   if (state instanceof TournamentState) {
     result.tournament = { button: state.button, hand_number: state.hand_number,
-      active: state.active, terminal: state.terminal, winner: state.winner, total_chips: state.total_chips };
+      active: state.active, terminal: state.terminal, winner: state.winner, total_chips: state.total_chips, blind_level_index: state.blind_level_index,
+      blinds: state.blinds };
   }
   return result;
 }
@@ -99,7 +103,8 @@ test("canonical browser schemas match generated Python fixtures", () => {
 for (const fixture of fixtures.hands) {
   test(`Python/browser hand parity: ${fixture.name}`, () => {
     const hand = HandState.start(stacksRecord(fixture.stacks), fixture.button,
-      new SeededRNG(7), { small: 0.5, big: 1.0 }, fixture.deck);
+      new SeededRNG(7), fixture.blinds, fixture.deck,
+      { hand_number: fixture.hand_number, blind_level_index: fixture.blind_level_index });
     compare(hand, fixture.initial, `${fixture.name}.initial`);
     fixture.steps.forEach((step, index) => {
       hand.act(step.action.category, step.action.amount_to);
@@ -112,7 +117,7 @@ for (const fixture of fixtures.hands) {
 for (const fixture of fixtures.tournaments) {
   test(`Python/browser persistent tournament parity: ${fixture.name}`, () => {
     const tournament = new TournamentState(stacksRecord(fixture.stacks), fixture.button,
-      new SeededRNG(0), { small: 0.5, big: 1.0 });
+      new SeededRNG(0), new BlindSchedule(fixture.schedule.map(stage => new BlindStage(stage.first_hand, stage.blinds))));
     fixture.steps.forEach((step, index) => {
       if (step.operation === "start") {
         assert.ok(step.deck);

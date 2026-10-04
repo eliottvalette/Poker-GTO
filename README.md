@@ -2,15 +2,20 @@
 
 An experimental Expresso training environment with a Python NLHE engine,
 persistent 3-player tournaments, a tabular external-sampling MCCFR reference,
-and a small Deep CFR pipeline. **Training readiness: SMOKE-TRAIN READY.**
-The current implementation has not solved the full 25 BB tournament and does
-not establish a GTO policy.
+an explicitly selected outcome-sampling traversal, and a small Deep CFR pipeline. **Training readiness: SMOKE-TRAIN READY.**
+The learning objective is conditional **per-hand chip EV**, not tournament
+winner utility or ICM. No trained policy is claimed to be mathematically GTO.
 
-All chip amounts are actual big blinds: SB = 0.5, BB = 1.0, and initial stacks
-are `(25.0, 25.0, 25.0)`. Chips persist between hands, positions rotate,
-eliminated players leave the hand engine, and play transitions to heads-up.
-The tournament objective is winning the tournament; hand chip-delta utility
-is a separately declared objective for controlled validation subgames.
+Initial SB = 0.5, BB = 1.0, and stacks are `(25.0, 25.0, 25.0)` initial-BB
+chips. The physical chip total stays 75 throughout a tournament. Blinds can
+grow between hands; the UI displays stacks, pot, bets, and actions in the
+**current** BB, so the displayed total is `75 / current_big_blind`.
+The explicit default simulation preset doubles blinds every ten hands, through
+16/32 at hand 51, then holds that level. This is not an official Expresso
+schedule. Stacks persist, positions rotate, players bust, and live play moves
+to heads-up until one winner. The solver evaluates only the current hand's
+terminal chip delta in conserved initial-BB chip units. Tournament winner
+payout is an environment result, not its training utility.
 
 ## Browser Test Live
 
@@ -44,7 +49,7 @@ single-hand policy; that data does not drive tournament play.
 
 Policy information is unavailable until a compatible average-policy `.onnx`
 file and its `.json` manifest are explicitly selected. The browser validates the
-full schema, objective, player-count coverage, model SHA256, legal mask, and
+full schema, objective, player-count coverage, model SHA256, current-hand scope, explicit amount/utility units, legal mask, and
 output distribution. ONNX inference uses locally served CPU WebAssembly assets.
 Loaded probabilities are experimental with uncalibrated confidence. Old saved
 policies and `ml/trained_policy_model.pth` are never used for current play.
@@ -62,7 +67,7 @@ launch training automatically.
 ```text
 TournamentState -> HandState -> canonical actions and Observation
                                   |
-                         recursive external sampling
+              external-sampling reference / outcome-sampling traversal
                                   |
                  advantage memories + strategy memory
                                   |
@@ -77,10 +82,13 @@ TournamentState -> HandState -> canonical actions and Observation
 The hand engine accepts arbitrary legal raise-to amounts. Solvers use a masked,
 deduplicated 13-action abstraction with preflop multiples and postflop pot
 fractions. Observations retain exact hero/board cards, numeric BB features,
-full public betting history, and the player's recall across tournament hands.
+full current-hand public betting history, hand number, and blind-level context.
+Earlier hands are excluded from model input; `observe(tournament)` observes its
+current hand with the same conditional cEV contract.
 
 See [the migration audit](docs/audit.md),
-[implementation and validation details](docs/implementation.md), and
+[implementation and validation details](docs/implementation.md),
+[the outcome-sampling estimator contract](docs/outcome-sampling.md), and
 [legacy isolation](legacy/README.md). The old packed infosets, rollout solver,
 policy distillation, and stale-regret merge implementation are archival only.
 
@@ -123,8 +131,20 @@ Chrome with remote debugging. Set `POKER_UI_ORIGIN`, `POKER_CDP_ORIGIN`,
 an exported model/manifest pair. `POKER_SCREENSHOT_DIR` is optional. This browser
 check imports a model for inference and does not run training.
 
-[Recorded smoke results](docs/smoke-results.json) include a two-iteration CPU
-Deep CFR validation on a controlled river subgame and a bounded full-tournament
-probe. The probe exhausted its traversal budget and raised an error rather than
-inventing a terminal value. Full tournament training requires further work on
-unbounded fold cycles and traversal growth, plus a cost preflight and approval.
+[The current cEV validation report](docs/hand-cev.md) and
+[hand diagnostics](docs/hand-diagnostics.json) retain 1,024 completed
+bounded traversal attempts without censoring; eight value and 39 root-regret
+comparisons pass the documented numerical smoke criterion. The Python suite
+passes 93 tests and the browser suite 64 tests. [Earlier neural smoke results](docs/smoke-results.json)
+are historical state-v2 evidence; current neural fits are exercised by bounded
+tests rather than a new standalone training run. External sampling
+remains the all-action reference; outcome sampling is explicitly selectable as
+`traversal_mode="outcome_sampling"`. Neither mode follows future tournament
+hands for learning. Missing or incompatible checkpoints fail explicitly.
+
+State schema 3, checkpoint version 3, and ONNX manifest version 2 reject the
+retired tournament-winner and earlier state contracts. The previous
+[full-tournament outcome diagnostics](docs/outcome-diagnostics.json) are retained
+as historical evidence only; their extreme weights are not measurements of the
+new per-hand solver. No substantial training has been launched. Larger runs
+require measured costs, numerical/variance validation, and approval.

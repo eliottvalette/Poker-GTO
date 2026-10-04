@@ -6,12 +6,12 @@ from actions import ACTION_IDS
 from cfr_solver import validate_strategy
 from infoset import STATE_VERSION, Observation
 
-POLICY_VERSION = 2
+POLICY_VERSION = 3
 
 
 class TabularAveragePolicy:
     def __init__(self, entries: dict[str, tuple[float, ...]], objective: str):
-        if objective not in ("hand_chip_delta", "tournament_winner"):
+        if objective != "hand_chip_delta":
             raise ValueError(f"Invalid policy objective: {objective}")
         self.entries = entries
         self.objective = objective
@@ -40,7 +40,7 @@ class TabularAveragePolicy:
         raw = json.loads(Path(path).read_text())
         if (raw.get("version") != POLICY_VERSION or raw.get("state_version") != STATE_VERSION
                 or raw.get("actions") != list(ACTION_IDS)):
-            raise ValueError(f"Incompatible policy schema at {path}; expected policy/state v2 and {ACTION_IDS}")
+            raise ValueError(f"Incompatible policy schema at {path}; expected policy v{POLICY_VERSION}/state v{STATE_VERSION} and {ACTION_IDS}")
         entries = {k: tuple(v) for k, v in raw["entries"].items()}
         for key, strategy in entries.items():
             obs = json.loads(key)

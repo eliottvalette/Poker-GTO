@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BrowserTable, cardLabel } from "../ui/src/lib/game";
-import { SeededRNG, TournamentState } from "../ui/src/lib/poker/engine";
+import { observe, NUMERIC_NAMES } from "../ui/src/lib/poker/observation";
+import { SeededRNG, TournamentState, BlindSchedule, BlindStage } from "../ui/src/lib/poker/engine";
 
 function passiveTable(stacks: Record<number, number> = { 0: 25, 1: 25, 2: 25 }): BrowserTable {
   const tournament = new TournamentState(stacks, 0, new SeededRNG(11));
@@ -82,7 +83,7 @@ for (const seed of [1, 7, 42]) {
     let decisions = 0;
     while (!table.view().tournament_terminal && decisions < 500) {
       const view = table.view();
-      assert.ok(Math.abs(view.players.reduce((s, p) => s + p.stack_bb, view.pot_bb) - 75) < 1e-8);
+      assert.ok(Math.abs(view.players.reduce((s, p) => s + p.stack_bb, view.pot_bb) - view.total_chips_bb) < 1e-8);
       assert.ok(view.active_players.length <= previousActive);
       previousActive = view.active_players.length;
       assert.equal(view.policy.status, "unavailable");
@@ -101,7 +102,7 @@ for (const seed of [1, 7, 42]) {
     const final = table.view();
     assert.equal(final.tournament_terminal, true, `Tournament exceeded 500 decisions for seed ${seed}`);
     assert.equal(final.active_players.length, 1);
-    assert.ok(final.players.some(p => p.player_id === final.winner && Math.abs(p.stack_bb - 75) < 1e-8));
+    assert.ok(final.players.some(p => p.player_id === final.winner && Math.abs(p.stack_bb * final.chip_unit_big_blind - 75) < 1e-8));
     assert.throws(() => table.nextHand(), /already won/);
   });
 }
@@ -114,4 +115,90 @@ test("browser table surfaces invalid identities, actions and card IDs", () => {
   assert.equal(cardLabel(0), "2♠");
   assert.equal(cardLabel(51), "A♣");
   assert.throws(() => cardLabel(52), /Invalid card/);
+});
+
+
+test("browser schedule levels apply between hands and preserve physical chips", () => {
+  const schedule = new BlindSchedule([
+    new BlindStage(1, { small: 0.5, big: 1 }),
+    new BlindStage(2, { small: 1, big: 2 }),
+    new BlindStage(3, { small: 2, big: 4 }),
+  ]);
+  const t = new TournamentState({ 0: 25, 1: 25, 2: 25 }, 0, new SeededRNG(9), schedule);
+  for (let number = 1; number <= 4; number++) {
+    const h = t.startHand();
+    const expectedBig = number === 1 ? 1 : number === 2 ? 2 : 4;
+    assert.equal(h.blinds.big, expectedBig);
+    assert.equal(h.hand_number, number);
+    assert.equal(h.blind_level_index, Math.min(number - 1, 2));
+    const before = h.blinds.big;
+    h.act("FOLD"); h.act("FOLD");
+    assert.equal(h.blinds.big, before, "The settled hand retains its own blind unit");
+    t.assertInvariants();
+    assert.equal(t.total_chips, 75);
+  }
+});
+
+test("browser public amounts use current BB while historical results keep each hand's unit", () => {
+  const schedule = new BlindSchedule([
+    new BlindStage(1, { small: 0.5, big: 1 }), new BlindStage(2, { small: 1, big: 2 }),
+  ]);
+  const t = new TournamentState({ 0: 25, 1: 25, 2: 25 }, 0, new SeededRNG(9), schedule);
+  t.startHand();
+  const table = new BrowserTable(t, 1, new SeededRNG(4));
+  t.hand!.act("FOLD"); t.hand!.act("FOLD");
+  assert.equal(table.view().hero_result_bb, -0.5);
+  t.startHand();
+  const view = table.view();
+  assert.equal(view.chip_unit_big_blind, 2);
+  assert.equal(view.total_chips_bb, 37.5);
+  assert.equal(view.pot_bb, 1.5);
+  assert.equal(view.to_call_bb, 1);
+  assert.equal(view.hero_result_bb, -0.5, "Past P&L does not rescale at a level change");
+  assert.deepEqual(view.blinds, { small: 0.5, big: 1 });
+  assert.equal(view.history[0].amount_to, 0.5);
+  assert.equal(view.history[1].amount_to, 1);
+  const raise = view.legal_actions.find(a => a.action_id === "RAISE_2.0X");
+  assert.equal(raise?.amount_to, 2);
+  const internal = t.hand!;
+  assert.equal(internal.blinds.big, 2);
+  assert.equal(internal.pot, 3);
+  internal.act("FOLD"); internal.act("FOLD");
+  const final = table.view();
+  assert.equal(final.hand_results_bb[2], -0.5);
+  assert.equal(final.hand_results_bb[0], 0.5);
+});
+
+test("conditional cEV observations contain only current hand at the current blind level", () => {
+  const schedule = new BlindSchedule([
+    new BlindStage(1, { small: 0.5, big: 1 }), new BlindStage(2, { small: 1, big: 2 }),
+  ]);
+  const t = new TournamentState({ 0: 25, 1: 25, 2: 25 }, 0, new SeededRNG(17), schedule);
+  t.startHand(); t.hand!.act("FOLD"); t.hand!.act("FOLD");
+  const hand = t.startHand();
+  const obs = observe(t);
+  assert.deepEqual(obs, observe(hand));
+  assert.equal(obs.version, 3);
+  assert.equal(obs.objective, "hand_chip_delta");
+  assert.equal(JSON.parse(obs.recall).length, 1);
+  assert.equal(JSON.parse(obs.recall)[0].hand, 2);
+  assert.ok(obs.history.every(token => token[0] === 1 / 25));
+  assert.equal(obs.numeric[NUMERIC_NAMES.indexOf("blind_level_index")], 1);
+  assert.equal(obs.numeric[NUMERIC_NAMES.indexOf("chip_unit_big_blind")], 2);
+  assert.equal(obs.numeric[NUMERIC_NAMES.indexOf("pot")], 1.5 / 25);
+  assert.equal(obs.numeric[NUMERIC_NAMES.indexOf("hand_number")], 2 / 25);
+});
+
+test("browser blind schedule rejects invalid stages instead of repairing them", () => {
+  assert.throws(() => new BlindStage(0, { small: 0.5, big: 1 }));
+  assert.throws(() => new BlindSchedule([]));
+  assert.throws(() => new BlindSchedule([new BlindStage(2, { small: 0.5, big: 1 })]));
+  assert.throws(() => new BlindSchedule([new BlindStage(1, { small: 0.5, big: 1 }),
+    new BlindStage(1, { small: 1, big: 2 })]));
+  assert.throws(() => new BlindSchedule([new BlindStage(1, { small: 1, big: 2 }),
+    new BlindStage(2, { small: 0.5, big: 1 })]));
+  assert.throws(() => new BlindSchedule([new BlindStage(1, { small: 0.5, big: 1 }),
+    new BlindStage(2, { small: 0.5, big: 1 })]));
+  assert.throws(() => BlindSchedule.fixed().forHand(0));
+  assert.throws(() => new TournamentState({ 0: 25, 1: 25 }, 0, new SeededRNG(0), BlindSchedule.fixed(), "split"));
 });

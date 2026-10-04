@@ -13,8 +13,9 @@ from actions import ACTION_IDS
 from cfr_solver import validate_strategy
 from infoset import STATE_VERSION, Observation
 
-MEMORY_VERSION = 3
+MEMORY_VERSION = 4
 DEFAULT_BYTE_BUDGET = 64 * 1024 * 1024
+TRAVERSAL_MODES = ("external_sampling", "outcome_sampling")
 
 
 def sample_bytes(sample: TrainingSample) -> int:
@@ -51,8 +52,13 @@ class TrainingSample:
     weight: float
     kind: str
     model_version: int
+    traversal_mode: str = "external_sampling"
 
     def validate(self) -> None:
+        if self.state.objective != "hand_chip_delta":
+            raise ValueError(f"Only per-hand chip-delta samples are supported, received objective={self.state.objective}")
+        if self.traversal_mode not in TRAVERSAL_MODES:
+            raise ValueError(f"Invalid sample traversal mode: {self.traversal_mode}; expected {TRAVERSAL_MODES}")
         if self.kind not in ("advantage", "strategy") or self.iteration < 1 or self.model_version != self.iteration - 1:
             raise ValueError(f"Invalid sample metadata: {self.kind}, iteration={self.iteration}, version={self.model_version}")
         if self.player != self.state.hero or self.state.version != STATE_VERSION:
@@ -61,6 +67,8 @@ class TrainingSample:
             raise ValueError(f"Invalid target vector: {self.target}")
         if not math.isfinite(self.weight) or self.weight <= 0:
             raise ValueError(f"Invalid sample weight {self.weight}")
+        if self.kind == "advantage" and self.traversal_mode == "outcome_sampling" and self.weight != 1.0:
+            raise ValueError(f"Outcome advantage targets already contain importance correction; expected weight=1, got {self.weight}")
         if any(v != 0 and not m for v, m in zip(self.target, self.state.legal_mask)):
             raise ValueError(f"Nonzero illegal target: {self.target}")
         if self.kind == "strategy":
@@ -69,14 +77,19 @@ class TrainingSample:
 
 class ReservoirMemory:
     def __init__(self, capacity: int, seed: int, kind: str, objective: str,
-                 byte_budget: int = DEFAULT_BYTE_BUDGET):
+                 byte_budget: int = DEFAULT_BYTE_BUDGET, traversal_mode: str | None = None):
+        if objective != "hand_chip_delta":
+            raise ValueError(f"Only hand_chip_delta replay is supported; tournament-winner/ICM objective={objective} is unsupported")
         if (not isinstance(capacity, int) or isinstance(capacity, bool) or capacity < 1
-                or kind not in ("advantage", "strategy") or objective not in ("hand_chip_delta", "tournament_winner")):
+                or kind not in ("advantage", "strategy")):
             raise ValueError(f"Invalid memory contract: {capacity}, {kind}, {objective}")
         if not isinstance(byte_budget, int) or isinstance(byte_budget, bool) or byte_budget < 1:
             raise ValueError(f"Memory byte_budget must be a positive integer: {byte_budget}")
+        if traversal_mode is not None and traversal_mode not in TRAVERSAL_MODES:
+            raise ValueError(f"Invalid memory traversal mode: {traversal_mode}; expected {TRAVERSAL_MODES}")
         self.capacity, self.kind, self.objective = capacity, kind, objective
         self.byte_budget = byte_budget
+        self.traversal_mode = traversal_mode
         self.used_bytes = 0
         self._sample_sizes: list[int] = []
         self.rng = random.Random(seed)
@@ -87,6 +100,8 @@ class ReservoirMemory:
         sample.validate()
         if sample.kind != self.kind or sample.state.objective != self.objective:
             raise ValueError(f"Memory expects {self.kind}/{self.objective}, received {sample.kind}/{sample.state.objective}")
+        if self.traversal_mode is not None and sample.traversal_mode != self.traversal_mode:
+            raise ValueError(f"Memory traversal mode={self.traversal_mode}, received {sample.traversal_mode}; do not mix estimators")
         size = sample_bytes(sample)
         if size > self.byte_budget:
             raise MemoryError(f"Sample requires {size} accounted bytes, memory budget={self.byte_budget}")
@@ -99,6 +114,7 @@ class ReservoirMemory:
             raise MemoryError(f"Reservoir update requires {next_bytes} accounted bytes, budget={self.byte_budget}; "
                               "increase the explicit budget or reduce capacity")
         self.seen += 1
+        self.traversal_mode = sample.traversal_mode
         if len(self.samples) < self.capacity:
             self.samples.append(sample)
             self._sample_sizes.append(size)
@@ -119,7 +135,7 @@ class ReservoirMemory:
                 metadata = {"version": MEMORY_VERSION, "state_version": STATE_VERSION,
                             "actions": ACTION_IDS, "capacity": self.capacity, "kind": self.kind,
                             "objective": self.objective, "seen": self.seen, "byte_budget": self.byte_budget,
-                            "rng": self.rng.getstate()}
+                            "rng": self.rng.getstate(), "traversal_mode": self.traversal_mode}
                 file.write(json.dumps(metadata, allow_nan=False)[:-1] + ', "samples":[')
                 for index, sample in enumerate(self.samples):
                     if index:
@@ -137,13 +153,15 @@ class ReservoirMemory:
             raw = json.load(file)
         if raw.get("version") != MEMORY_VERSION or raw.get("state_version") != STATE_VERSION or raw.get("actions") != list(ACTION_IDS):
             raise ValueError(f"Incompatible memory schema at {path}")
-        expected = {"version", "state_version", "actions", "capacity", "kind", "objective", "seen", "rng", "samples", "byte_budget"}
+        expected = {"version", "state_version", "actions", "capacity", "kind", "objective", "seen", "rng", "samples", "byte_budget", "traversal_mode"}
         if set(raw) != expected or not isinstance(raw["samples"], list):
             raise ValueError(f"Invalid memory fields at {path}: {sorted(raw)}")
-        memory = cls(raw["capacity"], 0, raw["kind"], raw["objective"], raw["byte_budget"])
+        memory = cls(raw["capacity"], 0, raw["kind"], raw["objective"], raw["byte_budget"], raw["traversal_mode"])
         if (not isinstance(raw["seen"], int) or isinstance(raw["seen"], bool)
                 or raw["seen"] < 0 or len(raw["samples"]) != min(memory.capacity, raw["seen"])):
             raise ValueError(f"Invalid reservoir counts at {path}")
+        if raw["seen"] > 0 and memory.traversal_mode is None:
+            raise ValueError(f"Populated reservoir must declare its traversal mode at {path}")
         for item in raw["samples"]:
             expected_sample = {f.name for f in fields(TrainingSample)}
             if not isinstance(item, dict) or set(item) != expected_sample:
@@ -154,7 +172,7 @@ class ReservoirMemory:
             obs = Observation(o["version"], o["hero"], o["objective"], tuple(o["cards"]), o["street"],
                               tuple(o["numeric"]), tuple(o["legal_mask"]), tuple(tuple(e) for e in o["history"]), o["recall"])
             memory.add(TrainingSample(item["iteration"], item["player"], obs, tuple(item["target"]),
-                                      item["weight"], item["kind"], item["model_version"]))
+                                      item["weight"], item["kind"], item["model_version"], item["traversal_mode"]))
         memory.seen = raw["seen"]
         def tuples(value):
             return tuple(tuples(v) for v in value) if isinstance(value, list) else value

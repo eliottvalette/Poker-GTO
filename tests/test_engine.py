@@ -3,6 +3,7 @@ import random
 import unittest
 
 from actions import apply_action, legal_actions
+from blind_schedule import BlindSchedule
 from poker_game_expresso import HandState
 from tournament import TournamentState
 
@@ -258,7 +259,7 @@ class TournamentTests(unittest.TestCase):
         t.assert_invariants()
 
     def test_fixed_blinds_allow_nonterminating_fold_cycle(self):
-        t = TournamentState(rng=random.Random(9))
+        t = TournamentState(rng=random.Random(9), blind_schedule=BlindSchedule.fixed())
         for _ in range(3):
             t.start_hand()
             t.act("FOLD")

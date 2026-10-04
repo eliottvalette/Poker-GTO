@@ -24,7 +24,7 @@ from ml.deep_cfr import NeuralAveragePolicy
 from ml.model import MODEL_ARCHITECTURE, AveragePolicyNetwork, encode_batch
 
 INPUT_NAMES = ("cards", "street", "position", "numeric", "history", "mask")
-EXPORT_VERSION = 1
+EXPORT_VERSION = 2
 
 
 class SingleObservationAveragePolicy(nn.Module):
@@ -104,7 +104,9 @@ def export_average_policy(checkpoint: str | Path, model_path: str | Path, manife
                 "events": list(EVENTS), "normalization_bb": 25.0, "card_encoding": "rank_index_times_4_plus_suit_index",
                 "card_slots": 7, "unknown_card": 52, "card_vocabulary": 53, "history_width": HISTORY_WIDTH,
                 "full_history": True, "batch_size": 1, "inputs": list(INPUT_NAMES), "output": "probabilities",
-                "validation_max_absolute_error": max(errors)}
+                "validation_max_absolute_error": max(errors), "amount_units": "current_big_blinds",
+                "utility_units": "initial_big_blind_chips", "history_scope": "current_hand",
+                "payout_scope": "winner_take_all"}
     _atomic_write(model_path, model_bytes)
     _atomic_write(manifest_path, (json.dumps(manifest, indent=2, allow_nan=False) + "\n").encode("utf-8"))
     return manifest

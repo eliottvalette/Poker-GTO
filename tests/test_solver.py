@@ -98,20 +98,25 @@ class SolverTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Incompatible"):
                 TabularAveragePolicy.load(path)
 
-    def test_tournament_traversal_crosses_hands(self):
+    def test_tournament_traversal_stays_in_current_hand(self):
+        from dataclasses import asdict
         from tournament import TournamentState
-        t = TournamentState({0: 1.0, 1: 1.0}, rng=random.Random(3))
+        t = TournamentState({0: 2.0, 1: 2.0}, rng=random.Random(3))
         t.start_hand()
+        baseline = asdict(t.hand)
         samples = []
         value = Traversal(uniform, random.Random(1), 1000, 100).regrets(t, 0, lambda o,r,w: samples.append(o))
         self.assertGreater(len(samples), 1)
-        self.assertTrue(all(o.objective == "tournament_winner" for o in samples))
-        self.assertGreater(max(o.numeric[NUMERIC_NAMES.index("hand_number")] for o in samples), 1 / 25)
-        self.assertGreaterEqual(value, -0.5)
-        self.assertLessEqual(value, 0.5)
-        self.assertTrue(any(len(json.loads(o.recall)) > 1 for o in samples))
+        self.assertTrue(all(o.objective == "hand_chip_delta" for o in samples))
+        self.assertTrue(all(o.numeric[NUMERIC_NAMES.index("hand_number")] == 1 / 25 for o in samples))
+        self.assertGreaterEqual(value, -2)
+        self.assertLessEqual(value, 2)
+        self.assertTrue(all(len(json.loads(o.recall)) == 1 for o in samples))
+        self.assertEqual(asdict(t.hand), baseline)
+        self.assertEqual(t.hand_number, 1)
+        self.assertFalse(t.completed)
 
-    def test_public_showdown_cards_and_stack_history_are_retained(self):
+    def test_previous_hand_cards_do_not_enter_current_hand_learning_state(self):
         from tournament import TournamentState
         from utils import rank7
         t = TournamentState(rng=random.Random(7))
@@ -123,10 +128,11 @@ class SolverTests(unittest.TestCase):
         o = observe(t)
         previous = t.completed[0]
         records = json.loads(o.recall)
-        self.assertEqual(records[0]["shown_cards"]["0"], list(previous.players[0].cards))
-        self.assertEqual(records[0]["final_stacks"]["0"], previous.players[0].stack)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["shown_cards"], {})
+        self.assertIsNone(records[0]["final_stacks"])
         stack_events = [e for e in o.history if e[0] == 1 / 25 and e[4] == 1 and e[-1] == 0]
-        self.assertEqual(len(stack_events), 6)  # Three initial and three settled allocations.
+        self.assertEqual(len(stack_events), 3)
         changed = t.clone()
         p = changed.completed[0].players[0]
         before = rank7((*p.cards, *previous.board))
@@ -137,8 +143,8 @@ class SolverTests(unittest.TestCase):
         p.cards = (replacement, p.cards[1])
         changed.completed[0].assert_invariants()
         other = observe(changed)
-        self.assertNotEqual(o.key(), other.key())
-        self.assertNotEqual(o.history, other.history)
+        self.assertEqual(o.key(), other.key())
+        self.assertEqual(o.history, other.history)
         self.assertEqual(o.numeric, other.numeric)
         self.assertEqual(o.cards, other.cards)
 
