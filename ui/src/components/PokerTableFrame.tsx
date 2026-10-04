@@ -7,6 +7,7 @@ type Seat = {
   id: number;            // Persistent player identity
   label: string;         // "SB" | "BB" | "BTN"
   stack: string;         // "27.0 BB"
+  streetBet: number | null;
   smallBlind?: boolean;
   bigBlind?: boolean;
   active?: boolean;
@@ -62,6 +63,7 @@ export default function PokerTableFrame({
       {/* Seats and hole cards */}
       <div className={`${styles.leftSeat} absolute left-[8%] top-[12%] flex flex-col items-center`}>
         <SeatChip {...left} />
+        <StreetBet seat={left} className={styles.opponentBet} />
         {left.cards?.length ? (
           <div className="mt-2 flex gap-1">
             {left.cards.map((t, i) => <PlayingCard key={i} text={t} active={left.active} phase={phase} />)}
@@ -71,6 +73,7 @@ export default function PokerTableFrame({
 
       <div className={`${styles.rightSeat} absolute right-[8%] top-[12%] flex flex-col items-center`}>
         <SeatChip {...right} />
+        <StreetBet seat={right} className={styles.opponentBet} />
         {right.cards?.length ? (
           <div className="mt-2 flex gap-1">
             {right.cards.map((t, i) => <PlayingCard key={i} text={t} active={right.active} phase={phase} />)}
@@ -80,12 +83,28 @@ export default function PokerTableFrame({
 
       <div className="absolute left-1/2 -translate-x-1/2 bottom-[14%] flex flex-col items-center">
         <SeatChip {...hero} />
+        <StreetBet seat={hero} className={styles.heroBet} />
         {hero.cards?.length ? (
           <div className="mt-2 flex gap-2">
             {hero.cards.map((t, i) => <PlayingCard key={i} text={t} active={hero.active} phase={phase} />)}
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function StreetBet({ seat, className }: { seat: Seat; className: string }) {
+  if (seat.streetBet === null || seat.streetBet === 0) return null;
+  if (!Number.isFinite(seat.streetBet) || seat.streetBet < 0) {
+    throw new Error(`Invalid current-street bet for player ${seat.id}: ${seat.streetBet}`);
+  }
+  const amount = seat.streetBet.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return (
+    <div className={`${styles.streetBet} ${className}`} role="status"
+      aria-label={`Player ${seat.id} bet ${amount} BB this round`} data-player-bet={seat.id}>
+      <span className={styles.chip} aria-hidden="true" />
+      <span>{amount} BB</span>
     </div>
   );
 }

@@ -94,6 +94,7 @@ export default function TestTable() {
               id,
               label: player ? player.active ? player.position ?? `P${id}` : "OUT" : `P${id}`,
               stack: player ? `${player.stack_bb.toFixed(1)} BB` : "— BB",
+              streetBet: player && !game?.hand_terminal ? player.bet_bb : null,
               smallBlind: player?.position === "SB",
               bigBlind: player?.position === "BB",
               active: player ? player.active && !player.folded : true,
