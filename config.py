@@ -37,10 +37,12 @@ CFR_SKIP_CSV = False
 
 ML_POLICY_PATH = POLICY_PATH
 ML_MODEL_PATH = ROOT_DIR / "ml" / "trained_policy_model.pth"
-ML_EPOCHS = 10
+ML_EPOCHS = 5
 ML_BATCH_SIZE = 64
 ML_LEARNING_RATE = 3e-4
-ML_EVAL_SAMPLES = 1_000
+ML_EVAL_FRACTION = 0.2
+ML_SPLIT_SEED = 42
+ML_EVAL_SAMPLES = None  # Cap within the held-out eval split; use None to evaluate all.
 
 
 # =========================

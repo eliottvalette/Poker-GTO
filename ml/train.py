@@ -1,11 +1,12 @@
 import json
 import gzip
+from dataclasses import dataclass
 import torch
-import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader, Subset, random_split
 import numpy as np
-from typing import Dict, List
+from typing import Dict, List, Optional
 try:
     from .model import Model
 except ImportError:
@@ -25,6 +26,22 @@ from infoset import unpack_infoset_key_dense
 ACTIONS = ["FOLD", "CHECK", "CALL", "RAISE", "ALL-IN"]
 ACTION_INDEX = {action_name: index for index, action_name in enumerate(ACTIONS)}
 N_ACTIONS = len(ACTIONS)
+DEFAULT_EVAL_FRACTION = 0.2
+DEFAULT_SPLIT_SEED = 20_260_516
+
+
+@dataclass(frozen=True)
+class DatasetSplit:
+    train: Dataset
+    evaluation: Dataset
+
+
+@dataclass(frozen=True)
+class EvaluationMetrics:
+    num_samples: int
+    kl_divergence: float
+    l1_error: float
+
 
 def reconstruct_probabilities(bitmask: int, quantized_values: List[int]) -> List[float]:
     """Reconstruct probability distribution from quantized format"""
@@ -99,7 +116,7 @@ class PolicyDataset(Dataset):
             
             self.data.append((features, targets))
         
-        print(f"Loaded {len(self.data)} training samples")
+        print(f"Loaded {len(self.data)} policy samples")
     
     def __len__(self):
         return len(self.data)
@@ -113,19 +130,49 @@ def load_policy(path: str) -> Dict:
         raw = json.load(f)
     return raw
 
-def train(model: Model, policy: dict, epochs: int = 100, batch_size: int = 32, lr: float = 0.001):
-    """Train the model on policy data"""
-    
-    # Create dataset and dataloader
-    print("Preparing dataset...")
-    dataset = PolicyDataset(policy)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    
-    # Loss function and optimizer
-    criterion = nn.MSELoss()
+def split_dataset(
+    dataset: Dataset,
+    eval_fraction: float = DEFAULT_EVAL_FRACTION,
+    seed: int = DEFAULT_SPLIT_SEED,
+) -> DatasetSplit:
+    """Split once before training so evaluation never sees train samples."""
+    if not 0.0 < eval_fraction < 1.0:
+        raise ValueError(f"eval_fraction must be in (0, 1), got {eval_fraction}")
+
+    total_samples = len(dataset)
+    if total_samples < 2:
+        raise ValueError("Need at least two samples to create a train/eval split")
+
+    eval_size = max(1, int(round(total_samples * eval_fraction)))
+    train_size = total_samples - eval_size
+    if train_size <= 0:
+        train_size = 1
+        eval_size = total_samples - train_size
+
+    generator = torch.Generator().manual_seed(seed)
+    train_dataset, evaluation_dataset = random_split(dataset, [train_size, eval_size], generator=generator)
+    return DatasetSplit(train=train_dataset, evaluation=evaluation_dataset)
+
+
+def distribution_kl_div(outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    """KL(target || output) for probability distributions."""
+    return F.kl_div(outputs.clamp_min(1e-8).log(), targets, reduction="batchmean")
+
+
+def train(
+    model: Model,
+    train_dataset: Dataset,
+    epochs: int = 100,
+    batch_size: int = 32,
+    lr: float = 0.001,
+):
+    """Train the model on the training split only."""
+    dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    criterion = distribution_kl_div
     optimizer = optim.Adam(model.parameters(), lr=lr)
     
-    print(f"Training on {len(dataset)} samples")
+    print(f"Training on {len(train_dataset)} samples")
     print(f"Batch size: {batch_size}")
     print(f"Learning rate: {lr}")
     print(f"Epochs: {epochs}")
@@ -137,13 +184,13 @@ def train(model: Model, policy: dict, epochs: int = 100, batch_size: int = 32, l
         total_loss = 0.0
         num_batches = 0
         
-        epoch_pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{epochs}", leave=False)
+        epoch_pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{epochs}", leave=False, dynamic_ncols=True)
         for batch_features, batch_targets in epoch_pbar:
             optimizer.zero_grad()            
             # Forward pass
             outputs = model(batch_features)
             
-            # Calculate loss (using KL divergence for probability distributions)
+            # Calculate loss using KL divergence for probability distributions.
             loss = criterion(outputs, batch_targets)
             
             # Backward pass
@@ -164,45 +211,79 @@ def train(model: Model, policy: dict, epochs: int = 100, batch_size: int = 32, l
     
     print("Training completed!")
 
-def evaluate_model(model: Model, policy: dict, num_samples: int = 1000):
-    """Evaluate model performance on a subset of policy data"""
+def make_sampled_subset(dataset: Dataset, num_samples: Optional[int], seed: int) -> Dataset:
+    """Return a deterministic evaluation subset capped by num_samples."""
+    dataset_size = len(dataset)
+    if num_samples is None or num_samples >= dataset_size:
+        return dataset
+    if num_samples <= 0:
+        raise ValueError(f"num_samples must be positive or None, got {num_samples}")
+
+    rng = np.random.default_rng(seed)
+    indices = rng.choice(dataset_size, num_samples, replace=False).tolist()
+    return Subset(dataset, indices)
+
+
+def evaluate_model(
+    model: Model,
+    eval_dataset: Dataset,
+    num_samples: Optional[int] = None,
+    batch_size: int = 256,
+    seed: int = DEFAULT_SPLIT_SEED,
+) -> Optional[EvaluationMetrics]:
+    """Evaluate model performance on the held-out split."""
     model.eval()
-    criterion = nn.MSELoss()
-    
-    print("Preparing evaluation dataset...")
-    dataset = PolicyDataset(policy)
-    if len(dataset) == 0:
+    criterion = distribution_kl_div
+
+    if len(eval_dataset) == 0:
         print("No data to evaluate")
-        return
-    
-    # Sample random indices
-    indices = np.random.choice(len(dataset), min(num_samples, len(dataset)), replace=False)
-    
+        return None
+
+    sampled_dataset = make_sampled_subset(eval_dataset, num_samples, seed)
+    dataloader = DataLoader(sampled_dataset, batch_size=batch_size, shuffle=False)
+
     total_kl_div = 0.0
     total_l1_error = 0.0
-    
-    print(f"Evaluating on {len(indices)} samples...")
+    evaluated_samples = 0
+
+    print(f"Evaluating on {len(sampled_dataset)} held-out samples...")
     with torch.no_grad():
-        for idx in tqdm(indices, desc="Evaluating samples"):
-            features, targets = dataset[idx]
-            features = features.unsqueeze(0)
-            
+        for features, targets in tqdm(
+            dataloader,
+            desc="Evaluating samples",
+            leave=False,
+            dynamic_ncols=True,
+        ):
             outputs = model(features)
-            
-            # KL divergence
+
+            batch_size_actual = features.shape[0]
             kl_div = criterion(outputs, targets)
-            total_kl_div += kl_div.item()
-            
-            # L1 error
+            total_kl_div += kl_div.item() * batch_size_actual
+
             l1_error = torch.abs(outputs - targets).mean()
-            total_l1_error += l1_error.item()
-    
-    avg_kl_div = total_kl_div / len(indices)
-    avg_l1_error = total_l1_error / len(indices)
-    
-    print(f"Evaluation Results:")
-    print(f"  Average KL Divergence: {avg_kl_div:.6f}")
-    print(f"  Average L1 Error: {avg_l1_error:.6f}")
+            total_l1_error += l1_error.item() * batch_size_actual
+            evaluated_samples += batch_size_actual
+
+    avg_kl_div = total_kl_div / evaluated_samples
+    avg_l1_error = total_l1_error / evaluated_samples
+
+    metrics = EvaluationMetrics(
+        num_samples=evaluated_samples,
+        kl_divergence=avg_kl_div,
+        l1_error=avg_l1_error,
+    )
+    tqdm.write("")
+    tqdm.write("Evaluation Results:")
+    tqdm.write(f"  Held-out samples: {metrics.num_samples}")
+    tqdm.write(f"  Average KL Divergence: {metrics.kl_divergence:.6f}")
+    tqdm.write(f"  Average L1 Error: {metrics.l1_error:.6f}")
+    tqdm.write(
+        "HELDOUT_EVAL "
+        f"samples={metrics.num_samples} "
+        f"kl={metrics.kl_divergence:.6f} "
+        f"l1={metrics.l1_error:.6f}"
+    )
+    return metrics
 
 if __name__ == "__main__":
     print("=" * 60)
@@ -215,6 +296,19 @@ if __name__ == "__main__":
     policy_data = load_policy(policy_path)
     
     print(f"Loaded policy with {len(policy_data)} infosets")
+
+    print("Preparing dataset and leak-free split...")
+    dataset = PolicyDataset(policy_data)
+    eval_fraction = getattr(config, "ML_EVAL_FRACTION", DEFAULT_EVAL_FRACTION)
+    split_seed = getattr(config, "ML_SPLIT_SEED", DEFAULT_SPLIT_SEED)
+    dataset_split = split_dataset(dataset, eval_fraction=eval_fraction, seed=split_seed)
+    print(
+        "Dataset split: "
+        f"train={len(dataset_split.train)}, "
+        f"eval={len(dataset_split.evaluation)}, "
+        f"eval_fraction={eval_fraction}, "
+        f"seed={split_seed}"
+    )
     
     # Create model
     print("Creating neural network model...")
@@ -227,7 +321,7 @@ if __name__ == "__main__":
     print("\nStarting training...")
     train(
         model,
-        policy_data,
+        dataset_split.train,
         epochs=config.ML_EPOCHS,
         batch_size=config.ML_BATCH_SIZE,
         lr=config.ML_LEARNING_RATE,
@@ -235,7 +329,13 @@ if __name__ == "__main__":
     
     # Evaluate model
     print("\nEvaluating model...")
-    evaluate_model(model, policy_data, num_samples=config.ML_EVAL_SAMPLES)
+    evaluate_model(
+        model,
+        dataset_split.evaluation,
+        num_samples=config.ML_EVAL_SAMPLES,
+        batch_size=config.ML_BATCH_SIZE,
+        seed=split_seed,
+    )
     
     # Save trained model
     print("\nSaving model...")
