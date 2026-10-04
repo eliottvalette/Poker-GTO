@@ -1,9 +1,10 @@
 // ui/src/components/PokerTableFrame.tsx
 "use client";
 import React from "react";
+import styles from "./PokerTableFrame.module.css";
 
 type Seat = {
-  id: number;            // 0=SB, 1=BB, 2=BTN
+  id: number;            // Persistent player identity
   label: string;         // "SB" | "BB" | "BTN"
   stack: string;         // "27.0 BB"
   smallBlind?: boolean;
@@ -14,14 +15,12 @@ type Seat = {
 };
 
 export default function PokerTableFrame({
-  children,
   seats,
   potLabel,
   heroSeat,
   board,
   phase,
 }: {
-  children?: React.ReactNode;
   seats: Seat[];
   potLabel: string;
   heroSeat: number;
@@ -36,31 +35,32 @@ export default function PokerTableFrame({
 
   return (
     <div
-      className={`relative mx-auto aspect-[16/9] w-[98%] rounded-3xl px-4 pt-2 
+      aria-label="Poker table"
+      className={`${styles.table} relative mx-auto aspect-[16/9] w-[98%] rounded-3xl px-4 pt-2
               bg-[radial-gradient(ellipse_at_center,_#0b3866_0%,_#053056_50%,_#061c34_100%)] 
               shadow-inner ring-1 ring-border overflow-hidden`}
       >
-      {/* table hippodrome */}
+      {/* Stadium rail */}
       <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[64%] w-[92%] h-[74%] rounded-full border border-primary/30 shadow-[inset_0_0_2rem_rgba(34,211,238,.15)]" />
 
-      {/* logo & pot */}
+      {/* Logo and pot */}
       <div className="absolute top-8 left-1/2 -translate-x-1/2 text-muted-foreground/50 tracking-widest text-sm select-none">
         EXPRESSO
       </div>
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[36%] text-center">
-        <div className="text-muted-foreground/80 text-xs">Pot total</div>
+        <div className="text-muted-foreground/80 text-xs">Pot</div>
         <div className="mt-0.5 text-foreground text-lg font-semibold drop-shadow">{potLabel}</div>
       </div>
 
-      {/* board */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[125%] flex gap-1">
+      {/* Board */}
+      <div aria-label="Board" className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[125%] flex gap-1">
         {board
           ? board.split(" ").map((t, i) => <PlayingCard key={i} text={t} />)
-          : <div className="text-muted-foreground/80 text-sm">-</div>}
+          : null}
       </div>
 
-      {/* sièges avec cartes */}
-      <div className="absolute left-[8%] top-[12%] flex flex-col items-center">
+      {/* Seats and hole cards */}
+      <div className={`${styles.leftSeat} absolute left-[8%] top-[12%] flex flex-col items-center`}>
         <SeatChip {...left} />
         {left.cards?.length ? (
           <div className="mt-2 flex gap-1">
@@ -69,7 +69,7 @@ export default function PokerTableFrame({
         ) : null}
       </div>
 
-      <div className="absolute right-[8%] top-[12%] flex flex-col items-center">
+      <div className={`${styles.rightSeat} absolute right-[8%] top-[12%] flex flex-col items-center`}>
         <SeatChip {...right} />
         {right.cards?.length ? (
           <div className="mt-2 flex gap-1">
@@ -85,11 +85,6 @@ export default function PokerTableFrame({
             {hero.cards.map((t, i) => <PlayingCard key={i} text={t} active={hero.active} phase={phase} />)}
           </div>
         ) : null}
-      </div>
-
-      {/* actions */}
-      <div className="absolute bottom-4 left-0 right-0 px-10">
-        {children}
       </div>
     </div>
   );
@@ -116,7 +111,7 @@ function SeatChip({
   return (
     <div>
       <div
-        className={`rounded-2xl px-3 py-1.5 shadow-lg backdrop-blur border border-border w-40 h-10 flex items-center ${getBackgroundColor()}`}
+        className={`${styles.seatChip} rounded-2xl px-3 py-1.5 shadow-lg backdrop-blur border border-border w-40 h-10 flex items-center ${getBackgroundColor()}`}
       >
         <div className="flex items-center justify-between w-full">
           <div
@@ -139,14 +134,14 @@ function SeatChip({
 }
 
 
-/* ===== cartes style casino ===== */
+/* Casino card styling */
 function PlayingCard({ text, active, phase }: { text: string, active?: boolean, phase?: string }) {
   if (active === false && phase !== "SHOWDOWN") {
     return 
   }
   if (text === "XX") {
     return (
-      <div className="w-16 h-23 rounded-sm border border-neutral-700 shadow-lg bg-neutral-950 grid place-items-center">
+      <div className={`${styles.playingCard} w-16 h-23 rounded-sm border border-neutral-700 shadow-lg bg-neutral-950 grid place-items-center`}>
         <div className="w-[80%] h-[80%] rounded-sm border border-border bg-neutral-800 grid place-items-center">
           <div className="w-[85%] h-[85%] rounded-sm border border-border bg-neutral-950 grid place-items-center">
             <span className="text-neutral-300">♠</span>
@@ -160,10 +155,10 @@ function PlayingCard({ text, active, phase }: { text: string, active?: boolean, 
   const s = text.slice(-1);
   const isRed = s === "♥" || s === "♦";
   return (
-    <div className="relative w-16 h-23 rounded-sm border shadow-lg bg-[var(--card-bg)] border-[var(--card-border)]">
+    <div className={`${styles.playingCard} relative w-16 h-23 rounded-sm border shadow-lg bg-[var(--card-bg)] border-[var(--card-border)]`}>
       <div
         className={
-          "absolute top-0.5 left-1 text-md font-bold " +
+          `${styles.cardCorner} absolute top-0.5 left-1 text-md font-bold ` +
           (isRed ? "text-[var(--card-red)]" : "text-[var(--card-black)]")
         }
       >
@@ -172,7 +167,7 @@ function PlayingCard({ text, active, phase }: { text: string, active?: boolean, 
       </div>
       <div
         className={
-          "absolute right-1 bottom-0.5 rotate-180 text-md font-bold " +
+          `${styles.cardCorner} absolute right-1 bottom-0.5 rotate-180 text-md font-bold ` +
           (isRed ? "text-[var(--card-red)]" : "text-[var(--card-black)]")
         }
       >
@@ -185,7 +180,7 @@ function PlayingCard({ text, active, phase }: { text: string, active?: boolean, 
           (isRed ? "text-[var(--card-red)]" : "text-[var(--card-black)]")
         }
       >
-        <span className="text-2xl">{s}</span>
+        <span className={`${styles.cardSymbol} text-2xl`}>{s}</span>
       </div>
     </div>
   );

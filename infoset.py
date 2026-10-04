@@ -1,249 +1,127 @@
-# infoset.py
+"""Exact observations and lossless tabular keys; no opponent private information."""
 from __future__ import annotations
-from typing import List, Tuple
-from classes import Card, Player
+from dataclasses import asdict, dataclass
+import json
 import math
-import bisect
+from actions import ACTION_IDS, legal_actions
+from poker_game_expresso import HandState, STREETS
+from tournament import TournamentState
 
-# ============================================================
-# --- 169 map (lisible <-> index)
-# ============================================================
+STATE_VERSION = 2
+POSITIONS = ("BTN", "SB", "BB")
+EVENTS = ("BLIND", "FOLD", "CHECK", "CALL", "RAISE", "CARD", "STACK")
+NUMERIC_NAMES = tuple(f"{feature}_{i}" for feature in ("stack", "street_bet", "contribution", "folded", "effective") for i in range(3)) + (
+    "pot", "to_call", "highest", "last_full_raise", "hero_bet", "small_blind", "big_blind",
+    "player_count", "hero_position", "button", "hand_number", "initial_0", "initial_1", "initial_2",
+) + tuple(f"target_{a}" for a in ACTION_IDS)
+HISTORY_WIDTH = 12
 
-_R2S = {14:"A",13:"K",12:"Q",11:"J",10:"T",
-        9:"9",8:"8",7:"7",6:"6",5:"5",4:"4",3:"3",2:"2"}
-_RANKS_DESC = [14,13,12,11,10,9,8,7,6,5,4,3,2]  # A..2
 
-def combo_label_169(card_1: Card, card_2: Card) -> str:
-    if card_1.rank == card_2.rank:
-        s = _R2S[card_1.rank]
-        return f"{s}{s}"
-    high_card, low_card = (card_1, card_2) if card_1.rank >= card_2.rank else (card_2, card_1)
-    suited = high_card.suit == low_card.suit
-    return f"{_R2S[high_card.rank]}{_R2S[low_card.rank]}{'s' if suited else 'o'}"
+@dataclass(frozen=True)
+class Observation:
+    version: int
+    hero: int
+    objective: str
+    cards: tuple[int, ...]  # Two private cards and five board slots; 52 means unknown.
+    street: int
+    numeric: tuple[float, ...]
+    legal_mask: tuple[bool, ...]
+    history: tuple[tuple[float, ...], ...]
+    recall: str  # Lossless perfect-recall source for tabular keys and diagnostics.
 
-# 13x13 grid
-_LABELS_169 = []
-for i, rank_1 in enumerate(_RANKS_DESC):
-    for j, rank_2 in enumerate(_RANKS_DESC):
-        if i == j:
-            _LABELS_169.append(f"{_R2S[rank_1]}{_R2S[rank_2]}")
-        elif i < j:
-            _LABELS_169.append(f"{_R2S[rank_1]}{_R2S[rank_2]}s")  # suited
-        else:
-            _LABELS_169.append(f"{_R2S[rank_2]}{_R2S[rank_1]}o")  # offsuit
+    def __post_init__(self) -> None:
+        if (self.version != STATE_VERSION or self.objective not in ("tournament_winner", "hand_chip_delta")
+                or self.street not in range(4) or len(self.cards) != 7
+                or any(c not in range(52) for c in self.cards[:2])
+                or any(c not in range(53) for c in self.cards[2:])
+                or len(set(c for c in self.cards if c != 52)) != sum(c != 52 for c in self.cards)
+                or len(self.numeric) != len(NUMERIC_NAMES) or len(self.legal_mask) != len(ACTION_IDS)
+                or not any(self.legal_mask) or not self.history
+                or any(not math.isfinite(v) for v in self.numeric)
+                or any(len(e) != HISTORY_WIDTH or any(not math.isfinite(v) for v in e) for e in self.history)):
+            raise ValueError(f"Invalid structured observation: version={self.version}, objective={self.objective}, cards={self.cards}")
+        if not isinstance(json.loads(self.recall), list):
+            raise ValueError("Observation recall must encode a list of hand observations")
 
-LABEL_TO_169IDX = {label: i for i, label in enumerate(_LABELS_169)}
+    def key(self) -> str:
+        return json.dumps(asdict(self), sort_keys=True, separators=(",", ":"), allow_nan=False)
 
-# ============================================================
-# --- Helpers
-# ============================================================
 
-PHASE_TO_ID = {"PREFLOP":0,"FLOP":1,"TURN":2,"RIVER":3,"SHOWDOWN":4}
-ROLE_LABELS = ["SB", "BB", "BTN"]
-RANK_TO_GRID_INDEX = {14:0,13:1,12:2,11:3,10:4,9:5,8:6,7:7,6:8,5:9,4:10,3:11,2:12}
-
-def hand169_idx(card_1: Card, card_2: Card) -> tuple[int, str]:
-    label = combo_label_169(card_1, card_2)
-    return LABEL_TO_169IDX[label], label
-
-def board_bucket(board: List[Card]) -> Tuple[int, str]:
-    num_cards = len(board)
-    if num_cards == 0:
-        return 0, "PF"
-
-    rank_counts = [card.rank for card in board]
-    suit_counts = [card.suit for card in board]
-
-    # suit texture
-    max_suit = max(suit_counts.count(suit) for suit in set(suit_counts))
-    if   (num_cards == 3 and max_suit == 3) or \
-         (num_cards == 4 and max_suit >= 4) or \
-         (num_cards == 5 and max_suit >= 5):
-        suit_tex = 2  # monotone
-    elif (num_cards >= 3 and max_suit == num_cards-1):
-        suit_tex = 1  # two-tone
-    else:
-        suit_tex = 0  # rainbow
-
-    # paired
-    paired = 1 if any(rank_counts.count(rank) >= 2 for rank in set(rank_counts)) else 0
-
-    # high card class
-    high_card_rank = max(rank_counts)
-    if high_card_rank >= 12: high_card_class = 2     # Q+
-    elif high_card_rank >= 10: high_card_class = 1   # T/J
-    else: high_card_class = 0            # ≤9
-
-    idx = suit_tex*6 + paired*3 + high_card_class
-    name = ["RB","TT","MONO"][suit_tex] + \
-           ("_PR" if paired else "_NP") + \
-           ["_LO","_MID","_HI"][high_card_class]
-
-    return idx, name
-
-# ============================================================
-# --- Hero vs Board relation bucket
-# ============================================================
-
-def hero_vs_board_bucket(hero: Player, board: List[Card]) -> int:
-    """Retourne un bucket 0..11 indiquant la relation directe entre main et board."""
-
-    if not board:
-        return 0  # préflop
-
-    ranks = [card.rank for card in board]
-    suits = [card.suit for card in board]
-    hero_ranks = [card.rank for card in hero.cards]
-    hero_suits = [card.suit for card in hero.cards]
-
-    # ---- Pairing ----
-    pair_type = 0
-    if any(r in ranks for r in hero_ranks):
-        hi = max(hero_ranks)
-        if hi in ranks:
-            if hi >= max(ranks): 
-                pair_type = 3  # top pair+
-            elif hi >= sorted(ranks)[-2]:
-                pair_type = 2  # middle
-            else:
-                pair_type = 1  # low pair
-    elif hero_ranks[0] == hero_ranks[1]:
-        # pocket pair
-        if hero_ranks[0] > max(ranks):
-            pair_type = 4  # overpair
-        else:
-            pair_type = 1
-
-    # ---- Flush draw ----
-    flush_draw = 0
-    for suit in set(hero_suits):
-        need = 5 - suits.count(suit)
-        if need <= 2:
-            flush_draw = 2 if need == 1 else 1
-
-    # ---- Straight draw (approx) ----
-    straight_draw = 0
-    all_ranks = sorted(set(ranks + hero_ranks))
-    for start in range(2, 11):
-        window = set(range(start, start+5))
-        overlap = len(window & set(all_ranks))
-        if overlap == 5:
-            straight_draw = 3  # straight
-        elif overlap == 4:
-            straight_draw = max(straight_draw, 2)  # OESD
-        elif overlap == 3:
-            straight_draw = max(straight_draw, 1)  # gutshot
-
-    # ---- Aggregate ----
-    if flush_draw == 0 and straight_draw == 0 and pair_type == 0:
-        return 0  # air
-    if pair_type >= 3 and (flush_draw or straight_draw):
-        return 7  # strong pair + draw
-    if flush_draw == 2 and straight_draw >= 2:
-        return 8  # combo draw
-    if straight_draw == 3 or flush_draw == 2:
-        return 9  # made straight/flush
-    if pair_type == 4:
-        return 6  # overpair
-    if pair_type > 0:
-        return 5  # some pair
-    if straight_draw > 0 or flush_draw > 0:
-        return 4  # some draw
-    return 0
-
-# ============================================================
-# --- Bitfield layout (≤64 bits)
-# ============================================================
-
-_POS = {
-    "HEROBOARD": 0,   # 4 bits (0..11)
-    "SPR":       4,   # 8 bits
-    "RATIO":    12,   # 8 bits
-    "POT":      20,   # 8 bits
-    "BOARD":    28,   # 5 bits
-    "HAND":     33,   # 8 bits
-    "ROLE":     41,   # 2 bits
-    "PHASE":    43,   # 3 bits
-}
-
-_MASK = {k:(1<<bits)-1 for k,bits in {
-    "HEROBOARD":4, "SPR":8, "RATIO":8, "POT":8,
-    "BOARD":5, "HAND":8, "ROLE":2, "PHASE":3}.items()}
-
-def pack_u64(**fields) -> int:
-    value = 0
-    for field in fields:
-        value |= (fields[field] & _MASK[field]) << _POS[field]
-    return value
-
-def unpack_infoset_key_dense(k: int) -> dict:
-    return {field: (k >> _POS[field]) & _MASK[field] for field in _POS}
-
-# ============================================================
-# --- Bucketing fonctions
-# ============================================================
-
-_POT_EDGES_BB = [0,1,2,3,4,5,6,8,10,12,16,20,24,32,40,48,
-                 64,80,96,128,160,192,256,320,float("inf")]
-_RATIO_EDGES  = [0.00,0.05,0.125,0.25,0.5,1.0,2.0,float("inf")]
-_SPR_EDGES    = [0.00,0.75,1.25,2.0,3.5,6.0,10.0,float("inf")]
-
-def _bucket_from_edges(x: float, edges: list[float]) -> int:
-    # Optimisée par dichotomie
-    idx = bisect.bisect_right(edges, x) - 1
-    return max(0, min(idx, len(edges) - 2))
-
-def qlog_bb(pot_bb: float) -> int:
-    return _bucket_from_edges(max(0.0, pot_bb), _POT_EDGES_BB)
-
-def ratio_bucket(to_call_bb: float, pot_bb: float) -> int:
-    ratio = max(0.0, to_call_bb) / max(1.0, pot_bb)
-    return _bucket_from_edges(ratio, _RATIO_EDGES)
-
-def spr_bucket(eff_stack_bb: float, pot_bb: float) -> int:
-    spr_ratio = max(0.0, eff_stack_bb) / max(1.0, pot_bb)
-    return _bucket_from_edges(spr_ratio, _SPR_EDGES)
-
-# ============================================================
-# --- API
-# ============================================================
-
-def build_infoset_key_fast(game, hero) -> int:
-    phase_id = PHASE_TO_ID[game.current_phase]
-    role_id  = hero.role
-
-    # Hand 169 idx
-    card_1, card_2 = hero.cards
-    i, j = RANK_TO_GRID_INDEX[card_1.rank], RANK_TO_GRID_INDEX[card_2.rank]
-    suited = (card_1.suit == card_2.suit)
-    if i == j:
-        # paire: diagonale
-        hand_index = i * 13 + i
-    elif suited:
-        # suited: triangle supérieur -> ligne < colonne
-        hand_index = min(i, j) * 13 + max(i, j)
-    else:
-        # offsuit: triangle inférieur -> ligne > colonne
-        hand_index = max(i, j) * 13 + min(i, j)
-
-    # Board bucket
-    bidx, _ = board_bucket(game.community_cards)
-
-    # Sizing
-    pot_bb    = float(game.main_pot)
-    tocall_bb = max(0.0, float(game.current_maximum_bet - hero.current_player_bet))
-    eff = hero.stack
-    for op in game.players:
-        if op is not hero and op.is_active and not op.has_folded:
-            eff = min(eff, hero.stack, op.stack)
-
-    # Buckets
-    pot_q   = qlog_bb(pot_bb)
-    ratio_q = ratio_bucket(tocall_bb, pot_bb)
-    spr_q   = spr_bucket(eff, pot_bb)
-    hb      = hero_vs_board_bucket(hero, game.community_cards)
-
-    return pack_u64(PHASE=phase_id, ROLE=role_id,
-                    HAND=hand_index, BOARD=bidx,
-                    POT=pot_q, RATIO=ratio_q,
-                    SPR=spr_q, HEROBOARD=hb)
+def observe(state: HandState | TournamentState) -> Observation:
+    hand = state if isinstance(state, HandState) else state.hand
+    if hand is None or hand.terminal:
+        raise ValueError("Observation requires a live decision")
+    hero = hand.actor
+    seats = [hero.player_id] + [i for i in hand.players if i != hero.player_id]
+    seat_index = {i: n for n, i in enumerate(seats)}
+    players = [hand.players[i] for i in seats]
+    actions = {a.action_id: a for a in legal_actions(hand)}
+    numeric: list[float] = []
+    for feature in ("stack", "street_bet", "contribution", "folded", "effective"):
+        values = []
+        for p in players:
+            value = min(hero.stack, p.stack) if feature == "effective" else getattr(p, feature)
+            values.append(float(value) if feature == "folded" else float(value) / 25)
+        numeric.extend(values + [0.0] * (3 - len(values)))
+    hand_number = 1 if isinstance(state, HandState) else state.hand_number
+    numeric.extend([hand.pot / 25, hand.to_call() / 25, hand.highest / 25,
+                    hand.last_full_raise / 25, hero.street_bet / 25,
+                    hand.blinds.small / 25, hand.blinds.big / 25,
+                    len(players) / 3, POSITIONS.index(hero.position) / 2,
+                    seat_index[hand.button] / 2, hand_number / 25])
+    numeric.extend([hand.initial_stacks[i] / 25 for i in seats] + [0.0] * (3 - len(seats)))
+    numeric.extend((actions[a].amount_to or 0.0) / 25 if a in actions else 0.0 for a in ACTION_IDS)
+    if len(numeric) != len(NUMERIC_NAMES):
+        raise ValueError(f"Numeric schema mismatch: {len(numeric)} != {len(NUMERIC_NAMES)}")
+    hands = [hand] if isinstance(state, HandState) else state.completed + [hand]
+    history: list[tuple[float, ...]] = []
+    recall = []
+    # Identity mapping includes earlier eliminated players. IDs are independent of roles.
+    identity = list(hand.players) if isinstance(state, HandState) else list(state.original_players)
+    identity.remove(hero.player_id)
+    identity.insert(0, hero.player_id)
+    for n, previous in enumerate(hands, 1):
+        own = previous.players.get(hero.player_id)
+        private = () if own is None else own.cards
+        shown = {i: list(p.cards) for i, p in previous.players.items() if previous.showdown and not p.folded}
+        final = {i: p.stack for i, p in previous.players.items()} if previous.terminal else None
+        recall.append({"hand": n, "button": previous.button, "initial": previous.initial_stacks,
+                       "hole": private, "board": previous.board, "shown_cards": shown, "final_stacks": final,
+                       "events": [asdict(e) for e in previous.history]})
+        for i, amount in previous.initial_stacks.items():
+            history.append((n / 25, 0, identity.index(i) / 2,
+                            POSITIONS.index(previous.players[i].position) / 2, EVENTS.index("STACK") / 6,
+                            amount / 25, 0, 0, 0, 0, 0, 0))
+        for card in private:
+            history.append((n / 25, 0, 0, POSITIONS.index(own.position) / 2, EVENTS.index("CARD") / 6, 0, 0, 0, 0, 0, card / 51, 1))
+        revealed = 0
+        for e in previous.history:
+            street = STREETS.index(e.street)
+            required = (0, 3, 4, 5)[street]
+            for card in previous.board[revealed:required]:
+                history.append((n / 25, street / 3, 0, 0, EVENTS.index("CARD") / 6, 0, 0, 0, 0, 0, card / 51, 1))
+            revealed = required
+            history.append((n / 25, street / 3, identity.index(e.player_id) / 2,
+                            POSITIONS.index(e.position) / 2, EVENTS.index(e.action) / 6,
+                            e.amount_to / 25, e.amount_added / 25, e.pot_before / 25,
+                            e.pot_after / 25, e.highest_before / 25, 0, 0))
+        for idx in range(revealed, len(previous.board)):
+            street = 1 if idx < 3 else idx - 1
+            history.append((n / 25, street / 3, 0, 0, EVENTS.index("CARD") / 6, 0, 0, 0, 0, 0, previous.board[idx] / 51, 1))
+        if previous.terminal:
+            for i, cards in shown.items():
+                if i != hero.player_id:
+                    for card in cards:
+                        history.append((n / 25, 1, identity.index(i) / 2,
+                                        POSITIONS.index(previous.players[i].position) / 2,
+                                        EVENTS.index("CARD") / 6, 0, 0, 0, 0, 0, card / 51, 1))
+            for i, p in previous.players.items():
+                history.append((n / 25, STREETS.index(previous.street) / 3, identity.index(i) / 2,
+                                POSITIONS.index(p.position) / 2, EVENTS.index("STACK") / 6,
+                                p.stack / 25, 0, 0, 0, 0, 0, 0))
+    return Observation(STATE_VERSION, hero.player_id,
+                       "hand_chip_delta" if isinstance(state, HandState) else "tournament_winner",
+                       (*hero.cards, *hand.board, *([52] * (5 - len(hand.board)))),
+                       STREETS.index(hand.street), tuple(numeric),
+                       tuple(a in actions for a in ACTION_IDS), tuple(history),
+                       json.dumps(recall, sort_keys=True, separators=(",", ":"), allow_nan=False))

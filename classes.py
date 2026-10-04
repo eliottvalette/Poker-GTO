@@ -1,108 +1,63 @@
-# classes.py
-# ------------------------------------------------------------
-# Classes simplifiées pour la gestion des cartes et du deck
-# ------------------------------------------------------------
+"""Card primitives for the isolated push/fold research tools.
 
-from typing import List, Tuple
+The authoritative hand/player contracts live in poker_game_expresso.py.
+"""
+from dataclasses import dataclass
+from itertools import combinations
 
-_R2S = {
-    14: "A", 13: "K", 12: "Q", 11: "J", 10: "T",
-    9: "9", 8: "8", 7: "7", 6: "6", 5: "5", 4: "4", 3: "3", 2: "2",
-}
+RANKS = "23456789TJQKA"
+SUITS = "♠♥♦♣"
 
+
+@dataclass(frozen=True)
 class Card:
-    __slots__ = ("rank", "suit", "id")
+    rank: int
+    suit: int
 
-    def __init__(self, rank: int, suit: int):
-        self.rank = rank                  # 2..14
-        self.suit = suit                  # 0..3
-        self.id   = (rank - 2) * 4 + suit # 0..51
+    def __post_init__(self) -> None:
+        if self.rank not in range(2, 15) or self.suit not in range(4):
+            raise ValueError(f"Invalid card rank={self.rank}, suit={self.suit}")
+
+    @property
+    def id(self) -> int:
+        return (self.rank - 2) * 4 + self.suit
 
     def __int__(self) -> int:
         return self.id
 
-    def __index__(self) -> int:  # permet usage dans arrays si besoin
+    def __index__(self) -> int:
         return self.id
 
-    def __str__(self):
-        ranks = {14:'A',13:'K',12:'Q',11:'J',10:'T',9:'9',8:'8',7:'7',6:'6',5:'5',4:'4',3:'3',2:'2'}
-        suits = {0:'♠',1:'♥',2:'♦',3:'♣'}
-        return f"{ranks[self.rank]}{suits[self.suit]}"
-
-    def __repr__(self):
-        return f"Card(rank={self.rank}, suit={self.suit}, id={self.id})"
+    def __str__(self) -> str:
+        return RANKS[self.rank - 2] + SUITS[self.suit]
 
 
 class Deck:
-    """Représente un deck de 52 cartes"""
-    
     def __init__(self):
         self.cards = [Card(r, s) for r in range(2, 15) for s in range(4)]
-    
-    def get_card(self, rank, suit):
-        """Retourne la carte avec le rang et la couleur spécifiés"""
-        return self.cards[(rank - 2) * 4 + suit]
-    
-    def all_starting_combos(self):
-        """Retourne tous les combos de départ possibles (1326 combos)"""
-        combos = []
-        for i in range(52):
-            for j in range(i+1, 52):
-                combos.append((self.cards[i], self.cards[j]))
-        return combos
+
+    def get_card(self, rank: int, suit: int) -> Card:
+        return Card(rank, suit)
+
+    def all_starting_combos(self) -> list[tuple[Card, Card]]:
+        return list(combinations(self.cards, 2))
 
 
-def card_id_to_rank_suit(card_id: int) -> Tuple[int, int]:
+def card_id_to_rank_suit(card_id: int) -> tuple[int, int]:
+    if card_id not in range(52):
+        raise ValueError(f"Invalid card ID {card_id}; expected 0..51")
     return card_id // 4 + 2, card_id % 4
 
 
 def combo_to_169(card_1_id: int, card_2_id: int) -> str:
-    rank_1, suit_1 = card_id_to_rank_suit(card_1_id)
-    rank_2, suit_2 = card_id_to_rank_suit(card_2_id)
-
-    if rank_1 == rank_2:
-        return f"{_R2S[rank_1]}{_R2S[rank_2]}"
-
-    high_rank, low_rank = (rank_1, rank_2) if rank_1 >= rank_2 else (rank_2, rank_1)
-    suited = suit_1 == suit_2
-    return f"{_R2S[high_rank]}{_R2S[low_rank]}{'s' if suited else 'o'}"
+    if card_1_id == card_2_id:
+        raise ValueError(f"Duplicate hole card {card_1_id}")
+    r1, s1 = card_id_to_rank_suit(card_1_id)
+    r2, s2 = card_id_to_rank_suit(card_2_id)
+    high, low = sorted((r1, r2), reverse=True)
+    label = RANKS[high - 2] + RANKS[low - 2]
+    return label if r1 == r2 else label + ("s" if s1 == s2 else "o")
 
 
 DECK = tuple(range(52))
-ALL_COMBOS = tuple((i, j) for i in range(52) for j in range(i + 1, 52))
-
-
-# ------------------------------------------------------------
-# Classes de poker_game
-# ------------------------------------------------------------
-
-class Player:
-    """
-    Représente un joueur de poker avec ses cartes, son stack et son état de jeu.
-    """
-    def __init__(self, name: str = "Player", stack: int = 100):
-        """
-        Initialise un joueur avec son agent associé, son stack et sa position.
-        
-        Args:
-            agent (PokerAgent): L'agent qui contrôle ce joueur
-            stack (int): Stack de départ en jetons
-            position (int): Position à la table (0-5)
-        """
-        self.name = name
-        self.stack = stack
-        self.role = None # 0-2 (0 = SB, 1 = BB, 2 = BTN)
-        self.cards: List[Card] = []
-        self.is_active = True # True si le joueur a assez de fonds pour jouer (stack > big_blind)
-        self.has_folded = False
-        self.show_cards = True # True si on veut voir les cartes du joueur
-        self.is_all_in = False
-        self.range = None # Range du joueur (à initialiser comme l'ensemble des mains possibles)
-        self.current_player_bet = 0 # Montant de la mise actuelle du joueur
-        self.total_bet = 0  # Cumul des mises effectuées dans la main
-        self.has_acted = False # True si le joueur a fait une action dans la phase courante (nécessaire pour savoir si le tour est terminé, car si le premier joueur de la phase check, tous les jouers sont a bet égal et ca déclencherait la phase suivante)
-    
-    def __str__(self):
-        return (f"Player(name={self.name}, role={self.role}, stack={self.stack}, cards={self.cards}, "
-                f"is_active={self.is_active}, has_folded={self.has_folded}, is_all_in={self.is_all_in}, "
-                f"current_bet={self.current_player_bet}, total_bet={self.total_bet}, has_acted={self.has_acted})")
+ALL_COMBOS = tuple(combinations(DECK, 2))

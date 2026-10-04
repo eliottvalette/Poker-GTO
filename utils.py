@@ -17,9 +17,6 @@ _TREYS_EVAL = TEvaluator()
 _RANK_CHARS = "23456789TJQKA"   # 2..A
 _SUIT_CHARS = "shdc"            # ♠, ♥, ♦, ♣ (0..3)
 
-# Listes globales réutilisées pour éviter les allocations
-_EVAL_HAND_BUFFER = [0, 0]          # buffer réutilisé pour 2 cartes
-_EVAL_BOARD_BUFFER = [0, 0, 0, 0, 0]  # buffer réutilisé pour 5 cartes
 
 def build_treys_lut() -> Tuple[int, ...]:
     lut = [0] * 52
@@ -34,24 +31,12 @@ TREYS_INT_LUT: Tuple[int, ...] = build_treys_lut()
 # --------- API d'évaluation ----------
 
 def rank7(cards7: tuple[int, ...]) -> int:
-    """
-    Évalue 7 cartes (2 main + 5 board) via Treys.
-    Retourne un entier où *plus GRAND = meilleur* (on inverse le score Treys).
-    """
-    hero1, hero2, board0, board1, board2, board3, board4 = cards7
-
-    # Conversion via LUT dans buffers réutilisés
-    _EVAL_HAND_BUFFER[0] = TREYS_INT_LUT[hero1]
-    _EVAL_HAND_BUFFER[1] = TREYS_INT_LUT[hero2]
-
-    _EVAL_BOARD_BUFFER[0] = TREYS_INT_LUT[board0]
-    _EVAL_BOARD_BUFFER[1] = TREYS_INT_LUT[board1]
-    _EVAL_BOARD_BUFFER[2] = TREYS_INT_LUT[board2]
-    _EVAL_BOARD_BUFFER[3] = TREYS_INT_LUT[board3]
-    _EVAL_BOARD_BUFFER[4] = TREYS_INT_LUT[board4]
-
-    # Treys: plus PETIT = meilleur → on renvoie l’opposé
-    return -_TREYS_EVAL.evaluate(_EVAL_BOARD_BUFFER, _EVAL_HAND_BUFFER)
+    """Evaluate seven distinct card IDs; larger scores rank stronger hands."""
+    if len(cards7) != 7 or len(set(cards7)) != 7 or any(c not in range(52) for c in cards7):
+        raise ValueError(f"Expected seven distinct card IDs 0..51, got {cards7}")
+    hand = [TREYS_INT_LUT[c] for c in cards7[:2]]
+    board = [TREYS_INT_LUT[c] for c in cards7[2:]]
+    return -_TREYS_EVAL.evaluate(board, hand)
 
 # --------- Sauvegarde / chargement des ranges ----------
 def save_ranges_json(path: str, ranges: Dict[str, list]):

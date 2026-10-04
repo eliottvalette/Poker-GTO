@@ -1,101 +1,48 @@
-# policy.py
+"""Versioned, lossless tabular average policies. Unknown states are explicit errors."""
 from __future__ import annotations
 import json
-import random
-import gzip
-from typing import Dict, List, Any
-from infoset import build_infoset_key_fast
-from poker_game_expresso import PokerGameExpresso
+from pathlib import Path
+from actions import ACTION_IDS
+from cfr_solver import validate_strategy
+from infoset import STATE_VERSION, Observation
 
-ACTIONS = ["FOLD","CHECK","CALL","RAISE","ALL-IN"]
-
-def _decode_compact_entry(entry: list[int]) -> Dict[str, float]:
-    mask = entry[0]
-    qs = entry[1:]
-    total = sum(qs)
-    if total <= 0:
-        return {}
-    dist = {}
-    idx_q = 0
-    for i, a in enumerate(ACTIONS):
-        if (mask >> i) & 1:
-            q = qs[idx_q]
-            dist[a] = q / total
-            idx_q += 1
-    return dist
+POLICY_VERSION = 2
 
 
-def _extract_compact_policy(value: Any) -> list[int] | None:
-    if isinstance(value, list) and value and isinstance(value[0], int):
-        return value
-    if isinstance(value, dict):
-        policy = value.get("policy")
-        if isinstance(policy, list) and policy and isinstance(policy[0], int):
-            return policy
-    return None
+class TabularAveragePolicy:
+    def __init__(self, entries: dict[str, tuple[float, ...]], objective: str):
+        if objective not in ("hand_chip_delta", "tournament_winner"):
+            raise ValueError(f"Invalid policy objective: {objective}")
+        self.entries = entries
+        self.objective = objective
 
-class AveragePolicy:
-    def __init__(self, policy: Dict[int, Dict[str, float]], seed: int = 123):
-        self.policy = policy
-        self.rng = random.Random(seed)
+    def query(self, obs: Observation) -> tuple[float, ...]:
+        if obs.objective != self.objective:
+            raise ValueError(f"Policy objective {self.objective} != observation {obs.objective}")
+        if obs.key() not in self.entries:
+            raise KeyError("Average policy unavailable: observation has no tabular coverage")
+        strategy = self.entries[obs.key()]
+        validate_strategy(strategy, obs.legal_mask)
+        return strategy
 
-    @staticmethod
-    def load(path: str, seed: int = 123) -> "AveragePolicy":
-        # GZIP + compact policy. Supports legacy [mask,q...] and current
-        # {"policy":[mask,q...], "visits":n} entries.
-        with gzip.open(path, "rt", encoding="utf-8") as f:
-            raw = json.load(f)
-        pol: Dict[int, Dict[str, float]] = {}
-        for k, v in raw.items():
-            key = int(k)
-            compact_policy = _extract_compact_policy(v)
-            if compact_policy is None:
-                continue
-            dist = _decode_compact_entry(compact_policy)
-            if dist:
-                pol[key] = dist
-        return AveragePolicy(pol, seed=seed)
+    @classmethod
+    def from_solver(cls, solver, objective: str) -> TabularAveragePolicy:
+        entries = {k: tuple(v / sum(row) for v in row) for k, row in solver.strategy_sum.items() if sum(row) > 0}
+        return cls(entries, objective)
 
-    @staticmethod
-    def legal_actions(game: PokerGameExpresso) -> List[str]:
-        p = game.players[game.current_role]
-        return game.update_available_actions(
-            p,
-            game.current_maximum_bet,
-            game.number_raise_this_game_phase,
-            game.main_pot,
-            game.current_phase
-        )
+    def save(self, path: str | Path) -> None:
+        Path(path).write_text(json.dumps({"version": POLICY_VERSION, "state_version": STATE_VERSION,
+                                         "actions": ACTION_IDS, "objective": self.objective,
+                                         "entries": self.entries}, allow_nan=False))
 
-    def sample(self, dist: Dict[str, float]) -> str:
-        x = self.rng.random()
-        c = 0.0
-        last = None
-        for a, p in dist.items():
-            c += p
-            last = a
-            if x <= c:
-                return a
-        return last
-
-    def act(self, game: PokerGameExpresso) -> str:
-        player = game.players[game.current_role]
-        key = build_infoset_key_fast(game, player)
-        legal = self.legal_actions(game)
-        if not legal:
-            raise ValueError(f"[POLICY] legal actions : {legal}")
-
-        dist = self.policy.get(key)
-        if not dist:
-            p = 1.0 / len(legal)
-            dist = {a: p for a in legal}
-        else:
-            dist = {a: dist.get(a, 0.0) for a in legal}
-            s = sum(dist.values())
-            if s <= 1e-12:
-                p = 1.0 / len(legal)
-                dist = {a: p for a in legal}
-            else:
-                dist = {a: v / s for a, v in dist.items()}
-
-        return self.sample(dist)
+    @classmethod
+    def load(cls, path: str | Path) -> TabularAveragePolicy:
+        raw = json.loads(Path(path).read_text())
+        if (raw.get("version") != POLICY_VERSION or raw.get("state_version") != STATE_VERSION
+                or raw.get("actions") != list(ACTION_IDS)):
+            raise ValueError(f"Incompatible policy schema at {path}; expected policy/state v2 and {ACTION_IDS}")
+        entries = {k: tuple(v) for k, v in raw["entries"].items()}
+        for key, strategy in entries.items():
+            obs = json.loads(key)
+            validate_strategy(strategy, tuple(obs["legal_mask"]))
+        return cls(entries, raw["objective"])

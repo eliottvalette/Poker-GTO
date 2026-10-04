@@ -1,485 +1,182 @@
-# cfr_solver.py
-# ============================================================
-# CFR+ externe (external-sampling) 3-handed, full-street, min-raise only.
-# S'appuie sur PokerGameExpresso + infoset.build_infoset_key_fast.
-# ============================================================
-
+"""Sequential reference and reusable recursive external-sampling traversal."""
 from __future__ import annotations
+import math
 import random
-import json
-import os
-import time
-import gzip
-from collections import defaultdict
-from typing import List, Tuple
-import cProfile
+from dataclasses import dataclass, field
+from typing import Callable
+from actions import ACTION_IDS, legal_actions
+from infoset import Observation, observe
+from poker_game_expresso import HandState
+from tournament import TournamentState
 
-from tqdm import trange
-from poker_game_expresso import PokerGameExpresso, GameInit
-from infoset import build_infoset_key_fast
-from stats_policy import extraction_policy_data
-
-DEBUG_CFR = True
-PROFILE = False
-SAVE_EVERY = 0  # sauvegarde tous les N itérations
-
-# Actions fixes
-ACTIONS = ["FOLD", "CHECK", "CALL", "RAISE", "ALL-IN"]
-ACTION_INDEX = {action_name: index for index, action_name in enumerate(ACTIONS)}
-N_ACTIONS = len(ACTIONS)
+GameState = HandState | TournamentState
+Strategy = Callable[[Observation], tuple[float, ...]]
+SampleSink = Callable[[Observation, tuple[float, ...], float], None]
 
 
-def quantize_distribution(probabilities: list[float], keep_top_k: int = 3, eps: float = 1e-6):
-    """
-    Convertit un vecteur de probabilités (déjà normalisé) en une représentation compacte.
-    - On garde uniquement les top-k probabilités les plus élevées.
-    - On les convertit en entiers de 0..255.
-    - On ajuste pour que la somme des entiers soit exactement 255.
-    - On retourne un bitmask qui indique quelles actions sont présentes, 
-      et la liste des valeurs entières correspondantes.
-    """
-    # filtrer les actions non négligeables
-    action_probability_pairs = [
-        (action_index, probabilities[action_index])
-        for action_index in range(N_ACTIONS)
-        if probabilities[action_index] > eps
-    ]
-    action_probability_pairs.sort(key=lambda x: x[1], reverse=True)
-    action_probability_pairs = action_probability_pairs[:keep_top_k]
-
-    total_probability = sum(prob for _, prob in action_probability_pairs)
-    if total_probability <= 0:
-        raise ValueError("Somme des probabilités <= 0")
-
-    normalized_probabilities = [prob / total_probability for _, prob in action_probability_pairs]
-    quantized_values = [int(round(prob * 255)) for prob in normalized_probabilities]
-
-    difference = 255 - sum(quantized_values)
-    if difference != 0:
-        index_of_max = max(range(len(quantized_values)), key=lambda k: quantized_values[k])
-        quantized_values[index_of_max] = max(0, min(255, quantized_values[index_of_max] + difference))
-
-    # construire un masque de bits pour savoir quelles actions sont présentes
-    bitmask = 0
-    for action_index, _ in action_probability_pairs:
-        bitmask |= (1 << action_index)
-
-    return bitmask, quantized_values
+class TraversalBudgetExceeded(RuntimeError):
+    """Budget exhaustion is an explicit failure, never a fabricated leaf value."""
 
 
-def format_game_state_for_debug(game: PokerGameExpresso) -> str:
-    player = game.players[game.current_role]
-    board = " ".join(str(c) for c in game.community_cards)
-    return (
-        f"phase={game.current_phase} role={game.current_role} "
-        f"pot={game.main_pot:.2f} max_bet={game.current_maximum_bet:.2f} "
-        f"raises={game.number_raise_this_game_phase} last_raise={game.last_raise_amount:.2f}\n"
-        f"player={player.name} stack={player.stack} cur_bet={player.current_player_bet} "
-        f"active={player.is_active} folded={player.has_folded} "
-        f"all_in={player.is_all_in} acted={player.has_acted}\n"
-        f"board=[{board}]"
-    )
+def regret_matching(regrets: tuple[float, ...] | list[float], mask: tuple[bool, ...]) -> tuple[float, ...]:
+    if len(regrets) != len(ACTION_IDS) or len(mask) != len(ACTION_IDS) or not any(mask):
+        raise ValueError(f"Invalid regret/mask dimensions: {len(regrets)}, {len(mask)}")
+    if any(not math.isfinite(r) for r in regrets):
+        raise ValueError(f"Nonfinite model regrets: {regrets}")
+    positive = [max(r, 0) if legal else 0 for r, legal in zip(regrets, mask)]
+    total = sum(positive)
+    return tuple(v / total for v in positive) if total > 0 else tuple(float(m) / sum(mask) for m in mask)
 
-class CFRPlusSolver:
-    def __init__(self, seed, stacks):
-        self.seed = seed
-        self.stacks = stacks
 
-        self.regret_sum = defaultdict(lambda: [0.0] * N_ACTIONS)
-        self.strategy_sum = defaultdict(lambda: [0.0] * N_ACTIONS)
-        self.visit_count = defaultdict(int)
+def validate_strategy(strategy: tuple[float, ...], mask: tuple[bool, ...]) -> None:
+    if (len(strategy) != len(mask) or any(not math.isfinite(p) or p < 0 or (p > 0 and not m)
+                                         for p, m in zip(strategy, mask))
+            or not math.isclose(sum(strategy), 1.0, abs_tol=1e-7)):
+        raise ValueError(f"Invalid action distribution {strategy}; legal_mask={mask}")
 
-        self.rng = random.Random(seed)
 
-    # -------------------------
-    # Environnement de jeu
-    # -------------------------
-    def new_game(self) -> PokerGameExpresso:
-        init = GameInit()
-        init.stacks_init = list(self.stacks)
-        init.total_bets_init = [0, 0, 0]
-        init.current_bets_init = [0, 0, 0]
-        init.active_init = [True, True, True]
-        init.has_acted_init = [False, False, False]
-        init.main_pot = 0
-        init.phase = "PREFLOP"
-        init.community_cards = []
-        init.rng = self.rng
+def sample_index(strategy: tuple[float, ...], rng: random.Random) -> int:
+    threshold = rng.random()
+    cumulative = 0.0
+    for i, p in enumerate(strategy):
+        cumulative += p
+        if p > 0 and threshold < cumulative:
+            return i
+    raise ValueError(f"Sampling failed: distribution sum={sum(strategy)} threshold={threshold}")
 
-        game = PokerGameExpresso(init)
-        game.deal_small_and_big_blind()
-        return game
+
+@dataclass
+class Traversal:
+    strategy: Strategy
+    rng: random.Random
+    max_nodes: int = 10000
+    max_depth: int = 300
+    nodes: int = field(default=0, init=False)
+
+    def _visit(self, state: GameState, depth: int) -> bool:
+        self.nodes += 1
+        if self.nodes > self.max_nodes or depth > self.max_depth:
+            raise TraversalBudgetExceeded(f"Traversal budget exceeded: nodes={self.nodes}/{self.max_nodes}, depth={depth}/{self.max_depth}")
+        return state.terminal
+
+    def _decision(self, state: GameState) -> GameState:
+        if isinstance(state, TournamentState) and (state.hand is None or state.hand.terminal):
+            state = state.clone()
+            state.start_hand()  # Chance sampled from injected, branch-local RNG.
+        return state
+
+    def _children(self, state: GameState):
+        hand = state if isinstance(state, HandState) else state.hand
+        return legal_actions(hand)
 
     @staticmethod
-    def legal_actions(game: PokerGameExpresso) -> List[str]:
-        current_player = game.players[game.current_role]
-        return game.update_available_actions(
-            current_player,
-            game.current_maximum_bet,
-            game.number_raise_this_game_phase,
-            game.main_pot,
-            game.current_phase
-        )
+    def child(state: GameState, action) -> GameState:
+        child = state.clone()
+        action.apply(child if isinstance(child, HandState) else child.hand)
+        return child
 
-    @staticmethod
-    def terminal_expected_value(game: PokerGameExpresso, hero_role: int) -> float:
-        name = f"Player_{hero_role}"
-        return float(game.net_stack_changes.get(name, 0.0))
+    def regrets(self, state: GameState, traverser: int, sink: SampleSink, depth: int = 0) -> float:
+        if self._visit(state, depth):
+            return state.utility(traverser)
+        state = self._decision(state)
+        # Blind posting can finish a hand with short stacks before any decision.
+        if isinstance(state, TournamentState) and state.hand.terminal:
+            return self.regrets(state, traverser, sink, depth + 1)
+        obs = observe(state)
+        strategy = self.strategy(obs)
+        validate_strategy(strategy, obs.legal_mask)
+        actions = self._children(state)
+        if state.current_player != traverser:
+            chosen = ACTION_IDS[sample_index(strategy, self.rng)]
+            action = next(a for a in actions if a.action_id == chosen)
+            return self.regrets(self.child(state, action), traverser, sink, depth + 1)
+        values = [0.0] * len(ACTION_IDS)
+        for action in actions:
+            index = ACTION_IDS.index(action.action_id)
+            values[index] = self.regrets(self.child(state, action), traverser, sink, depth + 1)
+        value = sum(p * v for p, v in zip(strategy, values))
+        target = tuple(v - value if m else 0.0 for v, m in zip(values, obs.legal_mask))
+        sink(obs, target, 1.0)
+        return value
 
-    # -------------------------
-    # Regret Matching+
-    # -------------------------
-    def strategy_from_regret(self, infoset_key: int, legal_actions: List[str]) -> List[float]:
-        regret_vector = self.regret_sum[infoset_key]
-
-        probabilities = [0.0] * N_ACTIONS
-        total_positive_regret = 0.0
-
-        for action_name in legal_actions:
-            index = ACTION_INDEX[action_name]
-            regret_value = regret_vector[index]
-            if regret_value > 0:
-                probabilities[index] = regret_value
-                total_positive_regret += regret_value
-
-        if total_positive_regret <= 0.0:
-            uniform_probability = 1.0 / len(legal_actions)
-            for action_name in legal_actions:
-                probabilities[ACTION_INDEX[action_name]] = uniform_probability
-        else:
-            for action_name in legal_actions:
-                index = ACTION_INDEX[action_name]
-                probabilities[index] /= total_positive_regret
-
-        return probabilities
-
-    def sample_from(self, probabilities: List[float]) -> str:
-        random_value = self.rng.random()
-        cumulative = 0.0
-
-        for index, probability in enumerate(probabilities):
-            cumulative += probability
-            if random_value <= cumulative:
-                return ACTIONS[index]
-
-        return ACTIONS[-1]
-
-    # -------------------------
-    # Rollout
-    # -------------------------
-    def rollout_until_terminal(self, game: PokerGameExpresso, hero_role: int, reach_probability: float) -> Tuple[float, float]:
-        while game.current_phase != "SHOWDOWN":
-            current_role = game.current_role
-            current_player = game.players[current_role]
-
-            infoset_key = build_infoset_key_fast(game, current_player)
-            legal_actions = self.legal_actions(game)
-
-            if not legal_actions or len(legal_actions) < 2:
-                raise RuntimeError(f"[CFR+] Aucune action légale.\n{format_game_state_for_debug(game)}")
-
-            probabilities = self.strategy_from_regret(infoset_key, legal_actions)
-            chosen_action = self.sample_from(probabilities)
-
-            if current_role != hero_role:
-                reach_probability *= probabilities[ACTION_INDEX[chosen_action]]
-
-            game.process_action(current_player, chosen_action)
-
-        return self.terminal_expected_value(game, hero_role), reach_probability
-
-    # -------------------------
-    # Traverse CFR+
-    # -------------------------
-    def traverse(self, game: PokerGameExpresso, hero_role: int, reach_probability: float) -> float:
-        while game.current_phase != "SHOWDOWN":
-            current_role = game.current_role
-            current_player = game.players[current_role]
-
-            infoset_key = build_infoset_key_fast(game, current_player)
-            legal_actions = self.legal_actions(game)
-
-            if not legal_actions or len(legal_actions) < 2:
-                raise RuntimeError(f"[CFR+] Aucune action légale.\n{format_game_state_for_debug(game)}")
-
-            if current_role == hero_role :
-                probabilities = self.strategy_from_regret(infoset_key, legal_actions)
-
-                action_utilities = [0.0] * N_ACTIONS
-                node_expected_utility = 0.0
-            
-
-                snapshot = game.snapshot()
-                for action_name in legal_actions:
-                    index = ACTION_INDEX[action_name]
-                    game.process_action(current_player, action_name)
-                    utility, _ = self.rollout_until_terminal(game, hero_role, reach_probability)
-                    game.restore(snapshot)
-
-                    action_utilities[index] = utility
-                    node_expected_utility += probabilities[index] * utility
-
-                regret_vector = self.regret_sum[infoset_key]
-                strategy_vector = self.strategy_sum[infoset_key]
-
-                for action_name in legal_actions:
-                    index = ACTION_INDEX[action_name]
-
-                    advantage = action_utilities[index] - node_expected_utility
-                    updated_value = regret_vector[index] + reach_probability * advantage
-                    regret_vector[index] = updated_value if updated_value > 0.0 else 0.0
-
-                    strategy_vector[index] += reach_probability * probabilities[index]
-
-                self.visit_count[infoset_key] += 1
-
-                chosen_action = self.sample_from(probabilities)
-                game.process_action(current_player, chosen_action)
-                continue
-
-            # Adversaire
-            probabilities = self.strategy_from_regret(infoset_key, legal_actions)
-            chosen_action = self.sample_from(probabilities)
-
-            reach_probability *= probabilities[ACTION_INDEX[chosen_action]]
-            game.process_action(current_player, chosen_action)
-
-        return self.terminal_expected_value(game, hero_role)
-
-    # -------------------------
-    # Entraînement
-    # -------------------------
-    def train(
-        self,
-        iterations: int = 1000,
-        save_policy_path: str = "policy/avg_policy.json.gz",
-        save_ui_copy_path: str = "ui/public/avg_policy.json.gz",
-    ) -> None:
-        print(f"\n{'='*80}")
-        print(f"DÉMARRAGE ENTRAÎNEMENT CFR+")
-        print(f"{'='*80}")
-        print(f"Stacks: {self.stacks}")
-        print(f"Itérations: {iterations}")
-        print(f"Seed: {self.seed}")
-        print(f"{'='*80}\n")
-
-        start_time = time.time()
-        os.makedirs(os.path.dirname(save_policy_path) or ".", exist_ok=True)
-        if save_ui_copy_path:
-            os.makedirs(os.path.dirname(save_ui_copy_path) or ".", exist_ok=True)
-
-        with trange(1, iterations + 1, desc="CFR+ Training", unit="iter") as progress_bar:
-            for iteration_index in progress_bar:
-                for hero_role in (0, 1, 2):
-                    game = self.new_game()
-                    self.traverse(game, hero_role=hero_role, reach_probability=1.0)
-
-                if SAVE_EVERY > 0 and (iteration_index % SAVE_EVERY == 0):
-                    save_dir = os.path.dirname(save_policy_path) or "."
-                    self.save_policy_json(os.path.join(save_dir, f"avg_policy_iter_{iteration_index}.json.gz"))
-
-        self.save_policy_json(save_policy_path)
-        if save_ui_copy_path:
-            self.save_policy_json(save_ui_copy_path)
-        self.print_training_summary(iterations, save_policy_path)
-
-        end_time = time.time()
-        print(f"Temps total: {end_time - start_time:.2f}s")
-
-    def print_training_summary(self, iterations: int, final_path: str):
-        print(f"\n{'='*80}")
-        print(f"ENTRAÎNEMENT CFR+ TERMINÉ")
-        print(f"{'='*80}")
-        print(f"Itérations complétées: {iterations}")
-        print(f"Policy finale: {final_path}")
-        print(f"{'='*80}")
-
-    # -------------------------
-    # Politique moyenne
-    # -------------------------
-    def extract_average_policy(self):
-        extracted_policy = {}
-        for infoset_key, strategy_vector in self.strategy_sum.items():
-            total = sum(strategy_vector)
-            if total <= 0:
-                raise ValueError(f"[EXTRACT] Total <= 0: {total}. Infoset key: {infoset_key}")
-
-            probabilities = [strategy_vector[action_index] / total for action_index in range(N_ACTIONS)]
-            bitmask, quantized_values = quantize_distribution(probabilities, keep_top_k=3)
-
-            if bitmask != 0:
-                extracted_policy[infoset_key] = [bitmask] + quantized_values
-
-        return extracted_policy
-
-    def save_policy_json(self, path: str) -> None:
-        compact_policy = self.extract_average_policy()
-        serialized = {}
-
-        for infoset_key, encoded_policy in compact_policy.items():
-            serialized[str(infoset_key)] = {
-                "policy": encoded_policy,
-                "visits": min(self.visit_count[infoset_key], 120)
-            }
-
-        data = json.dumps(serialized, separators=(",", ":"), ensure_ascii=False)
-        with gzip.open(path, "wt", encoding="utf-8") as f:
-            f.write(data)
-
-        if DEBUG_CFR:
-            print(f"[SAVE] Policy gzip: {path} ({len(serialized)} infosets)")
-
-    def warm_start_from_policy(self, path: str):
-        if not os.path.exists(path):
-            print(f"[WARN] Policy not found: {path}")
+    def average(self, state: GameState, player: int, sink: SampleSink, own_reach: float = 1.0,
+                sample_reach: float = 1.0, depth: int = 0) -> None:
+        if self._visit(state, depth):
             return
-
-        print(f"[LOAD] Policy found: {path}")
-        with gzip.open(path, "rt", encoding="utf-8") as f:
-            raw = json.load(f)
-
-        for key_str, entry in raw.items():
-            infoset_key = int(key_str)
-
-            if "policy" not in entry or "visits" not in entry:
-                raise ValueError(f"[LOAD] Policy or visits not found: {entry}. Infoset key: {infoset_key}")
-
-            bitmask = entry["policy"][0]
-            quantized_values = entry["policy"][1:]
-            visit_count_value = entry["visits"]
-
-            total_quantized = sum(quantized_values)
-            if total_quantized <= 0 or visit_count_value <= 0:
-                raise ValueError(f"[LOAD] Total quantized or visit count value <= 0: {total_quantized} or {visit_count_value}. Infoset key: {infoset_key}") 
-
-            reconstructed_strategy = [0.0] * N_ACTIONS
-            index_quantized = 0
-            for action_index in range(N_ACTIONS):
-                if (bitmask >> action_index) & 1:
-                    q = quantized_values[index_quantized]
-                    reconstructed_strategy[action_index] = (visit_count_value * q) / total_quantized
-                    index_quantized += 1
-
-            self.strategy_sum[infoset_key] = reconstructed_strategy
-            self.visit_count[infoset_key] = visit_count_value
-        
-        if DEBUG_CFR:
-            for index, (infoset_key, strategy_vector) in enumerate(self.strategy_sum.items()):
-                print(f"[LOAD] Strategy vector: {strategy_vector}")
-                print(f"[LOAD] Visit count: {self.visit_count[infoset_key]}")
-                print(f"[LOAD] Infoset key: {infoset_key}")
-                if index >= 3:
-                    break
-
-    @staticmethod
-    def load_policy_json(path: str):
-        with gzip.open(path, "rt", encoding="utf-8") as f:
-            raw = json.load(f)
-
-        if DEBUG_CFR:
-            print(f"[LOAD] Policy chargée: {path} ({len(raw)} infosets)")
-
-        return {int(k): v for k, v in raw.items()}
+        state = self._decision(state)
+        if isinstance(state, TournamentState) and state.hand.terminal:
+            self.average(state, player, sink, own_reach, sample_reach, depth + 1)
+            return
+        obs = observe(state)
+        strategy = self.strategy(obs)
+        validate_strategy(strategy, obs.legal_mask)
+        actions = self._children(state)
+        if state.current_player == player:
+            weight = own_reach / sample_reach
+            if not math.isfinite(weight):
+                raise ValueError(f"Nonfinite average importance weight: {weight}")
+            if weight > 0:
+                sink(obs, strategy, weight)
+            for action in actions:
+                p = strategy[ACTION_IDS.index(action.action_id)]
+                if own_reach * p > 0:
+                    self.average(self.child(state, action), player, sink, own_reach * p, sample_reach, depth + 1)
+        else:
+            action = self.rng.choice(actions)  # Full support even when strategy probability is zero.
+            self.average(self.child(state, action), player, sink, own_reach, sample_reach / len(actions), depth + 1)
 
 
-# =========================
-# Exécution principale
-# =========================
-if __name__ == "__main__":
-    import argparse
-    import gc
-    import config
-    from scripts import parallel_cfr
+class ExternalSamplingMCCFR:
+    """Unclipped cumulative regrets, uniform iteration average, frozen iteration strategy."""
+    def __init__(self, seed: int = 0, max_nodes: int = 10000, max_depth: int = 300):
+        self.rng = random.Random(seed)
+        self.max_nodes, self.max_depth = max_nodes, max_depth
+        self.regret_sum: dict[str, list[float]] = {}
+        self.strategy_sum: dict[str, list[float]] = {}
+        self.visits: dict[str, int] = {}
+        self.iteration = 0
 
-    gc.collect()
+    def current_strategy(self, obs: Observation) -> tuple[float, ...]:
+        return regret_matching(self.regret_sum.get(obs.key(), [0.0] * len(ACTION_IDS)), obs.legal_mask)
 
-    print("CFR+ Solver - 3-handed NLHE")
-    print("=" * 50)
+    def average_strategy(self, obs: Observation) -> tuple[float, ...]:
+        vector = self.strategy_sum.get(obs.key())
+        if vector is None or sum(vector) <= 0:
+            raise KeyError(f"Average policy unavailable for state {obs.key()}")
+        result = tuple(v / sum(vector) for v in vector)
+        validate_strategy(result, obs.legal_mask)
+        return result
 
-    parser = argparse.ArgumentParser(description="CFR+ solver entrypoint. Uses parallel sync training by default.")
-    parser.add_argument("--sequential", action="store_true", help="use the legacy single-process trainer")
-    default_workers = config.CFR_WORKERS
-    if default_workers is None:
-        default_workers = max(1, int(os.cpu_count() * 0.8) or 1)
-    default_seed = int(time.time()) if config.SEED is None else config.SEED
-
-    parser.add_argument("--mode", choices=("sync", "independent", "sequential"), default=config.CFR_MODE)
-    parser.add_argument("--workers", type=int, default=default_workers)
-    parser.add_argument("--iterations", type=int, default=config.CFR_ITERATIONS)
-    parser.add_argument("--iterations-per-worker", type=int, default=config.CFR_ITERATIONS_PER_WORKER)
-    parser.add_argument("--rounds", type=int, default=config.CFR_ROUNDS)
-    parser.add_argument("--seed", type=int, default=default_seed)
-    parser.add_argument("--stacks", type=parallel_cfr.parse_stacks, default=config.STACKS)
-    parser.add_argument(
-        "--warm-start",
-        default="" if config.CFR_WARM_START is None else str(config.CFR_WARM_START),
-        help="optional policy path to preserve/continue average strategy",
-    )
-    parser.add_argument("--save-policy", default=str(config.CFR_SAVE_POLICY))
-    parser.add_argument("--save-ui-copy", default=str(config.CFR_SAVE_UI_COPY))
-    parser.add_argument(
-        "--skip-csv",
-        action="store_true",
-        default=config.CFR_SKIP_CSV,
-        help="skip avg_policy.csv extraction after training",
-    )
-    args, unknown_args = parser.parse_known_args()
-    if unknown_args:
-        print(f"[WARN] Ignoring unknown arguments: {' '.join(unknown_args)}")
-
-    seed = args.seed
-    stacks = args.stacks
-    iterations = args.iterations
-
-    print("Configuration:")
-    print(f"  Seed: {seed}")
-    print(f"  Stacks: {stacks}")
-    print(f"  Itérations: {iterations}")
-    print(f"  Mode: {'sequential' if args.sequential else args.mode}")
-    if not args.sequential:
-        print(f"  Workers: {args.workers}")
-        print(f"  Iterations/worker/round: {args.iterations_per_worker}")
-        print(f"  Warm-start: {args.warm_start or 'disabled'}")
-    print()
-
-    if args.sequential:
-        solver = CFRPlusSolver(seed=seed, stacks=stacks)
-        if args.warm_start:
-            solver.warm_start_from_policy(args.warm_start)
-
-        if PROFILE:
-            profiler = cProfile.Profile()
-            profiler.enable()
-
-        solver.train(
-            iterations=iterations,
-            save_policy_path=args.save_policy,
-            save_ui_copy_path=args.save_ui_copy,
-        )
-
-        if PROFILE:
-            profiler.disable()
-            profiler.dump_stats("profiling/cfr_solver_profile.prof")
-    else:
-        parallel_args = [
-            "--mode", args.mode,
-            "--workers", str(args.workers),
-            "--iterations-per-worker", str(args.iterations_per_worker),
-            "--total-iterations", str(args.iterations),
-            "--seed", str(args.seed),
-            "--stacks", ",".join(str(stack) for stack in args.stacks),
-            "--save-policy", args.save_policy,
-            "--save-ui-copy", args.save_ui_copy,
-        ]
-        if args.rounds is not None:
-            parallel_args.extend(["--rounds", str(args.rounds)])
-        if args.warm_start:
-            parallel_args.extend(["--warm-start", args.warm_start])
-
-        parallel_cfr.main(parallel_args)
-
-    if not args.skip_csv:
-        extraction_policy_data(args.save_policy)
-
-    print(f"\nEntraînement terminé avec succès!")
-    print(f"Policy sauvegardée dans: {args.save_policy}")
+    def run_iteration(self, root_factory: Callable[[random.Random], GameState], players: tuple[int, ...]) -> dict[str, float]:
+        frozen = {k: tuple(v) for k, v in self.regret_sum.items()}
+        def strategy(obs):
+            return regret_matching(frozen.get(obs.key(), [0.0] * len(ACTION_IDS)), obs.legal_mask)
+        regrets, averages = [], []
+        values = []
+        nodes = 0
+        rng_state = self.rng.getstate()
+        try:
+            for player in players:
+                walk = Traversal(strategy, self.rng, self.max_nodes, self.max_depth)
+                values.append(walk.regrets(root_factory(self.rng), player, lambda o, t, w: regrets.append((o, t, w))))
+                nodes += walk.nodes
+                walk = Traversal(strategy, self.rng, self.max_nodes, self.max_depth)
+                walk.average(root_factory(self.rng), player, lambda o, t, w: averages.append((o, t, w)))
+                nodes += walk.nodes
+        except Exception:
+            self.rng.setstate(rng_state)
+            raise
+        for obs, target, weight in regrets:
+            key = obs.key()
+            vector = self.regret_sum.setdefault(key, [0.0] * len(ACTION_IDS))
+            for i, v in enumerate(target):
+                vector[i] += weight * v
+            self.visits[key] = self.visits.get(key, 0) + 1
+        for obs, target, weight in averages:
+            vector = self.strategy_sum.setdefault(obs.key(), [0.0] * len(ACTION_IDS))
+            for i, v in enumerate(target):
+                vector[i] += weight * v
+        self.iteration += 1
+        return {"nodes": float(nodes), "mean_value": sum(values) / len(values),
+                "mean_positive_regret": sum(max(v, 0) for row in self.regret_sum.values() for v in row)
+                / max(1, len(self.regret_sum) * self.iteration)}

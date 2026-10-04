@@ -1,350 +1,209 @@
-// ui/src/components/TestTable.tsx
 "use client";
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { PokerGame, buildInfosetKeyFast, type Action } from "@/lib/game";
-import { normalize, type Policy } from "@/lib/policy";
+import { cardLabel, closeTable, tableRequest, type TableView } from "@/lib/game";
 import PokerTableFrame from "@/components/PokerTableFrame";
+import styles from "./TestTable.module.css";
 
-type Seat = 0|1|2;
+type Seat = 0 | 1 | 2;
 
-type ActionHistoryEntry = {
-  phase: string;
-  player: string;
-  action: string;
-  timestamp: number;
-  probs?: Record<string, number>; // distribution GTO si dispo
-};
-
-function makeNewGame(): PokerGame {
-  const g = new PokerGame({
-    stacks: [100,100,100],
-    totalBets: [0,0,0],
-    currentBets: [0,0,0],
-    active: [true,true,true],
-    hasActed: [false,false,false],
-    mainPot: 0,
-    phase: "PREFLOP",
-    community: [],
-  });
-  g.deal_private();
-  g.deal_blinds();
-  return g;
-}
-
-function sampleAction(distribution: Record<string, number>, legalActions: Action[]): Action {
-  const normalizedDistribution = normalize(
-    Object.fromEntries(legalActions.map(action => [action, distribution[action] ?? 0]))
-  );
-  const actionProbabilities = legalActions.map(action => normalizedDistribution[action]);
-  const totalProbability = actionProbabilities.reduce((sum, prob) => sum + prob, 0);
-  let randomValue = Math.random() * (totalProbability > 0 ? totalProbability : 1);
-  for (let i = 0; i < legalActions.length; i++) {
-    randomValue -= actionProbabilities[i] || 0;
-    if (randomValue <= 0) return legalActions[i];
+function actionLabel(action: TableView["legal_actions"][number]): string {
+  if (action.category === "RAISE" && action.amount_to !== null) {
+    return `${action.action_id === "ALL_IN" ? "ALL IN" : "RAISE"} ${action.amount_to?.toFixed(2)} BB`;
   }
-  throw new Error("No action selected");
+  return action.action_id.replaceAll("_", " ");
 }
 
-export default function TestTable({ policy }: { policy: Policy | null }) {
+export default function TestTable() {
   const [heroSeat, setHeroSeat] = useState<Seat>(2);
-  const [game, setGame] = useState<PokerGame>(() => makeNewGame());
-  const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>([]);
-  const [sessionPnL, setSessionPnL] = useState(0);
-  const [handId, setHandId] = useState(1);
-  const [scoredHandId, setScoredHandId] = useState<number | null>(null);
-  const [, force] = useState(0); // re-render
+  const [game, setGame] = useState<TableView | null>(null);
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [pnlBaseline, setPnlBaseline] = useState(0);
+  const locked = useRef(false);
+  const started = useRef(false);
+  const currentSession = useRef<string | null>(null);
 
-  const addToHistory = useCallback((player: string, action: string, probs?: Record<string, number>) => {
-    setActionHistory(prev => [...prev, {
-      phase: game.current_phase,
-      player,
-      action,
-      timestamp: Date.now(),
-      probs
-    }]);
-  }, [game.current_phase]);
-
-  const stepBotsForward = useCallback((g: PokerGame) => {
-    if (!policy) return;
-    // boucle jusqu'au héros ou showdown
-    while (g.current_phase!=="SHOWDOWN") {
-      const p = g.players[g.current_role];
-      if (p.role===heroSeat) break;
-      const legal = g.update_available_actions(p);
-      if (legal.length===0) break;
-      const key = buildInfosetKeyFast(g, p);
-      const entry = policy[key];
-      const dist = entry?.dist ?? {};
-      const choice = sampleAction(dist, legal);
-      g.process_action(p, choice);
-      addToHistory(p.name, choice, normalize(dist));
-      // continue tant que ce n'est pas au héros
+  const newTournament = useCallback(async (hero: Seat) => {
+    if (locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await tableRequest("new", { seed: Date.now(), hero, opponents: "random" });
+      const previousSession = currentSession.current;
+      currentSession.current = next.session_id;
+      setGame(next);
+      setHeroSeat(hero);
+      setPnlBaseline(0);
+      if (previousSession !== null) await closeTable(previousSession);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      locked.current = false;
+      setBusy(false);
     }
-  }, [policy, heroSeat, addToHistory]);
+  }, []);
 
-  function newHand() {
-    const g = makeNewGame();
-    setGame(g);
-    setActionHistory([]);
-    setHandId(h => h + 1);
-    force(n=>n+1);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void newTournament(2);
+  }, [newTournament]);
+
+  async function command(operation: "action" | "next", action?: string) {
+    if (!game || locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      setGame(await tableRequest(operation, {
+        session_id: game.session_id,
+        revision: game.revision,
+        ...(action ? { action } : {}),
+      }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      locked.current = false;
+      setBusy(false);
+    }
   }
 
-  useEffect(() => {
-    if (!policy) return;
-    const g = game;
-    stepBotsForward(g);
-    force(n=>n+1);
-  }, [policy, game, stepBotsForward]);
+  const sessionPnL = (game?.hero_result_bb ?? 0) - pnlBaseline;
+  const actionHistory = game?.history ?? [];
+  const policy = game?.policy;
 
-  const hero = game.players[heroSeat];
-
-  function onHeroAction(a: Action) {
-    if (game.current_phase==="SHOWDOWN") return;
-    const legal = game.update_available_actions(hero);
-    if (!legal.includes(a)) return;
-    
-    // récupère distribution pour le héros
-    const key = buildInfosetKeyFast(game, hero);
-    const entry = policy?.[key];
-    const dist = entry?.dist ?? {};
-
-    game.process_action(hero, a);
-    addToHistory(hero.name, a, normalize(dist));
-    stepBotsForward(game);
-    force(n=>n+1);
-  }
-
-  useEffect(() => {
-    newHand();
-  }, [heroSeat]);
-
-  // créditer le P&L du héros quand un showdown se termine
-  useEffect(() => {
-    if (game.current_phase === "SHOWDOWN" && scoredHandId !== handId) {
-      const heroName = game.players[heroSeat].name;
-      const delta = game.net_stack_changes[heroName] ?? 0;
-      setSessionPnL(v => v + delta);
-      setScoredHandId(handId);
-    }
-  }, [game.current_phase, handId, heroSeat, scoredHandId, game]); 
-
-  const boardStr = game.community.map(c=>c.toString()).join(" ");
+  const visibleActions: TableView["legal_actions"] = game?.legal_actions ?? [
+    { action_id: "FOLD", category: "FOLD", amount_to: null },
+    { action_id: "CHECK", category: "CHECK", amount_to: null },
+    { action_id: "CALL", category: "CALL", amount_to: null },
+    { action_id: "RAISE", category: "RAISE", amount_to: null },
+    { action_id: "ALL_IN", category: "RAISE", amount_to: null },
+  ];
 
   return (
     <div className="space-y-4">
       <Card>
         <PokerTableFrame
-          phase={game.current_phase}
-          seats={[
-            {
-              id: 0,
-              label: "SB",
-              stack: `${game.players[0].stack.toFixed(1)} BB`,
-              smallBlind: true,
-              active: !game.players[0].has_folded,
-              cards:
-                heroSeat === 0
-                  ? game.players[0].cards.map(c => c.toString())
-                  : game.current_phase === "SHOWDOWN"
-                  ? game.players[0].cards.map(c => c.toString())
-                  : ["XX", "XX"], // face down
-              netStackChange: game.net_stack_changes[game.players[0].name],
-            },
-            {
-              id: 1,
-              label: "BB",
-              stack: `${game.players[1].stack.toFixed(1)} BB`,
-              bigBlind: true,
-              active: !game.players[1].has_folded,
-              cards:
-                heroSeat === 1
-                  ? game.players[1].cards.map(c => c.toString())
-                  : game.current_phase === "SHOWDOWN"
-                  ? game.players[1].cards.map(c => c.toString())
-                  : ["XX", "XX"],
-              netStackChange: game.net_stack_changes[game.players[1].name],
-            },
-            {
-              id: 2,
-              label: "BTN",
-              stack: `${game.players[2].stack.toFixed(1)} BB`,
-              active: !game.players[2].has_folded,
-              cards:
-                heroSeat === 2
-                  ? game.players[2].cards.map(c => c.toString())
-                  : game.current_phase === "SHOWDOWN"
-                  ? game.players[2].cards.map(c => c.toString())
-                  : ["XX", "XX"],
-              netStackChange: game.net_stack_changes[game.players[2].name],
-            },
-          ]}
-          potLabel={`${game.main_pot.toFixed(2)} BB`}
+          phase={game?.hand_terminal ? "SHOWDOWN" : game?.street}
+          seats={([0, 1, 2] as const).map(id => {
+            const player = game?.players.find(p => p.player_id === id);
+            return {
+              id,
+              label: player ? player.active ? player.position ?? `P${id}` : "OUT" : `P${id}`,
+              stack: player ? `${player.stack_bb.toFixed(1)} BB` : "— BB",
+              smallBlind: player?.position === "SB",
+              bigBlind: player?.position === "BB",
+              active: player ? player.active && !player.folded : true,
+              cards: player ? player.cards.length ? player.cards.map(cardLabel) : player.active ? ["XX", "XX"] : [] : ["XX", "XX"],
+              netStackChange: game?.hand_terminal ? game.hand_results_bb[id] : undefined,
+            };
+          })}
+          potLabel={game ? `${game.pot_bb.toFixed(2)} BB` : "— BB"}
           heroSeat={heroSeat}
-          board={boardStr}
-        >
-          {/* barre d'actions */}
-          <div className="grid grid-cols-3 gap-2 justify-items-center">
-            <div className="flex gap-2">
-              <Button variant={heroSeat===0?"default":"secondary"} onClick={()=>setHeroSeat(0)}>SB</Button>
-              <Button variant={heroSeat===1?"default":"secondary"} onClick={()=>setHeroSeat(1)}>BB</Button>
-              <Button variant={heroSeat===2?"default":"secondary"} onClick={()=>setHeroSeat(2)}>BTN</Button>
-            </div>
-
-            <Button onClick={newHand} className="w-35">Nouvelle main</Button>
-
-            <div>
-              {game.current_phase!=="SHOWDOWN" && game.current_role===heroSeat && (
-                <div className="flex gap-2">
-                  {(() => {
-                    const legal = game.update_available_actions(hero);
-                    const key = buildInfosetKeyFast(game, hero);
-                    const entry = policy?.[key];
-                    const dist = normalize(entry?.dist ?? {});
-                    return legal.map(a => {
-                      const pct = (dist[a] ?? 0) * 100;
-                      return (
-                        <Button
-                          key={a}
-                          onClick={() => {
-                            onHeroAction(a);
-                          }}
-                          variant="default"
-                          className="relative w-20 text-sm text-black overflow-hidden bg-white border border-border hover:bg-white"
-                        >
-                          <span className="relative z-10">{a}</span>
-                          <span
-                            className="absolute inset-y-0 left-0 bg-muted-foreground/80"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </Button>
-                      );
-                    });
-                  })()}
-                </div>
-              )}
-            </div>
+          board={game?.board.map(cardLabel).join(" ") ?? ""}
+        />
+        {error && <div role="alert" className="px-4 py-2 text-sm text-destructive">{error}</div>}
+        <div className={styles.toolbar} aria-label="Table controls">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Hero</span>
+            {([0, 1, 2] as const).map(seat => (
+              <Button key={seat} disabled={busy || !game} aria-pressed={heroSeat === seat}
+                variant={heroSeat === seat ? "default" : "secondary"} className="h-10 w-10 p-0"
+                onClick={() => void newTournament(seat)}>P{seat}</Button>
+            ))}
           </div>
-        </PokerTableFrame>
-
-        <div className="flex flex-row gap-4 border-t border-border">
-          <div className=" bg-card/40 p-4 border-r border-border w-4/5">
-            <div className="mb-2 text-center font-semibold">Showdown — Résultats</div>
-
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>Hand {game?.hand_number ?? "—"}</span>
+            {game?.tournament_terminal && <span className="font-semibold text-primary">🏆 P{game.winner}</span>}
+            {game && !game.players.find(p => p.player_id === heroSeat)?.active && <span>Eliminated</span>}
+            <span className="rounded border border-border px-2 py-1" title={policy?.reason}>
+              {!game ? "Policy —" : policy?.status === "experimental" ? "Experimental policy" : "Policy unavailable"}
+            </span>
+          </div>
+          <div className={styles.management}>
+            <Button disabled={busy} variant="secondary" onClick={() => void newTournament(heroSeat)} className="h-10 w-full px-2 text-sm">New game</Button>
+            <Button disabled={busy || !game?.hand_terminal || game.tournament_terminal}
+              className="h-10 w-full px-2 text-sm" onClick={() => void command("next")}>Next hand</Button>
+          </div>
+        </div>
+        <div className="px-3 pb-4 sm:px-4" aria-label="Poker actions">
+          <div className={styles.actions}>
+            {visibleActions.map(action => {
+              const probability = policy?.probabilities?.[action.action_id];
+              return (
+                <Button key={action.action_id} disabled={busy || !game || game.hand_terminal || game.actor !== heroSeat}
+                  onClick={() => void command("action", action.action_id)}
+                  className="relative h-10 w-full min-w-0 flex-col gap-0 overflow-hidden border border-border bg-white px-2 py-1 text-xs text-black hover:bg-white/90">
+                  <span className="relative z-10">{actionLabel(action)}</span>
+                  {probability !== undefined && <span className="relative z-10 text-[10px]">{(probability * 100).toFixed(0)}%</span>}
+                  {probability !== undefined && <span className="absolute inset-y-0 left-0 bg-black/10" style={{ width: `${probability * 100}%` }} />}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="grid border-t border-border lg:grid-cols-[minmax(0,1fr)_200px]">
+          <div className="min-w-0 bg-card/40 p-4 lg:border-r lg:border-border">
+            <div className="mb-2 text-center font-semibold">Showdown — Results</div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {game.players.map((p) => {
-                const delta = game.net_stack_changes[p.name] ?? 0;
-                const win = delta > 0;
-                const even = delta === 0;
-
+              {([0, 1, 2] as const).map(id => {
+                const player = game?.players.find(p => p.player_id === id);
+                const delta = game?.hand_terminal ? game.hand_results_bb[id] : null;
+                const win = delta !== null && delta > 0;
+                const even = delta === null || delta === 0;
                 return (
-                  <div key={p.name} className="rounded-lg bg-background/40 p-3 ring-1 ring-border">
+                  <div key={id} className="rounded-lg bg-background/40 p-3 ring-1 ring-border">
                     <div className="mb-1 flex items-center justify-between">
                       <span className="inline-flex items-center gap-2 text-sm font-medium">
-                        <span className="grid h-6 w-6 place-items-center rounded-full bg-muted text-[0.7rem]">
-                          {p.name}
-                        </span>
+                        <span className="grid h-6 w-6 place-items-center rounded-full bg-muted text-[0.7rem]">P{id}</span>
                         {win && <span className="text-xs">🏆</span>}
+                        {player && !player.active && <span className="text-xs">Out</span>}
                       </span>
-                      <span
-                        className={
-                          win
-                            ? "rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-400"
-                            : even
-                            ? "rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                            : "rounded-md bg-rose-500/15 px-2 py-0.5 text-xs font-semibold text-rose-400"
-                        }
-                      >
-                        {win ? "+" : ""}{delta.toFixed(2)} BB
+                      <span className={win ? "rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-400" : even ? "rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground" : "rounded-md bg-rose-500/15 px-2 py-0.5 text-xs font-semibold text-rose-400"}>
+                        {delta === null ? "—" : `${win ? "+" : ""}${delta.toFixed(2)} BB`}
                       </span>
                     </div>
-
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>Stack final</span>
-                      <span className="font-mono">{game.final_stacks[p.name].toFixed(2)} BB</span>
+                      <span>Stack</span>
+                      <span className="font-mono">{player ? player.stack_bb.toFixed(2) : "—"} BB</span>
                     </div>
                   </div>
                 );
               })}
             </div>
-
-            <div className="mt-3 text-center text-xs text-muted-foreground">
-              Pot distribué :{" "}
-              {Object.values(game.net_stack_changes)
-                .filter((x) => x > 0)
-                .reduce((a, b) => a + b, 0)
-                .toFixed(2)}{" "}
-              BB
-            </div>
-            
           </div>
-          <div className="flex flex-col justify-center items-center gap-2 w-1/5">
-            <h1>Total P&L (Héro)</h1>
-            <div className="text-sm text-muted-foreground">
-              Héro: {game.players[heroSeat].name}
+          <div className="flex flex-col items-center justify-center gap-2 border-t border-border p-4 lg:border-t-0">
+            <h2 className="font-medium">Total P&amp;L (Hero)</h2>
+            <div className={sessionPnL > 0 ? "font-semibold text-emerald-400" : sessionPnL < 0 ? "font-semibold text-rose-400" : "font-semibold text-muted-foreground"}>
+              {game ? `${sessionPnL >= 0 ? "+" : ""}${sessionPnL.toFixed(2)}` : "—"} BB
             </div>
-            <div
-              className={
-                sessionPnL > 0
-                  ? "font-semibold text-emerald-400"
-                  : sessionPnL < 0
-                  ? "font-semibold text-rose-400"
-                  : "font-semibold text-muted-foreground"
-              }
-            >
-              {sessionPnL >= 0 ? "+" : ""}
-              {sessionPnL.toFixed(2)} BB
-            </div>
-            <Button variant="secondary" onClick={()=>setSessionPnL(0)}>Reset</Button>
+            <Button disabled={busy || !game} className="h-10" variant="secondary" onClick={() => game && setPnlBaseline(game.hero_result_bb)}>Reset</Button>
           </div>
         </div>
       </Card>
-
-      {/* Historique des actions */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Historique des actions</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle className="text-lg">Action history</CardTitle></CardHeader>
         <CardContent>
           <div className="max-h-64 overflow-y-auto space-y-2">
             {actionHistory.length === 0 ? (
-              <div className="text-gray-500 text-center py-4">Aucune action enregistrée</div>
-            ) : (
-              actionHistory.map((entry, index) => (
-                <div key={index} className="flex flex-col p-2 bg-primary/5 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded">
-                        {index}
-                      </span>
-                      <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded">
-                        {entry.phase}
-                      </span>
-                      <span className="font-medium text-primary">{entry.player}</span>
-                      <span className="text-primary/60">→</span>
-                      <span className="font-semibold text-primary">{entry.action}</span>
-                    </div>
-                    <span className="text-xs text-primary/50">
-                      {new Date(entry.timestamp).toLocaleTimeString()}
-                    </span>
+              <div className="text-gray-500 text-center py-4">—</div>
+            ) : actionHistory.map((entry, index) => (
+              <div key={index} className="flex flex-col p-2 bg-primary/5 rounded-lg">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded">{index}</span>
+                    <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded">{entry.street}</span>
+                    <span className="font-medium text-primary">P{entry.player_id} · {entry.position}</span>
+                    <span className="text-primary/60">→</span>
+                    <span className="font-semibold text-primary">{entry.action} {entry.amount_to.toFixed(2)} BB</span>
                   </div>
-
-                  {entry.probs && (
-                    <div className="flex gap-1 text-[0.65rem] text-muted-foreground">
-                      {Object.entries(entry.probs)
-                        .filter(([,p])=>p>0.001)
-                        .map(([act,p])=>(
-                          <span key={act}>
-                            {act}: {(p*100).toFixed(0)}%
-                          </span>
-                        ))}
-                    </div>
-                  )}
+                  <span className="text-xs text-primary/50">Pot: {entry.pot_after.toFixed(2)} BB</span>
                 </div>
-              ))
-            )}
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>

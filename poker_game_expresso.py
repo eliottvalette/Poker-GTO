@@ -1,860 +1,282 @@
-# poker_game_expresso.py
-"""
-3-handed No Limit Texas Hold'em
+"""Authoritative no-limit Hold'em hand rules. All amounts are actual BB."""
+from __future__ import annotations
 
-Cette classe est optimisée pour intiliser une partie de poker en cours.
-Dans le but d'effectuer des simulations de jeu pour l'algorithme MCCFR.
-"""
-import random as rd
-from typing import List, Optional
-from classes import Player, Card
+import copy
+import math
+import random
+from dataclasses import dataclass, field
+from typing import Mapping
+
 from utils import rank7
 
-FAST_TRAINING = True
-DEBUG_OPTI = False or not FAST_TRAINING
-DEBUG_OPTI_ULTIMATE = False or not FAST_TRAINING
+EPS = 1e-9
+STREETS = ("PREFLOP", "FLOP", "TURN", "RIVER")
 
-# Remplacement des Enum par vecteurs ordonnés
-HAND_RANKS = [
-    "HIGH_CARD", "PAIR", "TWO_PAIR", "THREE_OF_A_KIND",
-    "STRAIGHT", "FLUSH", "FULL_HOUSE", "FOUR_OF_A_KIND",
-    "STRAIGHT_FLUSH", "ROYAL_FLUSH"
-]
 
-PLAYER_ACTIONS = [
-    "FOLD", "CHECK", "CALL", "RAISE", "ALL-IN"
-]
+@dataclass(frozen=True)
+class BlindLevel:
+    small: float = 0.5
+    big: float = 1.0
 
-GAME_PHASES = [
-    "PREFLOP", "FLOP", "TURN", "RIVER", "SHOWDOWN"
-]
+    def __post_init__(self) -> None:
+        if not (math.isfinite(self.small) and math.isfinite(self.big)
+                and 0 < self.small < self.big):
+            raise ValueError(f"Invalid blinds: {self}; expected 0 < SB < BB")
 
-# Pour lookup rapide
-HAND_RANKS_IDX = {name: i for i, name in enumerate(HAND_RANKS)}
-PLAYER_ACTIONS_IDX = {name: i for i, name in enumerate(PLAYER_ACTIONS)}
-GAME_PHASES_IDX = {name: i for i, name in enumerate(GAME_PHASES)}
-_FULL_DECK = tuple(Card(r, s) for r in range(2, 15) for s in range(4))
 
-class GameInit:
-    stacks_init: List[int]                   # ex: [25, 25, 25]
-    total_bets_init: List[int]               # mises en cours (par rôle) sur la main courante
-    current_bets_init: List[int]             # mises en cours (par rôle) sur la phase courante
-    active_init: List[bool]                  # état actif des joueurs (par rôle)
-    has_acted_init: List[bool]                # état agi des joueurs (par rôle)
-    main_pot: float                                   # pot courant
-    phase: str                                  # "PREFLOP"/"FLOP"/"TURN"/"RIVER"/"SHOWDOWN"
-    community_cards: list[Card]                       # visibles
+@dataclass
+class HandPlayer:
+    player_id: int
+    stack: float
+    position: str
+    cards: tuple[int, int]
+    street_bet: float = 0.0
+    contribution: float = 0.0
+    folded: bool = False
+    acted_at: float | None = None
 
-class PokerGameExpresso:
-    """
-    Classe principale qui gère l'état et la logique du jeu de poker.
-    """
-    # poker_game_expresso.py (remplace __init__)
-    def __init__(self, init: GameInit):
-        self.num_players = 3
-        self.small_blind = 1
-        self.big_blind = 2
-        self.starting_stack = 100
 
-        self.main_pot = float(init.main_pot)
-        self.rng = getattr(init, "rng", rd)
+@dataclass(frozen=True)
+class ActionEvent:
+    street: str
+    player_id: int
+    position: str
+    action: str
+    amount_to: float
+    amount_added: float
+    pot_before: float
+    pot_after: float
+    highest_before: float
 
-        self.community_cards = init.community_cards.copy()
-        self.remaining_deck = list(_FULL_DECK)
-        self.rng.shuffle(self.remaining_deck)
-        # Retire d'éventuelles cartes déjà au board
-        known_board = {c.id for c in self.community_cards}
-        self.remaining_deck = [c for c in self.remaining_deck if c.id not in known_board]
 
-        self.current_phase = init.phase
-        self.number_raise_this_game_phase = 0
-        self.last_raiser = None
-        self.last_raise_amount = self.big_blind
+@dataclass
+class HandState:
+    players: dict[int, HandPlayer]
+    button: int
+    blinds: BlindLevel
+    deck: list[int]
+    total_chips: float
+    initial_stacks: dict[int, float]
+    board: list[int] = field(default_factory=list)
+    street: str = "PREFLOP"
+    pot: float = 0.0
+    highest: float = 1.0
+    last_full_raise: float = 1.0
+    pending: set[int] = field(default_factory=set)
+    current_player: int | None = None
+    history: list[ActionEvent] = field(default_factory=list)
+    terminal: bool = False
+    showdown: bool = False
+    awards: dict[int, float] = field(default_factory=dict)
 
-        self.players = self.initialize_simulated_players(init)
+    @classmethod
+    def start(cls, stacks: Mapping[int, float], button: int, rng: random.Random,
+              blinds: BlindLevel = BlindLevel(), deck: list[int] | None = None) -> HandState:
+        if len(stacks) not in (2, 3) or button not in stacks:
+            raise ValueError(f"Expected 2 or 3 active seats and live button, got {stacks}, {button}")
+        if any(not math.isfinite(s) or s <= 0 for s in stacks.values()):
+            raise ValueError(f"Active stacks must be finite and positive: {stacks}")
+        cards = list(range(52)) if deck is None else list(deck)
+        if len(cards) != 52 or set(cards) != set(range(52)):
+            raise ValueError("Deck must be a permutation of card IDs 0..51")
+        if deck is None:
+            rng.shuffle(cards)
+        seats = list(stacks)
+        offset = seats.index(button)
+        order = seats[offset:] + seats[:offset]
+        roles = ("SB", "BB") if len(order) == 2 else ("BTN", "SB", "BB")
+        players = {i: HandPlayer(i, float(stacks[i]), roles[order.index(i)],
+                                (cards.pop(), cards.pop())) for i in seats}
+        hand = cls(players, button, blinds, cards, sum(stacks.values()), dict(stacks),
+                   highest=blinds.big, last_full_raise=blinds.big)
+        for role, amount in (("SB", blinds.small), ("BB", blinds.big)):
+            p = next(p for p in players.values() if p.position == role)
+            before = hand.pot
+            hand._pay(p, min(p.stack, amount))
+            hand.history.append(ActionEvent("PREFLOP", p.player_id, role, "BLIND",
+                                            p.street_bet, p.street_bet, before, hand.pot, 0.0))
+        hand.pending = {i for i, p in players.items() if p.stack > EPS}
+        first = button
+        hand._progress(hand.previous(first))
+        hand.assert_invariants()
+        return hand
 
-        self.current_maximum_bet = max(p.current_player_bet for p in self.players)
-        
-        self.action_history = {p.name: [] for p in self.players}
+    def clone(self) -> HandState:
+        return copy.deepcopy(self)
 
-        self.current_role = 0 # SB
+    def previous(self, seat: int) -> int:
+        seats = list(self.players)
+        return seats[(seats.index(seat) - 1) % len(seats)]
 
-        self.initial_stacks = {p.name: p.stack for p in self.players}
-        self.net_stack_changes = {p.name: 0.0 for p in self.players}
-        self.final_stacks = {p.name: p.stack for p in self.players}
+    def next(self, seat: int) -> int:
+        seats = list(self.players)
+        return seats[(seats.index(seat) + 1) % len(seats)]
 
-        self.deal_cards()
-        
-        # Affichage des joueurs et leurs stacks
-        for player in self.players:
-            player_status = "actif" if player.is_active else "FOLD"
-            if DEBUG_OPTI:
-                print(f"[GAME_OPTI] [INIT] Joueur {player.name} (role {player.role}): {player.stack}BB - {player_status}")      
-        if DEBUG_OPTI:
-            print("========== FIN INITIALISATION ==========\n")
+    @property
+    def actor(self) -> HandPlayer:
+        if self.terminal or self.current_player is None:
+            raise ValueError("Terminal hand has no acting player")
+        return self.players[self.current_player]
 
-    def update_available_actions(self, player: Player, current_maximum_bet: float, number_raise_this_game_phase: int, main_pot: float, phase: str):
-        if phase == "SHOWDOWN" or player.is_all_in:
-            return ()
+    def to_call(self, p: HandPlayer | None = None) -> float:
+        p = self.actor if p is None else p
+        return max(0.0, self.highest - p.street_bet)
 
-        can_check = player.current_player_bet >= current_maximum_bet
-        can_fold = not can_check
+    @property
+    def min_raise_to(self) -> float:
+        return self.highest + self.last_full_raise
 
-        call_amount = current_maximum_bet - player.current_player_bet
-        can_call = False
-        if call_amount <= 0:
-            can_call = False
-        elif call_amount >= player.stack:
-            can_call = False
-        else:
-            can_call = True
-        
-        if current_maximum_bet == 0:
-            raise_amount = self.big_blind * 3
-        else:
-            raise_amount = current_maximum_bet + max(self.last_raise_amount, self.big_blind * 3)
-        
-        add_required = raise_amount - player.current_player_bet
-        can_raise = add_required > 0 and player.stack >= add_required and number_raise_this_game_phase < 4
-        
-        """
-        pot_raise_actions = [
-            PlayerAction.RAISE_25_POT,
-            PlayerAction.RAISE_50_POT,
-            PlayerAction.RAISE_75_POT,
-            PlayerAction.RAISE_100_POT,
-            PlayerAction.RAISE_150_POT,
-            PlayerAction.RAISE_2X_POT,
-            PlayerAction.RAISE_3X_POT
-        ]
-        raise_percentages = {
-            PlayerAction.RAISE_25_POT: 0.25,
-            PlayerAction.RAISE_50_POT: 0.50,
-            PlayerAction.RAISE_75_POT: 0.75,
-            PlayerAction.RAISE_100_POT: 1.00,
-            PlayerAction.RAISE_150_POT: 1.50,
-            PlayerAction.RAISE_2X_POT: 2.00,
-            PlayerAction.RAISE_3X_POT: 3.00
-        }
+    def can_raise(self) -> bool:
+        p = self.actor
+        opponents = [q for q in self.players.values() if q.player_id != p.player_id
+                     and not q.folded and q.stack > EPS]
+        reopened = p.acted_at is None or self.highest - p.acted_at >= self.last_full_raise - EPS
+        return bool(opponents) and reopened and p.stack + p.street_bet > self.highest + EPS
 
-        def pot_to_amount(main_pot, current_max_bet, player_cur_bet, pct):
-            call_amt = max(0.0, current_max_bet - player_cur_bet)
-            target_to = current_max_bet + pct * (main_pot + call_amt)
-            return target_to
+    def _pay(self, p: HandPlayer, amount: float) -> None:
+        if not math.isfinite(amount) or amount < -EPS or amount > p.stack + EPS:
+            raise ValueError(f"Invalid payment {amount}; player {p.player_id} stack={p.stack}")
+        p.stack -= amount
+        p.street_bet += amount
+        p.contribution += amount
+        self.pot += amount
 
-        for action in pot_raise_actions:
-            if number_raise_this_game_phase >= 4:
-                self.masks[player_role][action] = False
+    def act(self, category: str, amount_to: float | None = None) -> None:
+        p = self.actor
+        call = self.to_call(p)
+        highest_before, before = self.highest, self.pot
+        if category != "RAISE" and amount_to is not None:
+            raise ValueError(f"{category} must not specify amount_to={amount_to}")
+        if category == "FOLD":
+            if call <= EPS:
+                raise ValueError("FOLD is excluded when CHECK is available")
+            p.folded = True
+        elif category == "CHECK":
+            if call > EPS:
+                raise ValueError(f"Cannot check; to_call={call}")
+        elif category == "CALL":
+            if call <= EPS:
+                raise ValueError(f"Cannot call; to_call={call}")
+            self._pay(p, min(call, p.stack))
+        elif category == "RAISE":
+            if amount_to is None or not math.isfinite(amount_to) or not self.can_raise():
+                raise ValueError(f"Invalid raise {amount_to}; raising rights={self.can_raise()}")
+            maximum = p.stack + p.street_bet
+            if amount_to <= self.highest + EPS or amount_to > maximum + EPS:
+                raise ValueError(f"Raise-to {amount_to} must be in ({self.highest}, {maximum}]")
+            full = amount_to >= self.min_raise_to - EPS
+            if not full and not math.isclose(amount_to, maximum, abs_tol=EPS):
+                raise ValueError(f"Raise-to {amount_to} below minimum {self.min_raise_to}; only all-in allowed")
+            self._pay(p, amount_to - p.street_bet)
+            self.highest = amount_to
+            if full:
+                self.last_full_raise = amount_to - highest_before
+                self.pending = {i for i, q in self.players.items()
+                                if i != p.player_id and not q.folded and q.stack > EPS}
             else:
-                percentage = raise_percentages[action]
-                target_to = pot_to_amount(main_pot, current_maximum_bet, player.current_player_bet, percentage)
-                add_required = target_to - player.current_player_bet
-
-                # min raise ≈ 2× le gap à caller si une mise existe, sinon BB
-                min_raise = self.big_blind * 3 if current_maximum_bet == 0 else 2 * max(0.0, current_maximum_bet - player.current_player_bet)
-
-                if add_required < min_raise or player.stack < add_required:
-                    self.masks[player_role][action] = False
-        """
-        actions = []
-        if can_fold:
-            actions.append("FOLD")
-        if can_check:
-            actions.append("CHECK")
-        if can_call:
-            actions.append("CALL")
-        if can_raise:
-            actions.append("RAISE")
-        actions.append("ALL-IN")
-        return tuple(actions)
-
-    def deal_cards(self):
-        """
-        Distribue les cartes aux joueurs actifs qui n'en ont pas
-        """
-        if DEBUG_OPTI:
-            print("[GAME_OPTI] Distribution des cartes privées")
-        for player in self.players:
-            if player.is_active and not player.has_folded and not player.cards:
-                player.cards = [self.remaining_deck.pop(), self.remaining_deck.pop()]
-                if DEBUG_OPTI:
-                    print(f"[GAME_OPTI] {player.name} reçoit: {player.cards[0]} {player.cards[1]}")
-
-
-    def next_player(self):
-        """
-        Passe au prochain joueur actif et n'ayant pas fold dans le sens horaire.
-        Skip les joueurs all-in.
-        """
-        initial_role_playing = self.current_role
-        self.current_role = (self.current_role + 1) % self.num_players
-        
-        # Vérifier qu'on ne boucle pas indéfiniment
-        while (not self.players[self.current_role].is_active or 
-               self.players[self.current_role].has_folded or 
-               self.players[self.current_role].is_all_in):
-            # Ajouter le fait que le joueur a passé son tour dans l'historique
-            skipped_player = self.players[self.current_role]
-            if skipped_player.has_folded:
-                self.action_history[skipped_player.name].append("none")
-                # On ne garde que les 5 dernières actions du joueur
-                if len(self.action_history[skipped_player.name]) > 5:
-                    self.action_history[skipped_player.name].pop(0)
-            
-            self.current_role = (self.current_role + 1) % self.num_players
-            if self.current_role == initial_role_playing:
-                # Affiche l'état de chaque joueur pour faciliter le débogage
-                for p in self.players:
-                    print(f"[GAME_OPTI] players : {p}")
-                details = [(p.name, p.is_active, p.has_folded, p.is_all_in, p.has_acted) for p in self.players]
-                raise RuntimeError(
-                    "[GAME_OPTI] Aucun joueur valide trouvé. Cela signifie que tous les joueurs sont inactifs, foldés ou all-in. "
-                    f"[GAME_OPTI] Détails des joueurs : {details}"
-                )
-
-        if DEBUG_OPTI:
-            print(f"\n[GAME_OPTI] [NEXT_PLAYER] On passe du joueur {self.players[initial_role_playing].name} au joueur {self.players[self.current_role].name}\n")
-
-    def deal_small_and_big_blind(self):
-        """
-        Méthode à run en début de main pour distribuer automatiquement les blindes
-        """
-        players = [p for p in self.players if p.is_active]
-        sb_player = players[0]
-        bb_player = players[1]
-
-        # SB
-        if sb_player.stack >= self.small_blind:
-            sb_player.stack -= self.small_blind
-            self.main_pot += self.small_blind
-            sb_player.total_bet = self.small_blind
-            sb_player.current_player_bet = self.small_blind
-            sb_player.has_acted = False
+                self.pending.update(i for i, q in self.players.items() if i != p.player_id
+                                    and not q.folded and q.stack > EPS
+                                    and q.street_bet < self.highest - EPS)
         else:
-            sb_player.is_all_in = True
-            sb_player.current_player_bet = sb_player.stack
-            self.main_pot += sb_player.stack
-            sb_player.total_bet = sb_player.stack
-            sb_player.stack = 0
-            sb_player.has_acted = True
+            raise ValueError(f"Unknown engine category {category!r}; expected FOLD/CHECK/CALL/RAISE")
+        p.acted_at = self.highest
+        self.pending.discard(p.player_id)
+        self.history.append(ActionEvent(self.street, p.player_id, p.position, category,
+                                        p.street_bet, self.pot - before, before, self.pot, highest_before))
+        self._progress(p.player_id)
+        self.assert_invariants()
 
-        if DEBUG_OPTI:
-            print(f"[GAME_OPTI] {sb_player.name} a deal la SB : {self.small_blind}BB")
-
-        self.current_maximum_bet = self.small_blind
-        self.next_player()
-        
-        # MAJ du montant de la dernière relance légale
-        self.last_raise_amount = self.big_blind
-
-        # BB
-        if bb_player.stack >= self.big_blind:
-            bb_player.stack -= self.big_blind
-            self.main_pot += self.big_blind
-            bb_player.total_bet = self.big_blind
-            bb_player.current_player_bet = self.big_blind
-            bb_player.has_acted = False
-        else:
-            bb_player.is_all_in = True
-            bb_player.current_player_bet = bb_player.stack
-            self.main_pot += bb_player.stack
-            bb_player.total_bet = bb_player.stack
-            bb_player.stack = 0
-            bb_player.has_acted = True
-
-        if DEBUG_OPTI:
-            print(f"[GAME_OPTI] {bb_player.name} a deal la BB : {self.big_blind}BB")
-
-        self.current_maximum_bet = self.big_blind
-        self.next_player()
-        
-    def check_phase_completion(self):
-        """
-        Vérifie si le tour d'enchères actuel est terminé et gère la progression du jeu.
-        
-        Le tour est terminé quand :
-        1. Tous les joueurs actifs ont agi
-        2. Tous les joueurs ont égalisé la mise maximale (ou sont all-in)
-        3. Cas particuliers : un seul joueur reste, tous all-in, ou BB preflop
-        """
-
-        in_game_count = 0
-        all_in_count = 0
-        not_all_in_count = 0
-        any_all_in = False
-        everyone_capped = True
-        betting_round_complete = True
-
-        for player in self.players:
-            if not player.is_active or player.has_folded:
-                continue
-
-            in_game_count += 1
-            if player.is_all_in:
-                all_in_count += 1
-                any_all_in = True
-            else:
-                not_all_in_count += 1
-
-            if not (player.is_all_in or player.current_player_bet == self.current_maximum_bet):
-                everyone_capped = False
-
-            if not player.has_acted:
-                betting_round_complete = False
-            elif player.current_player_bet < self.current_maximum_bet and not player.is_all_in:
-                betting_round_complete = False
-
-        # Victoire directe si un seul joueur actif
-        if in_game_count == 1:
-            if DEBUG_OPTI_ULTIMATE:
-                print("Moving to showdown (only one player remains)")
-            self.handle_showdown()
+    def _progress(self, after: int) -> None:
+        live = [p for p in self.players.values() if not p.folded]
+        if len(live) == 1:
+            self._settle()
             return
-
-        # Cas all-in : showdown forcé si plus de mise possible
-        if any_all_in:
-            if everyone_capped and not_all_in_count <= 1 and in_game_count > 1:
-                if DEBUG_OPTI_ULTIMATE:
-                    print("Moving to showdown (all-in present, no further betting possible)")
-                self.handle_showdown()
-                return
-
-        # Tous les joueurs restants sont all-in
-        if (all_in_count == in_game_count) and (in_game_count > 1):
-            if DEBUG_OPTI_ULTIMATE:
-                print("Moving to showdown (all remaining players are all-in)")
-            self.handle_showdown()
+        able = [p for p in live if p.stack > EPS]
+        if len(able) <= 1:
+            # A lone player only decides if still facing a bet. No dry side-pot bets.
+            self.pending = {p.player_id for p in able if self.to_call(p) > EPS}
+        if self.pending:
+            seat = after
+            for _ in self.players:
+                seat = self.next(seat)
+                if seat in self.pending:
+                    self.current_player = seat
+                    return
+            raise ValueError(f"Pending seats not in hand: {self.pending}")
+        if len(able) <= 1 or self.street == "RIVER":
+            if len(live) > 1:
+                self.board.extend(self.deck.pop() for _ in range(5 - len(self.board)))
+            self._settle()
             return
+        self.street = STREETS[STREETS.index(self.street) + 1]
+        self.board.extend(self.deck.pop() for _ in range(3 if self.street == "FLOP" else 1))
+        self.highest = 0.0
+        self.last_full_raise = self.blinds.big
+        for p in self.players.values():
+            p.street_bet = 0.0
+            p.acted_at = None
+        self.pending = {p.player_id for p in able}
+        self._progress(self.button)
 
-        # Vérification des actions des joueurs
-        if not betting_round_complete:
-            self.next_player()
-            return
-
-        # Ici, toutes les conditions pour avancer la phase sont remplies
-        if self.current_phase == "RIVER":
-            if DEBUG_OPTI_ULTIMATE:
-                print("River complete - going to showdown")
-            self.handle_showdown()
+    def _settle(self) -> None:
+        live = [p for p in self.players.values() if not p.folded]
+        self.showdown = len(live) > 1
+        self.awards = {i: 0.0 for i in self.players}
+        if len(live) == 1:
+            self.awards[live[0].player_id] = self.pot
         else:
-            self.advance_phase()
-            if DEBUG_OPTI_ULTIMATE:
-                print(f"[GAME_OPTI] Advanced to {self.current_phase}")
-            for p in self.players:
-                if p.is_active and not p.has_folded and not p.is_all_in:
-                    p.has_acted = False
+            if len(self.board) != 5:
+                raise ValueError(f"Showdown requires five board cards: {self.board}")
+            ranks = {p.player_id: rank7((*p.cards, *self.board)) for p in live}
+            previous = 0.0
+            for level in sorted({p.contribution for p in self.players.values() if p.contribution > EPS}):
+                contributors = [p for p in self.players.values() if p.contribution >= level - EPS]
+                amount = (level - previous) * len(contributors)
+                if len(contributors) == 1:
+                    winners = contributors  # Return uncalled chips, without showdown eligibility.
+                else:
+                    eligible = [p for p in contributors if not p.folded]
+                    if not eligible:
+                        raise ValueError(f"No eligible player for side pot at {level}: {contributors}")
+                    best = max(ranks[p.player_id] for p in eligible)
+                    winners = [p for p in eligible if ranks[p.player_id] == best]
+                for p in winners:
+                    self.awards[p.player_id] += amount / len(winners)
+                previous = level
+        if not math.isclose(sum(self.awards.values()), self.pot, abs_tol=EPS):
+            raise ValueError(f"Pot distribution mismatch: pot={self.pot}, awards={self.awards}")
+        for i, amount in self.awards.items():
+            self.players[i].stack += amount
+        self.pot = 0.0
+        self.terminal = True
+        self.pending.clear()
+        self.current_player = None
 
-        
-    def deal_community_cards(self):
-        if DEBUG_OPTI:
-            print(f"[GAME_OPTI] \n[DISTRIBUTION] Distribution des cartes communes pour phase {self.current_phase}")
+    def utility(self, player: int) -> float:
+        if not self.terminal:
+            raise ValueError("Hand utility requested before settlement")
+        return self.players[player].stack - self.initial_stacks[player]
 
-        if self.current_phase == "PREFLOP":
-            raise ValueError(
-                "[GAME_OPTI] Erreur d'état : Distribution des community cards pendant le pré-flop."
-            )
-
-        if self.current_phase == "FLOP":
-            if len(self.remaining_deck) < 3:
-                raise ValueError("[GAME_OPTI] Deck épuisé pour le flop")
-            for _ in range(3):
-                self.community_cards.append(self.remaining_deck.pop())
-
-        elif self.current_phase in ["TURN", "RIVER"]:
-            if not self.remaining_deck:
-                raise ValueError(f"[GAME_OPTI] Deck épuisé pour {self.current_phase}")
-            self.community_cards.append(self.remaining_deck.pop())
-
-        if DEBUG_OPTI:
-            print(f"[GAME_OPTI] [DISTRIBUTION] Board: {self.community_cards}")
-
-    def advance_phase(self):
-        """
-        Passe à la phase suivante du jeu (préflop -> flop -> turn -> river).
-        Distribue les cartes communes appropriées et réinitialise les mises.
-        """
-        if DEBUG_OPTI:
-            print(f"[GAME_OPTI] current_phase {self.current_phase}")
-        self.last_raiser = None  # Réinitialiser le dernier raiser pour la nouvelle phase
-        
-        # Normal phase progression
-        if self.current_phase == "PREFLOP":
-            self.current_phase = "FLOP"
-        elif self.current_phase == "FLOP":
-            self.current_phase = "TURN"
-        elif self.current_phase == "TURN":
-            self.current_phase = "RIVER"
-        
-        # Increment round number when moving to a new phase
-        self.number_raise_this_game_phase = 0
-        
-        # Reset last raise amount for new phase
-        self.last_raise_amount = self.big_blind
-        
-        # Deal community cards for the new phase
-        self.deal_community_cards()
-        
-        # Réinitialiser les mises pour la nouvelle phase
-        self.current_maximum_bet = 0
-        for player in self.players:
-            if player.is_active:
-                player.current_player_bet = 0
-                if not player.has_folded and not player.is_all_in:
-                    player.has_acted = False  # Réinitialisation du flag
-        
-        # postflop : SB parle en premier (puis BB, puis BTN)
-        self.current_role = 0 # SB
-        while (not self.players[self.current_role].is_active or 
-               self.players[self.current_role].has_folded or 
-               self.players[self.current_role].is_all_in):
-            self.current_role = (self.current_role + 1) % self.num_players
-        
-        if DEBUG_OPTI:
-            print(f"[GAME_OPTI] [PHASE] Premier joueur à agir: {self.players[self.current_role].name} (role : {self.current_role})")
-            print("========== FIN CHANGEMENT PHASE ==========\n")
-
-    def process_action(self, player: Player, action: str, bet_amount: Optional[int] = None):
-        """
-        Traite l'action d'un joueur, met à jour l'état du jeu et gère la progression du tour.
-
-        Cette méthode réalise plusieurs vérifications essentielles :
-        - S'assurer que le joueur dispose de suffisamment de fonds.
-        - Interrompre le traitement en cas de phase SHOWDOWN.
-        - Construire un historique des actions pour le suivi.
-        - Gérer distinctement les différents types d'actions : FOLD, CHECK, CALL, RAISE et ALL_IN.
-        - Mettre à jour le pot, les mises des joueurs et la mise maximale en cours.
-        - Traiter les situations d'all-in et créer des side pots le cas échéant.
-        - Déterminer, à l'issue de l'action, si le tour d'enchères est clôturé ou s'il faut passer au joueur suivant.
-        
-        - bet_amount n'est pas utilisé pour le momentcar la raise est systématiquement la min-raise.
-
-        Returns:
-            PlayerAction: L'action traitée (pour garder une cohérence dans le type de retour).
-        """
-        #----- Vérification que c'est bien au tour du joueur de jouer -----
-        if player is not self.players[self.current_role]:
-            current_turn_player = self.players[self.current_role].name
-            raise ValueError(f"[GAME_OPTI] Erreur d'action : Ce n'est pas le tour de {player.name}. "
-                             f"C'est au tour de {current_turn_player} d'agir.")
-
-        if not player.is_active or player.is_all_in or player.has_folded or self.current_phase == "SHOWDOWN":
-            raise ValueError(f"[GAME_OPTI] {player.name} n'était pas censé pouvoir faire une action, ...")
-
-        available_actions = self.update_available_actions(player, self.current_maximum_bet, self.number_raise_this_game_phase, self.main_pot, self.current_phase)
-        if not any(valid_action == action for valid_action in available_actions):
-            raise ValueError(f"[GAME_OPTI] {player.name} n'a pas le droit de faire cette action, actions valides : {available_actions}")
-           
-        #----- Affichage de débogage (pour le suivi durant l'exécution) -----
-        if DEBUG_OPTI_ULTIMATE:
-            print(f"[GAME_OPTI] \n=== Action qui va etre effectuée par {player.name} ===")
-            print(f"[GAME_OPTI] Joueur actif : {player.is_active}")
-            print(f"[GAME_OPTI] Action choisie : {action}")
-            print(f"[GAME_OPTI] Phase actuelle : {self.current_phase}")
-            print(f"[GAME_OPTI] Pot actuel : {self.main_pot}BB")
-            print(f"[GAME_OPTI] A agi : {player.has_acted}")
-            print(f"[GAME_OPTI] Est all-in : {player.is_all_in}")
-            print(f"[GAME_OPTI] Est folded : {player.has_folded}")
-            print(f"[GAME_OPTI] Mise maximale actuelle : {self.current_maximum_bet}BB")
-            print(f"[GAME_OPTI] Stack du joueur avant action : {player.stack}BB")
-            print(f"[GAME_OPTI] Mise actuelle du joueur : {player.current_player_bet}BB")
-        
-        #----- Traitement de l'action en fonction de son type -----
-        if action == "FOLD":
-            # Le joueur se couche il n'est plus actif pour ce tour.
-            player.has_folded = True
-            if DEBUG_OPTI : 
-                print(f"[GAME_OPTI] {player.name} se couche (Fold).")
-        
-        elif action == "CHECK":
-            if DEBUG_OPTI : 
-                print(f"[GAME_OPTI] {player.name} check.")
-        
-        elif action == "CALL":
-            if DEBUG_OPTI : 
-                print(f"[GAME_OPTI] {player.name} call.")
-            call_amount = self.current_maximum_bet - player.current_player_bet
-            if call_amount > player.stack: 
-                print(f"[GAME_OPTI] {player.name} a {player.stack}BB tandis que le montant "
-                    f"additionnel requis est {call_amount}BB. Mise minimum requise : {self.current_maximum_bet}BB.")
-                raise ValueError(f"[GAME_OPTI] {player.name} n'a pas assez de jetons pour suivre la mise maximale, il n'aurait pas du avoir le droit de call")
-        
-            player.stack -= call_amount
-            player.current_player_bet += call_amount
-            self.main_pot += call_amount
-            player.total_bet += call_amount
-            if player.stack == 0:
-                player.is_all_in = True
-            if DEBUG_OPTI : 
-                print(f"[GAME_OPTI] {player.name} a call {call_amount}BB")
-
-        elif action == "RAISE":
-            if DEBUG_OPTI:
-                print(f"[GAME_OPTI] {player.name} raise.")
-
-            prev_max = self.current_maximum_bet
-
-            # min raise-to (valeur ABSOLUE à atteindre)
-            if prev_max == 0:
-                raise_amount = self.big_blind * 3
-            else:
-                # au moins la dernière taille de relance légale (classique NLHE)
-                raise_amount = prev_max + max(self.last_raise_amount, self.big_blind * 3)
-
-            # impossible de « descendre » sous sa mise actuelle
-            raise_amount = max(raise_amount, player.current_player_bet)
-
-            add_required = raise_amount - player.current_player_bet
-            if add_required <= 0:
-                raise ValueError("[GAME_OPTI] Raise invalide (montant non positif).")
-            if add_required > player.stack:
-                raise ValueError("[GAME_OPTI] Fonds insuffisants pour raise.")
-
-            player.stack -= add_required
-            player.current_player_bet = raise_amount
-            self.main_pot += add_required
-
-            # MAJ des compteurs de la phase
-            self.number_raise_this_game_phase += 1
-            self.last_raiser = self.current_role
-            self.last_raise_amount = raise_amount - prev_max
-            self.current_maximum_bet = raise_amount
-            player.total_bet += add_required
-            player.is_all_in = (player.stack == 0)
-
-            if DEBUG_OPTI:
-                print(f"[GAME_OPTI] {player.name} a raise à {raise_amount}BB")
-
-        elif action == "ALL-IN":
-            if DEBUG_OPTI:
-                print(f"[GAME_OPTI] {player.name} all-in.")
-            prev_max = self.current_maximum_bet
-            all_in_amount = player.stack
-            new_to = player.current_player_bet + all_in_amount
-            delta = new_to - prev_max
-
-            # Met à jour la mise maximale
-            if delta > 0:
-                self.current_maximum_bet = new_to
-                # Rouvre seulement si delta >= last_raise_amount (au moins un min-raise légal)
-                if delta >= max(self.last_raise_amount, self.big_blind):
-                    self.number_raise_this_game_phase += 1
-                    self.last_raiser = self.current_role
-                    self.last_raise_amount = delta  # nouvelle taille de relance légale
-            
-            player.stack -= all_in_amount
-            player.current_player_bet += all_in_amount
-            self.main_pot += all_in_amount
-            player.total_bet += all_in_amount
-            player.is_all_in = True
-
-            if DEBUG_OPTI : 
-                print(f"[GAME_OPTI] {player.name} a all-in {all_in_amount}BB")
-        
-        else:
-            raise ValueError(f"[GAME_OPTI] Action invalide : {action}")
-        
-        # --- Nouvelles actions pot-based ---
-        """
-        elif action.value in {
-            PlayerAction.RAISE_25_POT.value,
-            PlayerAction.RAISE_50_POT.value,
-            PlayerAction.RAISE_75_POT.value,
-            PlayerAction.RAISE_100_POT.value,
-            PlayerAction.RAISE_150_POT.value,
-            PlayerAction.RAISE_2X_POT.value,
-            PlayerAction.RAISE_3X_POT.value
-        }:
-            raise_percentages = {
-                PlayerAction.RAISE_25_POT.value: 0.25,
-                PlayerAction.RAISE_50_POT.value: 0.50,
-                PlayerAction.RAISE_75_POT.value: 0.75,
-                PlayerAction.RAISE_100_POT.value: 1.00,
-                PlayerAction.RAISE_150_POT.value: 1.50,
-                PlayerAction.RAISE_2X_POT.value: 2.00,
-                PlayerAction.RAISE_3X_POT.value: 3.00
-            }
-            percentage = raise_percentages[action.value]
-
-            call_amt = max(0.0, self.current_maximum_bet - player.current_player_bet)
-            target_to = self.current_maximum_bet + percentage * (self.main_pot + call_amt)
-
-            # min raise ≈ 2× le gap à caller si une mise existe, sinon BB
-            min_raise = self.big_blind if self.current_maximum_bet == 0 else 2 * call_amt
-            if target_to - player.current_player_bet < min_raise:
-                target_to = player.current_player_bet + min_raise
-
-            bet_amount = target_to
-
-            if player.stack < (bet_amount - player.current_player_bet):
-                raise ValueError(
-                    f"[GAME_OPTI] Fonds insuffisants pour raise : {player.name} a {player.stack}BB, "
-                    f"requis {bet_amount - player.current_player_bet}BB."
-                )
-
-            actual_bet = bet_amount - player.current_player_bet
-            player.stack -= actual_bet
-            player.current_player_bet = bet_amount
-            self.main_pot += actual_bet
-            player.total_bet += actual_bet
-            self.current_maximum_bet = bet_amount
-            self.number_raise_this_game_phase += 1
-            self.last_raiser = self.current_role
-            player.is_all_in = player.is_active and (player.stack == 0)
-
-            if DEBUG_OPTI_ULTIMATE:
-                print(f"[GAME_OPTI] {player.name} a raise (pot-based {percentage*100:.0f}%) à {bet_amount}BB")
-        """
-        
-        player.has_acted = True
-        self.check_phase_completion()
-        
-        # Mise à jour de l'historique des actions du joueur
-        """
-        elif action in {
-            PlayerAction.RAISE_25_POT,
-            PlayerAction.RAISE_50_POT,
-            PlayerAction.RAISE_75_POT,
-            PlayerAction.RAISE_100_POT,
-            PlayerAction.RAISE_150_POT,
-            PlayerAction.RAISE_2X_POT,
-            PlayerAction.RAISE_3X_POT
-        }:
-            action_text += f" {bet_amount}BB"
-        """
-        if not FAST_TRAINING:
-            action_text = f"{action}"
-            if action == "RAISE":
-                action_text += f" {raise_amount}BB"
-            elif action == "ALL-IN":
-                action_text += f" {all_in_amount}BB"
-            elif action == "CALL":
-                action_text += f" {call_amount}BB"
-            self.action_history[player.name].append(action_text)
-            if len(self.action_history[player.name]) > 5:
-                self.action_history[player.name].pop(0)
-        
-        if DEBUG_OPTI_ULTIMATE:
-            print(f"[GAME_OPTI] \n=== Etat de la partie après action de {player.name} ===")
-            print(f"[GAME_OPTI] Joueur actif : {player.is_active}")
-            print(f"[GAME_OPTI] Action choisie : {action}")
-            print(f"[GAME_OPTI] Phase actuelle : {self.current_phase}")
-            print(f"[GAME_OPTI] Pot actuel : {self.main_pot}BB")
-            print(f"[GAME_OPTI] A agi : {player.has_acted}")
-            print(f"[GAME_OPTI] Est all-in : {player.is_all_in}")
-            print(f"[GAME_OPTI] Est folded : {player.has_folded}")
-            print(f"[GAME_OPTI] Mise maximale actuelle : {self.current_maximum_bet}BB")
-            print(f"[GAME_OPTI] Stack du joueur avant action : {player.stack}BB")
-            print(f"[GAME_OPTI] Mise actuelle du joueur : {player.current_player_bet}BB")
-
-    def handle_showdown(self):
-        if DEBUG_OPTI:
-            print("\n=== DÉBUT SHOWDOWN SIMULATION ===")
-
-        self.current_phase = "SHOWDOWN"
-        self.current_maximum_bet = 0
-
-        # Figer les actions
-        for player in self.players:
-            self.update_available_actions(player, 0, 0, self.main_pot, self.current_phase)
-
-        active_players = [p for p in self.players if p.is_active and not p.has_folded]
-
-        # Complète le board à 5 cartes
-        while len(self.community_cards) < 5:
-            if not self.remaining_deck:
-                self.remaining_deck = list(_FULL_DECK)
-                self.rng.shuffle(self.remaining_deck)
-                known = {c.id for p in self.players for c in getattr(p, "cards", [])} | {c.id for c in self.community_cards}
-                self.remaining_deck = [c for c in self.remaining_deck if c.id not in known]
-            self.community_cards.append(self.remaining_deck.pop())
-
-        # Victoire par fold
-        if len(active_players) == 1:
-            winner = active_players[0]
-            winner.stack += self.main_pot
-            self.main_pot = 0
-        else:
-            # Contributions effectives par joueur (limitées à leur total_bet)
-            contrib = {p: p.total_bet for p in self.players}
-            levels = sorted(set(contrib.values()))
-            prev = 0
-
-            # Décode scores Treys (rank7 renvoie -score Treys, donc plus grand = meilleur)
-            b0, b1, b2, b3, b4 = [c.id for c in self.community_cards[:5]]
-            scores = {}
-            for p in active_players:
-                h0, h1 = p.cards[0].id, p.cards[1].id
-                scores[p] = rank7((h0, h1, b0, b1, b2, b3, b4))
-
-            # Itère chaque "couche" de mise
-            for L in levels:
-                cap = L - prev
-                if cap <= 0:
-                    continue
-                # Joueurs éligibles à ce niveau (ont au moins L)
-                elig_all = [p for p in self.players if contrib[p] >= L]
-                # Par pot, seuls les joueurs non-couchés sont au showdown
-                elig_live = [p for p in elig_all if p in active_players]
-
-                pot_amount = cap * len(elig_all)
-                if pot_amount <= 0 or not elig_live:
-                    prev = L
-                    continue
-
-                # Trouve les gagnants de ce pot
-                best = max(scores[p] for p in elig_live)
-                winners = [p for p in elig_live if scores[p] == best]
-
-                share = pot_amount / len(winners)
-                for w in winners:
-                    w.stack += share
-                self.main_pot -= pot_amount
-                prev = L
-
-            # Sécurité en cas d’arrondi
-            if self.main_pot < 1e-9:
-                self.main_pot = 0.0
-
-        self.net_stack_changes = {p.name: (p.stack - self.initial_stacks.get(p.name, 0)) for p in self.players}
-        self.final_stacks = {p.name: p.stack for p in self.players}
-
-
-    def initialize_simulated_players(self, init: GameInit):
-        """
-        Initialise 6 joueurs simulés pour une partie MCCFR.
-        """
-        players = []
-        
-        # Extraction des stacks 
-        stacks = init.stacks_init
-        
-        # Extraction des mises de ma main actuelle
-        total_bets = init.total_bets_init
-
-        # Extraction des mises de la phase courante
-        current_bets = init.current_bets_init
-        
-        # Extraction de l'état actif des joueurs 
-        active_states = init.active_init
-        
-        # Extraction des actions effectuées
-        has_acted_states = init.has_acted_init
-        
-        # ordre fixe par rôle: 0=SB, 1=BB, 2=BTN
-        for i in range(3):
-            player = Player(name=f"Player_{i}", stack=stacks[i])
-            player.role = i                      
-            player.is_active = active_states[i]
-            player.has_folded = not active_states[i]
-            player.is_all_in = player.is_active and (player.stack == 0)
-            player.current_player_bet = current_bets[i]
-            player.total_bet = total_bets[i]
-            player.cards = []
-            player.has_acted = has_acted_states[i]
-            players.append(player)
-        
-        return players
-
-    def round_value(self, value, decimals=4):
-        """Arrondit une valeur à un nombre spécifié de décimales pour éviter les erreurs de précision."""
-        return round(value, decimals)
-    
-    def snapshot(self):
-        players_state = [
-            (p.stack, p.current_player_bet, p.total_bet,
-             p.is_active, p.has_folded, p.is_all_in, p.has_acted)
-            for p in self.players
-        ]
-        return {
-            "current_phase": self.current_phase,
-            "number_raise_this_game_phase": self.number_raise_this_game_phase,
-            "last_raiser": self.last_raiser,
-            "last_raise_amount": self.last_raise_amount,
-            "current_role": self.current_role,
-            "current_maximum_bet": self.current_maximum_bet,
-            "main_pot": self.main_pot,
-            "players": players_state,
-            "community_cards": tuple(self.community_cards),  # IMMUTABLE
-            "remaining_deck":  tuple(self.remaining_deck),   # IMMUTABLE
-            "net_stack_changes": dict(self.net_stack_changes),
-            "final_stacks": dict(self.final_stacks),
-        }
-
-    def restore(self, snap):
-        self.current_phase = snap["current_phase"]
-        self.number_raise_this_game_phase = snap["number_raise_this_game_phase"]
-        self.last_raiser = snap["last_raiser"]
-        self.last_raise_amount = snap["last_raise_amount"]
-        self.current_role = snap["current_role"]
-        self.current_maximum_bet = snap["current_maximum_bet"]
-        self.main_pot = snap["main_pot"]
-
-        for p, st in zip(self.players, snap["players"]):
-            (p.stack, p.current_player_bet, p.total_bet,
-             p.is_active, p.has_folded, p.is_all_in, p.has_acted) = st
-
-        # RE-COPIES NEUVES → on ne réutilise jamais l'objet du snapshot
-        self.community_cards = list(snap["community_cards"])
-        self.remaining_deck  = list(snap["remaining_deck"])
-        self.net_stack_changes = dict(snap["net_stack_changes"])
-        self.final_stacks      = dict(snap["final_stacks"])
-
-
-if __name__ == "__main__":
-    # Setup d'une main très simple (3-handed, stacks even, aucun board au départ)
-    init = GameInit()
-    init.stacks_init = [100, 100, 100]        # SB, BB, BTN
-    init.total_bets_init = [0, 0, 0]
-    init.current_bets_init = [0, 0, 0]
-    init.active_init = [True, True, True]
-    init.has_acted_init = [False, False, False]
-    init.main_pot = 0
-    init.phase = "PREFLOP"
-    init.community_cards = []
-
-    game = PokerGameExpresso(init)
-    game.deal_small_and_big_blind()
-
-    print("=== Nouvelle main (3-handed) ===")
-    print(f"Stacks initiaux: {[p.stack for p in game.players]}  | Pot: {game.main_pot}BB")
-    print("Ordre des rôles: 0=SB, 1=BB, 2=BTN")
-    print(f"Premier à parler: Player_{game.current_role} (role {game.current_role})\n")
-
-    # Politique ultra simple pour démontrer l'exécution :
-    # BTN open 3BB si possible, puis SB et BB foldent => fin de main par fold.
-    while game.current_phase != "SHOWDOWN":
-        current_player = game.players[game.current_role]
-
-        actions_allowed = game.update_available_actions(
-            current_player,
-            game.current_maximum_bet,
-            game.number_raise_this_game_phase,
-            game.main_pot,
-            game.current_phase
-        )
-
-        if DEBUG_OPTI:
-            print(f"[GAME_OPTI] les actions valides sont : {[a for a in actions_allowed]}")
-
-        action = rd.choice(actions_allowed)
-
-        if DEBUG_OPTI:
-            print(f"[GAME_OPTI] {current_player.name} fait l'action {action}")
-
-        game.process_action(current_player, action)
-
-    print("\n=== Showdown (main terminée) ===")
-    for player in game.players:
-        delta = player.stack - game.initial_stacks[player.name]
-        sign = "+" if delta >= 0 else ""
-        print(f"{player.name} (role {player.role}) stack: {player.stack}BB ({sign}{delta}BB)")
-    
-    for player in game.players:
-        print(f"Cartes du joueur {player.name} : [{player.cards[0]}, {player.cards[1]}]")
-
-    print(f"Cartes communes : ")
-    community_cards_str = "["
-    for card in game.community_cards:
-        community_cards_str += f"{card} "
-    community_cards_str += "]"
-    print(community_cards_str)
+    def assert_invariants(self) -> None:
+        if self.street not in STREETS or (not self.terminal and len(self.board) != (0, 3, 4, 5)[STREETS.index(self.street)]):
+            raise ValueError(f"Invalid street/board contract: {self.street}, board={self.board}")
+        if self.button not in self.players or len(self.players) not in (2, 3):
+            raise ValueError(f"Invalid live seats/button: {list(self.players)}, {self.button}")
+        if any(i not in self.players or self.players[i].folded or self.players[i].stack <= EPS for i in self.pending):
+            raise ValueError(f"Invalid pending actors: {self.pending}")
+        if any(p.street_bet > p.contribution + EPS for p in self.players.values()):
+            raise ValueError("Street contributions exceed total hand contributions")
+        values = [self.pot, self.highest, self.last_full_raise]
+        values.extend(v for p in self.players.values() for v in (p.stack, p.street_bet, p.contribution))
+        if any(not math.isfinite(v) or v < -EPS for v in values):
+            raise ValueError(f"Nonfinite/negative chip state: {values}")
+        chips = sum(p.stack for p in self.players.values()) + self.pot
+        if not math.isclose(chips, self.total_chips, abs_tol=EPS):
+            raise ValueError(f"Chip conservation failed: {chips} != {self.total_chips}")
+        if not self.terminal and not math.isclose(sum(p.contribution for p in self.players.values()), self.pot, abs_tol=EPS):
+            raise ValueError("Pot must equal total hand contributions")
+        cards = [c for p in self.players.values() for c in p.cards] + self.board + self.deck
+        if len(cards) != 52 or set(cards) != set(range(52)):
+            raise ValueError(f"Duplicate or missing cards: {cards}")
+        if not self.terminal and self.current_player not in self.pending:
+            raise ValueError(f"Actor {self.current_player} not pending: {self.pending}")

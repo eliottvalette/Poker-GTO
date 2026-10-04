@@ -1,136 +1,103 @@
-# GTO_Bot
+# Poker-GTO
 
-Experimental project around a CFR+ solver (3-handed NLHE), an ML model approximating the policy, and a Next.js UI to explore the results.
+An experimental Expresso training environment with a Python NLHE engine,
+persistent 3-player tournaments, a tabular external-sampling MCCFR reference,
+and a small Deep CFR pipeline. **Training readiness: SMOKE-TRAIN READY.**
+The current implementation has not solved the full 25 BB tournament and does
+not establish a GTO policy.
 
-## Overview
-- External-sampling CFR+ (3-handed, minimal-raise) in `cfr_solver.py` relies on `poker_game_expresso.PokerGameExpresso` and compact infoset keys in `infoset.py`.
-- The average policy is serialized as compact gzipped JSON (bitmask + quantized values) in `policy/avg_policy.json.gz` and duplicated for the UI in `ui/public/avg_policy.json.gz`.
-- A PyTorch model (`ml/model.py`) is trained to approximate this policy with `ml/train.py`. Visualizations (e.g., preflop heatmap) are in `ml/viz.py`.
-- The UI (`ui/`) is a Next.js/TypeScript app that loads the policy from `public/avg_policy.json.gz`.
+All chip amounts are actual big blinds: SB = 0.5, BB = 1.0, and initial stacks
+are `(25.0, 25.0, 25.0)`. Chips persist between hands, positions rotate,
+eliminated players leave the hand engine, and play transitions to heads-up.
+The tournament objective is winning the tournament; hand chip-delta utility
+is a separately declared objective for controlled validation subgames.
 
-## Screenshots
+## Local Test Live
 
-### Preflop Heatmap
-The preflop range visualization (aggregate raise/all-in vs fold ratio across 13x13 hand grid).
+Use the existing Python and Node environments. The Python environment needs
+PyTorch and Treys; the UI dependencies are declared in `ui/package.json`.
+No imports launch training or install dependencies.
 
-![Preflop Heatmap](heatmap.png)
+Start the application with one command:
 
-### Live Test Board
-Interactive live testing table in the web UI where you can play against the GTO policy.
-
-![Live Test Board](board.png)
-
-## Python setup (core + ML)
-```bash
-# Create a venv and install dependencies (example)
-python -m venv .venv
-source .venv/bin/activate
-pip install torch numpy pandas treys tqdm seaborn matplotlib
-```
-
-## Run CFR+ training
-`cfr_solver.py` trains the solver, saves the policy, and exports a copy for the UI.
-
-```bash
-python cfr_solver.py
-```
-
-For the faster parallel runner, use:
-
-```bash
-python scripts/parallel_cfr.py \
-  --save-policy policy/avg_policy.json.gz \
-  --save-ui-copy ui/public/avg_policy.json.gz
-```
-
-Default parallel settings are tuned for the current benchmarked tradeoff:
-- `mode=sync`
-- `workers=os.cpu_count()`
-- `total_iterations=1_000_000`
-- `iterations_per_worker=1_000`
-- no automatic warm-start; pass `--warm-start policy/avg_policy.json.gz` explicitly if you want to preserve/continue an existing average policy
-
-Use `--mode independent` for maximum throughput when you accept a more aggressive approximation, or `--mode sequential` for baseline benchmarks.
-Main outputs:
-- `policy/avg_policy.json.gz`
-- `ui/public/avg_policy.json.gz`
-- `policy/avg_policy.csv` (via `stats_policy.extraction_policy_data()`)
-
-Key parameters (edit in `cfr_solver.py`):
-- `iterations` (default 1_000_000)
-- `stacks` (e.g., `(100, 100, 100)`)
-- `SAVE_EVERY` for checkpoints (0 = disabled)
-
-## Analyze and export to CSV
-```bash
-python stats_policy.py  # reads policy/avg_policy.json.gz and writes policy/avg_policy.csv
-```
-
-`stats_policy.py` reconstructs action distributions, decodes infoset keys, and produces a CSV for quick exploration.
-
-## Train the ML model on the policy
-```bash
-cd ml
-python train.py  # reads ../policy/avg_policy.json.gz, trains, and saves trained_policy_model.pth
-```
-Notes:
-- Input: 224-dim one-hot features (phase, role, hand 169, board 31, 3 normalized scalars, hero-vs-board 11)
-- Output: 5 canonical actions `FOLD, CHECK, CALL, RAISE, ALL-IN`
-- Loss: MSE over distributions (model outputs softmax)
-
-## Visualizations (preflop heatmap)
-From `ml/`:
-```bash
-python viz.py  # produces ml/preflop_heatmap.png using trained_policy_model.pth
-```
-You can adjust `role_id` and bucketing parameters in `ml/viz.py`.
-
-## Next.js UI
-The UI lives in `ui/`. It reads `public/avg_policy.json.gz`.
-
-```bash
+```sh
 cd ui
-npm install
-npm run dev  # start UI in development mode
+npm run dev
 ```
 
-Key sources in `ui/src/`:
-- `lib/policy.ts`, `lib/infoset.ts`, `lib/game.ts`: parsing/logic
-- `components/` and `app/` for pages and widgets
+This command starts the Python engine and Next.js together, waits until the
+engine is listening, and stops both on exit. `npm run start` does the same for
+the production build. The Python executable is the repository's `.venv/bin/python`; set
+`POKER_PYTHON` explicitly to use a different existing environment. No packages
+are installed automatically. Startup errors are displayed in the terminal.
 
-## Policy format (compact)
-Each entry in `avg_policy.json.gz` is:
-```json
-{
-  "<infoset_key_u64>": {
-    "policy": [bitmask, q1, q2, ...],
-    "visits": <int capped>
-  }
-}
-```
-- `bitmask`: which actions (by index) are present
-- `q_i`: quantized integers (0..255), sum adjusted to 255
-- Rebuild: `prob[action] = q_i / sum(q)` in the order of set bits
+Open the local Next.js URL. The application opens on **Test Live**. The browser
+sends canonical action IDs through the same-origin Next.js proxy to Python;
+Test Live uses Python for all poker transitions and preserves the existing
+visual components and layout. Test Live displays
+persistent stacks, positions, hand number, elimination, tournament result, and
+server-computed legal bet targets. Scripted opponents are smoke-test opponents.
 
-Infoset fields are packed into a `u64` (see `infoset.py`):
-- `PHASE` (3 bits), `ROLE` (2), `HAND` (8, 13x13 index), `BOARD` (5), `POT` (8), `RATIO` (8), `SPR` (8), `HEROBOARD` (4)
+Without a compatible average-policy checkpoint the UI explicitly reports that
+policy information is unavailable. Overview and Cas précis retain the original
+analysis surfaces, explicitly labeled as the former 50 BB single-hand policy;
+that legacy data does not drive tournament play. To load an explicitly selected new-format
+checkpoint, set `POKER_AVERAGE_POLICY` before starting the Python service.
+Invalid checkpoints fail to load. Loaded neural probabilities are labeled
+experimental with uncalibrated confidence. The old saved policy and
+`ml/trained_policy_model.pth` are never selected automatically.
 
-## Directory structure (excerpt)
+## Architecture
+
+```text
+TournamentState -> HandState -> canonical actions and Observation
+                                  |
+                         recursive external sampling
+                                  |
+                 advantage memories + strategy memory
+                                  |
+             frozen worker snapshots -> central CPU trainer
+                                  |
+               advantage networks + average-policy network
+                                  |
+                    Python policy query -> Test Live
 ```
-GTO_Bot/
-  cfr_solver.py                # CFR+ training, policy export
-  poker_game_expresso.py       # 3-handed env + betting/pot logic
-  infoset.py                   # Bucketing, u64 pack/unpack, 169 mapping
-  policy.py                    # Load/sample compact average policy
-  stats_policy.py              # Decode policy -> CSV and stats
-  utils.py                     # Hand evaluation (Treys) and range I/O
-  ml/
-    model.py                   # PyTorch network
-    train.py                   # Training pipeline on policy
-    viz.py                     # Heatmaps and visualizations
-  policy/
-    avg_policy.json.gz         # Average policy (solver output)
-    avg_policy.csv             # Tabular export
-  ui/                          # Next.js/TypeScript app
-    public/avg_policy.json.gz  # Policy copy for the UI
+
+The hand engine accepts arbitrary legal raise-to amounts. Solvers use a masked,
+deduplicated 13-action abstraction with preflop multiples and postflop pot
+fractions. Observations retain exact hero/board cards, numeric BB features,
+full public betting history, and the player's recall across tournament hands.
+
+See [the migration audit](docs/audit.md),
+[implementation and validation details](docs/implementation.md), and
+[legacy isolation](legacy/README.md). The old packed infosets, rollout solver,
+policy distillation, and stale-regret merge implementation are archival only.
+
+## Validation
+
+From the repository root:
+
+```sh
+python3 -m unittest discover -s tests -v
+python3 -m scripts.smoke_validation
 ```
+
+From `ui/`:
+
+```sh
+./node_modules/.bin/tsc --noEmit
+npm run lint
+npm run build
+```
+
+With the Python service and Next.js server running, from the repository root:
+
+```sh
+node tests/ui_proxy_smoke.mjs
+```
+
+[Recorded smoke results](docs/smoke-results.json) include a two-iteration CPU
+Deep CFR validation on a controlled river subgame and a bounded full-tournament
+probe. The probe exhausted its traversal budget and raised an error rather than
+inventing a terminal value. Full tournament training requires further work on
+unbounded fold cycles and traversal growth, plus a cost preflight and approval.

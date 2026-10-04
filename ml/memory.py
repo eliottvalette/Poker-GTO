@@ -1,0 +1,162 @@
+"""Bounded Algorithm R reservoir sampling, with lossless versioned persistence."""
+from __future__ import annotations
+from dataclasses import asdict, dataclass, fields, is_dataclass
+import gzip
+import json
+import math
+from pathlib import Path
+import random
+import sys
+import os
+import tempfile
+from actions import ACTION_IDS
+from cfr_solver import validate_strategy
+from infoset import STATE_VERSION, Observation
+
+MEMORY_VERSION = 3
+DEFAULT_BYTE_BUDGET = 64 * 1024 * 1024
+
+
+def sample_bytes(sample: TrainingSample) -> int:
+    """Account Python-owned data recursively; count shared objects once per sample.
+
+    Entries are accounted independently, so sharing between entries cannot hide
+    retained data. This excludes allocator overhead, tensors and process RSS.
+    """
+    visited: set[int] = set()
+
+    def size(value: object) -> int:
+        if id(value) in visited:
+            return 0
+        visited.add(id(value))
+        total = sys.getsizeof(value)
+        if is_dataclass(value) and not isinstance(value, type):
+            total += sys.getsizeof(value.__dict__)
+            total += sum(size(getattr(value, f.name)) for f in fields(value))
+        elif isinstance(value, (tuple, list)):
+            total += sum(size(item) for item in value)
+        elif isinstance(value, dict):
+            total += sum(size(k) + size(v) for k, v in value.items())
+        return total
+
+    return size(sample)
+
+
+@dataclass(frozen=True)
+class TrainingSample:
+    iteration: int
+    player: int
+    state: Observation
+    target: tuple[float, ...]
+    weight: float
+    kind: str
+    model_version: int
+
+    def validate(self) -> None:
+        if self.kind not in ("advantage", "strategy") or self.iteration < 1 or self.model_version != self.iteration - 1:
+            raise ValueError(f"Invalid sample metadata: {self.kind}, iteration={self.iteration}, version={self.model_version}")
+        if self.player != self.state.hero or self.state.version != STATE_VERSION:
+            raise ValueError(f"Sample perspective/schema mismatch: player={self.player}, state={self.state}")
+        if len(self.target) != len(ACTION_IDS) or any(not math.isfinite(v) for v in self.target):
+            raise ValueError(f"Invalid target vector: {self.target}")
+        if not math.isfinite(self.weight) or self.weight <= 0:
+            raise ValueError(f"Invalid sample weight {self.weight}")
+        if any(v != 0 and not m for v, m in zip(self.target, self.state.legal_mask)):
+            raise ValueError(f"Nonzero illegal target: {self.target}")
+        if self.kind == "strategy":
+            validate_strategy(self.target, self.state.legal_mask)
+
+
+class ReservoirMemory:
+    def __init__(self, capacity: int, seed: int, kind: str, objective: str,
+                 byte_budget: int = DEFAULT_BYTE_BUDGET):
+        if (not isinstance(capacity, int) or isinstance(capacity, bool) or capacity < 1
+                or kind not in ("advantage", "strategy") or objective not in ("hand_chip_delta", "tournament_winner")):
+            raise ValueError(f"Invalid memory contract: {capacity}, {kind}, {objective}")
+        if not isinstance(byte_budget, int) or isinstance(byte_budget, bool) or byte_budget < 1:
+            raise ValueError(f"Memory byte_budget must be a positive integer: {byte_budget}")
+        self.capacity, self.kind, self.objective = capacity, kind, objective
+        self.byte_budget = byte_budget
+        self.used_bytes = 0
+        self._sample_sizes: list[int] = []
+        self.rng = random.Random(seed)
+        self.seen = 0
+        self.samples: list[TrainingSample] = []
+
+    def add(self, sample: TrainingSample) -> None:
+        sample.validate()
+        if sample.kind != self.kind or sample.state.objective != self.objective:
+            raise ValueError(f"Memory expects {self.kind}/{self.objective}, received {sample.kind}/{sample.state.objective}")
+        size = sample_bytes(sample)
+        if size > self.byte_budget:
+            raise MemoryError(f"Sample requires {size} accounted bytes, memory budget={self.byte_budget}")
+        rng_state = self.rng.getstate()
+        index = len(self.samples) if len(self.samples) < self.capacity else self.rng.randrange(self.seen + 1)
+        replaced_bytes = self._sample_sizes[index] if index < len(self.samples) else 0
+        next_bytes = self.used_bytes + size - replaced_bytes
+        if index < self.capacity and next_bytes > self.byte_budget:
+            self.rng.setstate(rng_state)
+            raise MemoryError(f"Reservoir update requires {next_bytes} accounted bytes, budget={self.byte_budget}; "
+                              "increase the explicit budget or reduce capacity")
+        self.seen += 1
+        if len(self.samples) < self.capacity:
+            self.samples.append(sample)
+            self._sample_sizes.append(size)
+            self.used_bytes = next_bytes
+        else:
+            if index < self.capacity:
+                self.samples[index] = sample
+                self._sample_sizes[index] = size
+                self.used_bytes = next_bytes
+
+    def save(self, path: str | Path) -> None:
+        path = Path(path)
+        descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+        os.close(descriptor)
+        try:
+            with gzip.open(temporary, "wt") as file:
+                # Stream entries instead of constructing a second full replay.
+                metadata = {"version": MEMORY_VERSION, "state_version": STATE_VERSION,
+                            "actions": ACTION_IDS, "capacity": self.capacity, "kind": self.kind,
+                            "objective": self.objective, "seen": self.seen, "byte_budget": self.byte_budget,
+                            "rng": self.rng.getstate()}
+                file.write(json.dumps(metadata, allow_nan=False)[:-1] + ', "samples":[')
+                for index, sample in enumerate(self.samples):
+                    if index:
+                        file.write(",")
+                    json.dump(asdict(sample), file, allow_nan=False)
+                file.write("]}")
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+    @classmethod
+    def load(cls, path: str | Path) -> ReservoirMemory:
+        with gzip.open(path, "rt") as file:
+            raw = json.load(file)
+        if raw.get("version") != MEMORY_VERSION or raw.get("state_version") != STATE_VERSION or raw.get("actions") != list(ACTION_IDS):
+            raise ValueError(f"Incompatible memory schema at {path}")
+        expected = {"version", "state_version", "actions", "capacity", "kind", "objective", "seen", "rng", "samples", "byte_budget"}
+        if set(raw) != expected or not isinstance(raw["samples"], list):
+            raise ValueError(f"Invalid memory fields at {path}: {sorted(raw)}")
+        memory = cls(raw["capacity"], 0, raw["kind"], raw["objective"], raw["byte_budget"])
+        if (not isinstance(raw["seen"], int) or isinstance(raw["seen"], bool)
+                or raw["seen"] < 0 or len(raw["samples"]) != min(memory.capacity, raw["seen"])):
+            raise ValueError(f"Invalid reservoir counts at {path}")
+        for item in raw["samples"]:
+            expected_sample = {f.name for f in fields(TrainingSample)}
+            if not isinstance(item, dict) or set(item) != expected_sample:
+                raise ValueError(f"Invalid sample fields at {path}: {item}")
+            o = item["state"]
+            if not isinstance(o, dict) or set(o) != {f.name for f in fields(Observation)}:
+                raise ValueError(f"Invalid observation fields at {path}: {o}")
+            obs = Observation(o["version"], o["hero"], o["objective"], tuple(o["cards"]), o["street"],
+                              tuple(o["numeric"]), tuple(o["legal_mask"]), tuple(tuple(e) for e in o["history"]), o["recall"])
+            memory.add(TrainingSample(item["iteration"], item["player"], obs, tuple(item["target"]),
+                                      item["weight"], item["kind"], item["model_version"]))
+        memory.seen = raw["seen"]
+        def tuples(value):
+            return tuple(tuples(v) for v in value) if isinstance(value, list) else value
+        memory.rng.setstate(tuples(raw["rng"]))
+        return memory

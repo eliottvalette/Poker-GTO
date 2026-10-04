@@ -20,24 +20,43 @@ import {
   SidebarProvider,
   SidebarTrigger,
   SidebarInset,
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 type PolicyEntry = { dist: Record<string, number>, visits: number };
 type Policy = Record<string, PolicyEntry>;
 
-// Decode l'entrée compacte {policy:[mask,q...], visits:n} -> {action: proba}
-function decodeCompact(entry: {policy:number[], visits:number}): Record<string, number> {
+function CollapsedNavigationTrigger() {
+  const { isMobile, state } = useSidebar();
+  if (!isMobile && state === "expanded") return null;
+  return <div className="px-4 pt-3"><SidebarTrigger /></div>;
+}
+
+// Decode the legacy compact policy; this format cannot drive tournament play.
+function decodeCompact(entry: {policy:number[], visits:number}, key: string): Record<string, number> {
+  if (!entry || !Array.isArray(entry.policy) || !Number.isInteger(entry.visits) || entry.visits < 0) {
+    throw new Error(`Invalid legacy policy entry at key ${key}`);
+  }
   const arr = entry.policy;
-  const mask = arr?.[0] ?? 0;
+  const mask = arr[0];
+  if (!Number.isInteger(mask) || mask < 1 || mask > 31) {
+    throw new Error(`Invalid legacy action mask ${mask} at key ${key}; expected 1..31`);
+  }
   const qs = arr.slice(1);
+  const actionCount = [0, 1, 2, 3, 4].filter(i => (mask >> i) & 1).length;
+  if (qs.length !== actionCount || qs.some(q => !Number.isFinite(q) || q < 0)) {
+    throw new Error(`Invalid legacy action weights at key ${key}; expected ${actionCount} nonnegative values`);
+  }
   const total = qs.reduce((a,b)=>a+b,0);
-  if (!mask || total <= 0) return {};
+  if (!Number.isFinite(total) || total <= 0) {
+    throw new Error(`Invalid legacy action weight total ${total} at key ${key}`);
+  }
   const ACTIONS = ["FOLD","CHECK","CALL","RAISE","ALL-IN"] as const;
   const dist: Record<string, number> = {};
   let qi = 0;
   for (let i=0;i<ACTIONS.length;i++) {
     if ((mask >> i) & 1) {
-      const q = qs[qi++] ?? 0;
+      const q = qs[qi++];
       dist[ACTIONS[i]] = q / total;
     }
   }
@@ -47,27 +66,36 @@ function decodeCompact(entry: {policy:number[], visits:number}): Record<string, 
 
 export default function Page() {
   const [policy, setPolicy] = useState<Policy | null>(null);
+  const [policyLoadError, setPolicyLoadError] = useState<string | null>(null);
   const [phaseIdx, setPhaseIdx] = useState<number>(0);
   const [roleIdx, setRoleIdx] = useState<number>(0);
   const [heatmapMode, setHeatmapMode] = useState<"action" | "visits" | false>("action");
   const [detailedMode, setDetailedMode] = useState(false);
-  const [mainTab, setMainTab] = useState<"overview"|"case"|"test">("overview");
+  const [mainTab, setMainTab] = useState<"overview"|"case"|"test">("test");
   
   useEffect(() => {
     (async () => {
       const res = await fetch("/avg_policy.json.gz");
+      if (!res.ok) {
+        throw new Error(`Legacy policy request failed: HTTP ${res.status} ${res.statusText}`);
+      }
       const buf = await res.arrayBuffer();
       const jsonText = new TextDecoder("utf-8").decode(inflate(new Uint8Array(buf)));
       const raw: Record<string, {policy:number[], visits:number}> = JSON.parse(jsonText);
+      if (!raw || typeof raw !== "object" || Array.isArray(raw) || Object.keys(raw).length === 0) {
+        throw new Error("Invalid legacy policy document: expected a nonempty packed-key policy object");
+      }
       const decoded: Policy = Object.fromEntries(
-        Object.entries(raw).map(([k, v]) => [k, {
-          dist: decodeCompact(v),
-          visits: v.visits
-        }])
+        Object.entries(raw).map(([k, v]) => {
+          if (!/^\d+$/.test(k)) throw new Error(`Invalid legacy packed infoset key: ${k}`);
+          return [k, { dist: decodeCompact(v, k), visits: v.visits }];
+        })
       );
       
       setPolicy(decoded);
-    })().catch(console.error);
+    })().catch((error: unknown) => {
+      setPolicyLoadError(error instanceof Error ? error.message : String(error));
+    });
   }, []);
   
 
@@ -81,9 +109,9 @@ export default function Page() {
       for (const [kStr, {dist, visits: visitCount}] of Object.entries(policy)) {
         const f = unpackInfosetKeyDense(kStr);
         if (f.phase !== phaseIdx || f.role !== roleIdx) continue;
-        if (f.hand < 0 || f.hand >= 169) continue; // garde-fou
+        if (f.hand < 0 || f.hand >= 169) continue;
         const probs = normalize(dist);
-        // Pondérer par le nombre de visites
+        // Weight the historical distribution by its recorded visit count.
         for (const a of ACTIONS) sums[f.hand][a] += probs[a] * visitCount;
         totalVisits[f.hand] += visitCount;
       }
@@ -113,6 +141,7 @@ export default function Page() {
           </div>
         </SidebarHeader>
         <SidebarContent className="p-4 space-y-4">
+          {mainTab !== "test" && (
           <Card className="bg-muted/30">
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -147,8 +176,9 @@ export default function Page() {
               </div>
             </CardContent>
           </Card>
+          )}
 
-          {/* Choix de page principale */}
+          {/* Main view selection */}
           <Card className="bg-muted/30">
             <CardContent className="space-y-2">
               <div className="flex flex-col gap-2">
@@ -161,8 +191,16 @@ export default function Page() {
         </SidebarContent>
       </Sidebar>
 
-      <SidebarInset>
+      <SidebarInset className="min-w-0">
+        <CollapsedNavigationTrigger />
         <main className="py-3 px-4 space-y-4">
+          {mainTab !== "test" && (
+            <div className="text-sm text-muted-foreground">
+              Legacy analysis: these views use the former 50 BB, single-hand, five-action policy.
+              This representation is incompatible with the new 25 BB tournament policy and is not used in Test Live.
+              {policyLoadError && <div role="alert">Legacy policy unavailable: {policyLoadError}</div>}
+            </div>
+          )}
           {mainTab === "overview" && (
             <Card className="gap-1">
               <CardHeader className="pb-1">
@@ -200,7 +238,7 @@ export default function Page() {
                 </div>
               </CardHeader>
               <CardContent>
-                {!policy ? <div className="text-muted-foreground">Chargement de <code>avg_policy.json.gz</code>…</div> : (
+                {!policy ? <div className="text-muted-foreground">{policyLoadError ? "Legacy policy unavailable." : <>Chargement de <code>avg_policy.json.gz</code>…</>}</div> : (
                   <>
                     <Legend heatmapMode={heatmapMode} detailed={detailedMode} />
                     <div className="mt-1">
@@ -217,13 +255,13 @@ export default function Page() {
             </Card>
           )}
 
-          {mainTab === "case" && (
+          {mainTab === "case" && !policyLoadError && (
             <PreciseCaseCard policy={policy} />
           )}
 
-          {mainTab === "test" && (
-            <TestTable policy={policy} />
-          )}
+          <div hidden={mainTab !== "test"}>
+            <TestTable />
+          </div>
         </main>
       </SidebarInset>
     </SidebarProvider>

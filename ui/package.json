@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "node scripts/run-app.mjs dev",
     "build": "next build --turbopack",
-    "start": "next start",
+    "start": "node scripts/run-app.mjs start",
     "lint": "eslint"
   },
   "dependencies": {
