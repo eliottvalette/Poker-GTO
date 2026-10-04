@@ -125,25 +125,48 @@ fail explicitly. Unsupported player counts return unavailable coverage.
 A supported count does not prove that a particular poker state was covered or
 that the approximation is accurate; the UI labels neural output experimental.
 
-## UI ownership
+## Browser runtime and cross-language parity
 
-`server.py` runs a loopback-only Python service with version-2 serialized table
-views and commands. Views include persistent tournament state, public history,
-hero cards, cards actually exposed at showdown, and server-computed action
-amounts. A hand won by folds does not expose opponents' cards. Hidden
-opponent cards and the future deck are not sent. Revision checking rejects stale
-commands; candidate transitions are staged before a session is updated.
+The frontend is a static Next.js export (`output: "export"`), built into
+`ui/out/`. `npm run dev` runs Next.js alone; `npm run build` then `npm start`
+serves the export through `ui/scripts/serve-static.mjs`. There is no live Python
+engine service, API route, or training process in the frontend runtime.
+Development `.next-dev` and production `.next` output directories are separate.
+The superseded `server.py`, `tests/test_service.py`, API proxy route, and
+`tests/ui_proxy_smoke.mjs` are retired.
 
-The Next.js `/api/table` route proxies same-origin JSON commands to the local
-engine. `game.ts` contains the live table contract and validation, without a
-second poker rules implementation. Thus live engine parity is achieved through
-authority rather than independent TypeScript simulation. `TestTable.tsx`
-preserves the original visual components and layout while rendering persistent
-tournaments and canonical actions; `page.tsx` defaults to Test Live. Overview
-and Cas précis retain their original analysis views and packed-policy helpers
-in `infoset.ts` and `policy.ts`, explicitly marked as legacy 50 BB single-hand
-analysis. Those helpers and data never determine Test Live transitions or
-probabilities; no new neural policy is forced into a 169-hand heatmap.
+`ui/src/lib/poker/engine.ts`, `actions.ts`, `evaluator.ts`, and `observation.ts`
+implement the browser hand/tournament, legal actions, card evaluation, and exact
+state schema. Python remains the offline training reference. The two languages
+are validated against checked-in fixtures generated from Python rather than
+allowed to evolve as untested independent rule interpretations.
+`tests/browser_engine.test.ts` compares every transition's player order/roles,
+stacks, street/total contributions, pot, actor, board, raise context, legal
+amounts, history, terminal awards, elimination, button, and complete rich
+observations including parsed recall. It covers 33 full hands (18 seeded random
+deals and focused rule regressions), nine 3-player-to-HU transitions spanning
+all button/eliminated-seat combinations, every hand category, and 100 bounded
+seven-card evaluator comparisons. The 46 parity tests passed, and the checked-in
+fixtures reproduce exactly from current Python. Evaluator ordering is compared
+rather than assuming both languages use identical numeric rank codes.
+
+`BrowserTable` in `game.ts` drives local play and scripted opponents.
+`TestTable.tsx` preserves the original visual components and layout while
+rendering persistent tournaments and canonical actions; `page.tsx` defaults to
+Test Live. Overview and Cas précis retain their original analysis views and
+packed-policy helpers, explicitly marked as legacy 50 BB single-hand analysis.
+Those helpers and data never determine Test Live transitions or probabilities.
+A new neural policy is not forced into a 169-hand heatmap.
+
+`ml/export_onnx.py` exports the explicitly chosen average network as a singleton
+batch ONNX graph with dynamic full-history length, plus a strict manifest
+binding the bytes by SHA256. Export validates original and extended-history CPU
+inference against PyTorch before publishing either file. Browser inference in
+`onnx-policy.ts` uses locally served ONNX Runtime WebAssembly, one CPU thread,
+and no GPU. User-selected model/manifest pairs must match architecture,
+state/action/numeric/history schemas, objective, player count, and digest.
+Missing coverage is explicit; malformed outputs fail rather than silently
+returning a uniform distribution. No trained tournament policy is bundled.
 
 ## Important source changes
 
@@ -166,49 +189,69 @@ probabilities; no new neural policy is forced into a 169-hand heatmap.
 | `scripts/estimate_infoset_coverage.py` | Coverage queries against the new state contract |
 | `evaluation.py` | Bounded conditional-subgame policy and infoset-consistent best response |
 | `scripts/smoke_validation.py` | Small deterministic validation and cost evidence |
-| `server.py` | Authoritative local table service and average-policy queries |
-| `ui/src/app/api/table/route.ts` | Same-origin proxy to the loopback engine |
-| `ui/scripts/run-app.mjs` | Starts the existing repository Python environment and Next.js together; stops both on exit |
-| `ui/src/lib/game.ts` | Live serialized contract and response validation |
+| `ml/export_onnx.py` | Offline validated average-policy ONNX export with SHA256 manifest |
+| `ui/src/lib/poker/{engine,actions,evaluator,observation}.ts` | Parity-tested standalone browser rules and observations |
+| `ui/src/lib/onnx-policy.ts` | Strict optional CPU WASM model loading and policy queries |
+| `ui/scripts/{prepare-onnx,serve-static}.mjs` | Local runtime asset staging and static export hosting |
+| `ui/src/lib/game.ts` | Browser-owned table/controller and scripted opponents |
 | `ui/src/lib/{infoset,policy}.ts` | Retained legacy-only secondary analysis helpers |
 | `ui/src/components/TestTable.tsx` | Persistent tournament interaction |
 | `ui/src/app/page.tsx` | Test Live default and secondary analysis surfaces |
-| `tests/` | Focused rules, solver, neural and service regressions |
+| `tests/generate_browser_fixtures.py` | Importable deterministic Python fixture generator |
+| `tests/fixtures/browser_parity.json` | Canonical full-transition and observation fixtures |
+| `tests/browser_engine.test.ts` | Cross-language rules, state, history and evaluator parity |
+| `tests/browser_table.test.ts` | Browser controller, RNG, hidden cards and complete tournament regressions |
+| `tests/run_browser_tests.mjs` | Strict isolated compile and 55-test browser suite |
+| `tests/ui_browser_smoke.mjs` | Static browser and selected ONNX inference check through Chrome CDP |
+| `tests/ui_build_isolation.mjs` | Development refresh regression during production builds |
+| `tests/test_onnx_export.py` | Small CPU export parity and manifest regressions |
+| `tests/` | Focused rules, solver and neural regressions |
 | `legacy/` | Isolated former implementation; see its README |
 
 ## Validation evidence
 
-The final Python verification passed 39 tests in 2.493 seconds. TypeScript
-typecheck and lint also passed after integrating the original-design live table.
+Final verification passed 36 Python tests in 4.073 seconds, 55 browser tests,
+and TypeScript typecheck, lint, and static production build. The browser suite
+includes 46 cross-language parity tests and nine browser-table/controller tests.
 
 | Command | Recorded result |
 | --- | --- |
-| `python3 -m unittest discover -s tests -v` | Passed: 39 tests, 2.493 seconds |
+| `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` | Passed: 36 tests, 4.073 seconds |
 | `python3 -m scripts.smoke_validation` | Two tiny CPU iterations completed; full-root probe failed explicitly at its budget |
+| `node tests/run_browser_tests.mjs` | Passed: 55 tests; strict temporary TypeScript compilation cleaned afterward |
 | `cd ui` then `./node_modules/.bin/tsc --noEmit` | Passed |
 | `cd ui` then `npm run lint` | Passed |
-| `cd ui` then `npm run build` | Passed: final live-table integration compiled and routes generated |
-| `node tests/ui_proxy_smoke.mjs` with local services running | Passed: 8 commands, 8 hands, HU transition, player 0 wins, 75 BB conserved; cross-origin request rejected with 403; session closed |
+| `cd ui` then `npm run build` | Passed: static export generated in `ui/out/` |
+| `node tests/ui_build_isolation.mjs` with development on port 3100 | Passed: 25 development refresh checks during concurrent production build |
 
-A local Chrome rendering check caught and corrected an attempted numeric
-format of unavailable in-progress hand results. Pending results now display
-`En cours`. The corrected production page rendered Test Live with the existing
-sidebar, poker table, cards, results/P&L panel, and history. This desktop check
-does not establish exhaustive responsive-layout or browser coverage.
+A real Chrome check loaded the static export with no Python listener on port
+8765, imported a temporary untrained ONNX validation fixture, and performed ten
+interactions. Desktop 1440 px and mobile 390/320 px viewports had no horizontal
+overflow, browser errors, or API requests. Observed application fetches were
+legacy `avg_policy.json.gz` analysis data and locally served WASM assets.
+This verifies browser functionality and inference plumbing; untrained fixture
+probabilities provide no strategic performance evidence.
 
-The integrated `npm run dev -- --hostname 127.0.0.1 --port 3100` startup was
-also verified with the proxy smoke test: no separately started Python service
-was required. The launcher uses `.venv/bin/python` explicitly because a Node
-subprocess resolved a different Python installation without Treys. An explicit
-`POKER_PYTHON` override is available; there is no dependency installation or
-interpreter fallback. The engine binds successfully before announcing
-readiness, and startup failures stop the application.
+`tests/ui_browser_smoke.mjs` provides the repeatable Chrome CDP check. Start
+Chrome remote debugging and the static UI separately, then set
+`POKER_CDP_ORIGIN`, `POKER_UI_ORIGIN`, `POKER_ONNX_MODEL`, and
+`POKER_ONNX_MANIFEST` to those exact endpoints and artifact paths.
+`POKER_SCREENSHOT_DIR` optionally captures screenshots. The checked browser
+path requires no Python process; offline export and fixture generation are
+separate operations. No large training run was launched.
+
+The browser runner uses the existing TypeScript compiler and reads canonical
+fixtures from the repository working directory. The fixture generator is an
+importable module and does not add a Python CLI. Python fixtures are used
+offline in tests, never fetched or executed by the browser. No prior
+Python-service/proxy validation is treated as evidence for the standalone
+runtime.
 
 Tests cover betting and reopen rights, insufficient calls, side pots/ties,
 chip/card invariants, positions/HU/tournament lifecycle, action sizing,
 observations, recursive deeper traverser updates, exact controlled values,
 averaging, network shapes/masks, memory persistence, frozen worker generation,
-and service state/error handling. A deterministic test compares seeded
+and explicit invalid-state/error handling. A deterministic test compares seeded
 single-worker and two-worker generated results directly for both initial
 uniform and trained frozen snapshots. This establishes the
 sample-generation contract, not large-scale statistical performance.

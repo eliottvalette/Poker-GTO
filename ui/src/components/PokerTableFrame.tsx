@@ -63,7 +63,7 @@ export default function PokerTableFrame({
       {/* Seats and hole cards */}
       <div className={`${styles.leftSeat} absolute left-[8%] top-[12%] flex flex-col items-center`}>
         <SeatChip {...left} />
-        <StreetBet seat={left} className={styles.opponentBet} />
+        <StreetBet seat={left} className={styles.leftBet} />
         {left.cards?.length ? (
           <div className="mt-2 flex gap-1">
             {left.cards.map((t, i) => <PlayingCard key={i} text={t} active={left.active} phase={phase} />)}
@@ -73,7 +73,7 @@ export default function PokerTableFrame({
 
       <div className={`${styles.rightSeat} absolute right-[8%] top-[12%] flex flex-col items-center`}>
         <SeatChip {...right} />
-        <StreetBet seat={right} className={styles.opponentBet} />
+        <StreetBet seat={right} className={styles.rightBet} />
         {right.cards?.length ? (
           <div className="mt-2 flex gap-1">
             {right.cards.map((t, i) => <PlayingCard key={i} text={t} active={right.active} phase={phase} />)}

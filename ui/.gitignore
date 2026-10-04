@@ -15,7 +15,9 @@
 
 # next.js
 /.next/
+/.next-dev/
 /out/
+/public/onnxruntime/
 
 # production
 /build

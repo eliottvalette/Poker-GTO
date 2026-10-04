@@ -2,7 +2,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { cardLabel, closeTable, tableRequest, type TableView } from "@/lib/game";
+import { cardLabel, BrowserTable, type TableView } from "@/lib/game";
+import { loadAveragePolicy, PolicyCoverageError, type LoadedAveragePolicy } from "@/lib/onnx-policy";
+import { observe } from "@/lib/poker/observation";
 import PokerTableFrame from "@/components/PokerTableFrame";
 import styles from "./TestTable.module.css";
 
@@ -23,7 +25,23 @@ export default function TestTable() {
   const [pnlBaseline, setPnlBaseline] = useState(0);
   const locked = useRef(false);
   const started = useRef(false);
-  const currentSession = useRef<string | null>(null);
+  const table = useRef<BrowserTable | null>(null);
+  const model = useRef<LoadedAveragePolicy | null>(null);
+  const modelFiles = useRef<HTMLInputElement | null>(null);
+
+  async function viewWithPolicy(candidate: BrowserTable, policy = model.current): Promise<TableView> {
+    const view = candidate.view();
+    if (policy && !view.hand_terminal && view.actor === candidate.hero) {
+      try {
+        view.policy = { status: "experimental", reason: "Loaded average policy; equilibrium quality has not been certified",
+          probabilities: await policy.query(observe(candidate.tournament)) };
+      } catch (cause) {
+        if (!(cause instanceof PolicyCoverageError)) throw cause;
+        view.policy.reason = cause.message;
+      }
+    }
+    return view;
+  }
 
   const newTournament = useCallback(async (hero: Seat) => {
     if (locked.current) return;
@@ -31,13 +49,12 @@ export default function TestTable() {
     setBusy(true);
     setError(null);
     try {
-      const next = await tableRequest("new", { seed: Date.now(), hero, opponents: "random" });
-      const previousSession = currentSession.current;
-      currentSession.current = next.session_id;
+      const candidate = BrowserTable.create(Date.now(), hero);
+      const next = await viewWithPolicy(candidate);
+      table.current = candidate;
       setGame(next);
       setHeroSeat(hero);
       setPnlBaseline(0);
-      if (previousSession !== null) await closeTable(previousSession);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -53,19 +70,52 @@ export default function TestTable() {
   }, [newTournament]);
 
   async function command(operation: "action" | "next", action?: string) {
-    if (!game || locked.current) return;
+    if (!table.current || locked.current) return;
     locked.current = true;
     setBusy(true);
     setError(null);
     try {
-      setGame(await tableRequest(operation, {
-        session_id: game.session_id,
-        revision: game.revision,
-        ...(action ? { action } : {}),
-      }));
+      const candidate = table.current.clone();
+      if (operation === "next") candidate.nextHand();
+      else {
+        if (!action) throw new Error("Action ID is required");
+        candidate.act(action);
+      }
+      const next = await viewWithPolicy(candidate);
+      table.current = candidate;
+      setGame(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
+      locked.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function importPolicy(files: FileList | null) {
+    if (!files?.length || locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    setError(null);
+    let loaded: LoadedAveragePolicy | null = null;
+    try {
+      const selected = Array.from(files);
+      const weights = selected.filter(file => file.name.endsWith(".onnx"));
+      const manifests = selected.filter(file => file.name.endsWith(".json"));
+      if (selected.length !== 2 || weights.length !== 1 || manifests.length !== 1) {
+        throw new Error("Select exactly one .onnx average policy and its .json manifest together");
+      }
+      loaded = await loadAveragePolicy(await weights[0].arrayBuffer(), JSON.parse(await manifests[0].text()));
+      const next = table.current ? await viewWithPolicy(table.current, loaded) : null;
+      if (model.current) await model.current.release();
+      model.current = loaded;
+      loaded = null;
+      if (next) setGame(next);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (loaded) await loaded.release();
+      if (modelFiles.current) modelFiles.current.value = "";
       locked.current = false;
       setBusy(false);
     }
@@ -79,7 +129,7 @@ export default function TestTable() {
     { action_id: "FOLD", category: "FOLD", amount_to: null },
     { action_id: "CHECK", category: "CHECK", amount_to: null },
     { action_id: "CALL", category: "CALL", amount_to: null },
-    { action_id: "RAISE", category: "RAISE", amount_to: null },
+    { action_id: "RAISE_2.0X", category: "RAISE", amount_to: null },
     { action_id: "ALL_IN", category: "RAISE", amount_to: null },
   ];
 
@@ -120,9 +170,13 @@ export default function TestTable() {
             <span>Hand {game?.hand_number ?? "—"}</span>
             {game?.tournament_terminal && <span className="font-semibold text-primary">🏆 P{game.winner}</span>}
             {game && !game.players.find(p => p.player_id === heroSeat)?.active && <span>Eliminated</span>}
-            <span className="rounded border border-border px-2 py-1" title={policy?.reason}>
+            <input ref={modelFiles} type="file" accept=".onnx,.json" multiple hidden
+              aria-label="Average policy files" onChange={event => void importPolicy(event.target.files)} />
+            <button type="button" disabled={busy} className="rounded border border-border px-2 py-1 disabled:opacity-50"
+              title={`${policy?.reason ?? ""}. Load an average policy (.onnx + .json)`}
+              onClick={() => modelFiles.current?.click()}>
               {!game ? "Policy —" : policy?.status === "experimental" ? "Experimental policy" : "Policy unavailable"}
-            </span>
+            </button>
           </div>
           <div className={styles.management}>
             <Button disabled={busy} variant="secondary" onClick={() => void newTournament(heroSeat)} className="h-10 w-full px-2 text-sm">New game</Button>

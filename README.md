@@ -12,40 +12,50 @@ eliminated players leave the hand engine, and play transitions to heads-up.
 The tournament objective is winning the tournament; hand chip-delta utility
 is a separately declared objective for controlled validation subgames.
 
-## Local Test Live
+## Browser Test Live
 
-Use the existing Python and Node environments. The Python environment needs
-PyTorch and Treys; the UI dependencies are declared in `ui/package.json`.
-No imports launch training or install dependencies.
-
-Start the application with one command:
+The UI runs independently of Python and preserves the existing visual design.
+For development:
 
 ```sh
 cd ui
 npm run dev
 ```
 
-This command starts the Python engine and Next.js together, waits until the
-engine is listening, and stops both on exit. `npm run start` does the same for
-the production build. The Python executable is the repository's `.venv/bin/python`; set
-`POKER_PYTHON` explicitly to use a different existing environment. No packages
-are installed automatically. Startup errors are displayed in the terminal.
+For a static production build:
 
-Open the local Next.js URL. The application opens on **Test Live**. The browser
-sends canonical action IDs through the same-origin Next.js proxy to Python;
-Test Live uses Python for all poker transitions and preserves the existing
-visual components and layout. Test Live displays
-persistent stacks, positions, hand number, elimination, tournament result, and
-server-computed legal bet targets. Scripted opponents are smoke-test opponents.
+```sh
+cd ui
+npm run build
+npm start
+```
 
-Without a compatible average-policy checkpoint the UI explicitly reports that
-policy information is unavailable. Overview and Cas précis retain the original
-analysis surfaces, explicitly labeled as the former 50 BB single-hand policy;
-that legacy data does not drive tournament play. To load an explicitly selected new-format
-checkpoint, set `POKER_AVERAGE_POLICY` before starting the Python service.
-Invalid checkpoints fail to load. Loaded neural probabilities are labeled
-experimental with uncalibrated confidence. The old saved policy and
-`ml/trained_policy_model.pth` are never selected automatically.
+The build produces `ui/out/`; `npm start` serves these static files with Node.
+There is no API route or Python subprocess. The exported directory can also be
+served by another static host. Development output uses `.next-dev`, separately
+from production `.next` output.
+
+Test Live opens by default and runs the parity-tested TypeScript tournament
+engine entirely in the browser. Stacks persist, positions rotate, eliminated
+players leave, play transitions to heads-up, and chip totals remain conserved.
+Scripted opponents are smoke-test opponents. Overview and Cas précis retain
+the original analysis surfaces, explicitly labeled as the former 50 BB
+single-hand policy; that data does not drive tournament play.
+
+Policy information is unavailable until a compatible average-policy `.onnx`
+file and its `.json` manifest are explicitly selected. The browser validates the
+full schema, objective, player-count coverage, model SHA256, legal mask, and
+output distribution. ONNX inference uses locally served CPU WebAssembly assets.
+Loaded probabilities are experimental with uncalibrated confidence. Old saved
+policies and `ml/trained_policy_model.pth` are never used for current play.
+
+Python is needed only for offline training, canonical fixture generation, and
+model export. The importable exporter
+`ml.export_onnx.export_average_policy(checkpoint, model_path, manifest_path,
+example_observation)` produces the paired browser artifacts and verifies CPU
+inference against PyTorch with two complete history lengths. It needs existing
+PyTorch, Treys, ONNX, and ONNX Runtime environments; it does not install them or
+launch training automatically.
 
 ## Architecture
 
@@ -60,7 +70,8 @@ TournamentState -> HandState -> canonical actions and Observation
                                   |
                advantage networks + average-policy network
                                   |
-                    Python policy query -> Test Live
+             offline ONNX export + manifest -> browser policy query
+             Python fixtures -> parity-tested browser tournament
 ```
 
 The hand engine accepts arbitrary legal raise-to amounts. Solvers use a masked,
@@ -78,7 +89,7 @@ policy distillation, and stale-regret merge implementation are archival only.
 From the repository root:
 
 ```sh
-python3 -m unittest discover -s tests -v
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 python3 -m scripts.smoke_validation
 ```
 
@@ -90,11 +101,27 @@ npm run lint
 npm run build
 ```
 
-With the Python service and Next.js server running, from the repository root:
+With a development server running at `http://127.0.0.1:3100`, the following
+regression check builds production while repeatedly requesting the development
+page, scripts, and build manifest. Set `POKER_UI_ORIGIN` for another local port.
 
 ```sh
-node tests/ui_proxy_smoke.mjs
+node tests/ui_build_isolation.mjs
 ```
+
+Cross-language parity and browser-controller tests use the existing TypeScript
+installation and Node's built-in test runner, with temporary compilation cleaned
+up automatically:
+
+```sh
+node tests/run_browser_tests.mjs
+```
+
+`tests/ui_browser_smoke.mjs` also checks the static app in a separately started
+Chrome with remote debugging. Set `POKER_UI_ORIGIN`, `POKER_CDP_ORIGIN`,
+`POKER_ONNX_MODEL`, and `POKER_ONNX_MANIFEST` explicitly; the last two identify
+an exported model/manifest pair. `POKER_SCREENSHOT_DIR` is optional. This browser
+check imports a model for inference and does not run training.
 
 [Recorded smoke results](docs/smoke-results.json) include a two-iteration CPU
 Deep CFR validation on a controlled river subgame and a bounded full-tournament
