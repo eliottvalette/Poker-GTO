@@ -134,10 +134,15 @@ to the HU model. A missing route gives an explicit unavailable result.
 
 ## Usage and outputs
 
-From the repository root, with the existing environment activated:
+Use the importable Python API from a script or notebook in the existing environment.
+For a small cost preflight:
 
-```sh
-python -m scripts.train --config configs/deep_cfr_pilot.json --preflight
+```python
+from training.config import load_config
+from training.preflight import run_preflight
+
+config = load_config("configs/deep_cfr_pilot.json")
+report = run_preflight(config)
 ```
 
 This runs two measured iterations at four traversals per player, including the
@@ -145,28 +150,38 @@ uniform and learned-policy phases, fixed evaluation, checkpointing and ONNX
 parity. It writes `runs/deep_cfr_pilot/preflight.json` and discards temporary
 measurement weights. It never launches the configured pilot.
 
-After reviewing the preflight and explicitly approving the substantial run:
+After reviewing costs and explicitly approving the substantial run:
 
-```sh
-python -m scripts.train --config configs/deep_cfr_pilot.json
-python -m scripts.train --config configs/deep_cfr_pilot.json \
-  --resume runs/deep_cfr_pilot/checkpoints/iteration_000005.pt
+```python
+from training.runner import TrainingRunner
+
+runner = TrainingRunner(config)
+runner.run()
+runner.export(onnx=True)
 ```
 
-There is no intrinsic final epoch. Resume with `--iterations 50` to request fifty
-additional iterations beyond a checkpoint, including beyond the original budget.
-The same config hash is required on resume; changed capacities, schemas or
-configuration fail rather than silently replacing a run. The full configuration
-is a 500-iteration planning template using the measured pilot capacities, not
-a declaration that large training is ready. Larger replay capacities need a
-separate measured and approved configuration.
+For explicit resume:
 
-`--export-onnx` exports both trained average policies after the requested run.
-The programmatic interfaces are `TrainingRunner(config)`, `run_iteration()`,
-`run(iterations=...)`, `save_checkpoint(path)`,
-`TrainingRunner.load_checkpoint(path, config=...)`, and `export(onnx=True)`.
-Missing or incompatible inputs fail explicitly; CLI code contains no core
-training logic. Existing runs require an explicit resume checkpoint.
+```python
+runner = TrainingRunner.load_checkpoint(
+    "runs/deep_cfr_pilot/checkpoints/iteration_000005.pt", config
+)
+runner.run()
+```
+
+There is no intrinsic final epoch. `runner.run(iterations=50)` requests fifty
+additional iterations beyond the loaded state, including beyond the original
+budget. The same config hash is required on resume; changed capacities, schemas
+or configuration fail rather than silently replacing a run. A new runner's
+`run()` refuses an existing metrics target and asks for an explicit checkpoint.
+The full configuration is a 500-iteration planning template using the measured
+pilot capacities, not a declaration that large training is ready. Larger replay
+capacities need a separate measured and approved configuration.
+
+`runner.export(onnx=True)` exports both average policies after successful fitting.
+Other programmatic interfaces are `run_iteration()` and `save_checkpoint(path)`.
+Missing or incompatible inputs fail explicitly. The former `scripts/train.py`
+argument parser was removed; orchestration lives in `training.runner`.
 
 ```text
 runs/deep_cfr_pilot/
@@ -266,7 +281,7 @@ and online resolving await the first credible offline policy.
 
 New modules: `features/{cards,deterministic,equity,range_features,neural}.py`,
 `training/{config,root_sampler,metrics,evaluation,checkpoint,runner,preflight}.py`,
-`ml/policy_router.py`, `scripts/train.py`, both `configs/deep_cfr_*.json`, and
+`ml/policy_router.py`, both `configs/deep_cfr_*.json`, and
 `ui/src/lib/poker/neural.ts`, plus feature/root/runner/browser parity tests and
 fixtures.
 

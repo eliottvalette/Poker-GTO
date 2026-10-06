@@ -23,21 +23,22 @@ The importable runner trains separate 3-max and HU policies, with compact replay
 observable deterministic features, suit normalization, controlled tournament/
 synthetic/stratified roots, evaluation and atomic resumable checkpoints.
 
-```sh
-python -m scripts.train --config configs/deep_cfr_pilot.json --preflight
+Use the importable Python API from a script or notebook:
+
+```python
+from training.config import load_config
+from training.runner import TrainingRunner
+
+config = load_config("configs/deep_cfr_pilot.json")
+runner = TrainingRunner(config)
+runner.run()  # Substantial compute: run only after reviewing and approving costs.
+runner.export(onnx=True)
 ```
 
-After reviewing measured costs and explicitly approving the substantial pilot:
-
-```sh
-python -m scripts.train --config configs/deep_cfr_pilot.json
-```
-
-Use `--resume <checkpoint>` to resume and `--iterations N` for additional
-iterations. `--export-onnx` exports separate average-policy artifacts. Core logic
-lives in `training.runner.TrainingRunner`, independently of the CLI. No online
-resolver, range model or UI work is required to train. Fresh network fitting each
-iteration is preserved.
+For resume, call `TrainingRunner.load_checkpoint(explicit_checkpoint_path, config)`;
+`runner.run(iterations=N)` requests additional iterations. The core is configurable
+and has no argument parser. No online resolver, range model or UI work is required
+to train. Fresh network fitting each iteration is preserved.
 
 See [the complete training contract and migration report](docs/deep-cfr-training.md),
 [measured preflight data](docs/deep-cfr-preflight.json), and

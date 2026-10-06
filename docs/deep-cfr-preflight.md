@@ -92,7 +92,7 @@ Validated commands:
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py'  # 113 passed
 node tests/run_browser_tests.mjs                             # 77 passed
 .venv/bin/python -m scripts.smoke_validation                  # passed
-.venv/bin/python -m compileall -q features training ml scripts/train.py
+.venv/bin/python -m compileall -q features training ml
 ./ui/node_modules/.bin/tsc --noEmit -p ui/tsconfig.json        # passed
 (cd ui && npm run lint)                                      # passed
 (cd ui && npm run build)                                     # passed, static export
@@ -110,10 +110,15 @@ checkpoint/evaluation every five iterations. Stop on explicit failures; never
 censor over-budget traversals or invent leaf values. Review the first checkpoint
 interval before increasing compute or capacities.
 
-After explicit approval, the substantial command is:
+After explicit approval, use the Python API:
 
-```sh
-python -m scripts.train --config configs/deep_cfr_pilot.json
+```python
+from training.config import load_config
+from training.runner import TrainingRunner
+
+runner = TrainingRunner(load_config("configs/deep_cfr_pilot.json"))
+runner.run()
+runner.export(onnx=True)
 ```
 
 See [the migration report](deep-cfr-training.md) for contracts, changed modules,

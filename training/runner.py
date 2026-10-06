@@ -43,6 +43,7 @@ class TrainingRunner:
     def __init__(self, config: dict) -> None:
         self.config = validate_config(config)
         self.iteration = 0
+        self.resume_checkpoint: Path | None = None
         self.solvers = {}
         self.samplers = {}
         self.metrics: list[dict] = []
@@ -183,9 +184,12 @@ class TrainingRunner:
                 sampler.tournament = unpack_tournament(track["tournament"])
         torch.set_rng_state(raw["torch_rng"])
         random.setstate(raw["python_rng"])
+        runner.resume_checkpoint = Path(path)
         return runner
 
     def run(self, iterations: int | None = None) -> None:
+        if self.iteration == 0 and self.resume_checkpoint is None and (self.output_dir / "metrics.jsonl").exists():
+            raise FileExistsError(f"Training run already exists at {self.output_dir}; load its explicit checkpoint with TrainingRunner.load_checkpoint")
         remaining = max(0, self.config["outer_iterations"] - self.iteration) if iterations is None else iterations
         if type(remaining) is not int or remaining < 0:
             raise ValueError(f"Explicit nonnegative additional iterations required: {remaining}")
