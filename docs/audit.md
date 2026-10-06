@@ -1,5 +1,9 @@
 # Migration audit
 
+> Baseline record at commit `8b7c63d`. Current neural/training contracts and
+> validation are documented in [deep-cfr-training.md](deep-cfr-training.md).
+> Historical schema/readiness/resource statements below describe that baseline.
+
 Audited the working tree before replacement. Local HEAD and Poker-GTO remote HEAD
 are both 1e675af5871b566d2ba9bccc5f9f1a5143785a1c. The configured origin still uses
 the repository's former GTO_Bot name. No remote mutation is needed.

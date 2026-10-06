@@ -3,10 +3,14 @@ import { EVENTS, HISTORY_WIDTH, NUMERIC_NAMES, POSITIONS, STATE_VERSION,
   validateObservation, type Observation } from "./poker/observation";
 
 const INPUTS = ["cards", "street", "position", "numeric", "history", "mask"] as const;
-const ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_v3";
+import { ARCHITECTURE, FEATURE_SCHEMA_VERSION, NEURAL_NUMERIC_NAMES, neuralObservation } from "./poker/neural";
 
 export type PolicyManifest = {
   version: number;
+  action_schema_version: number;
+  feature_schema_version: number;
+  suit_normalization: "first_observable_occurrence";
+  traversal_mode: "external_sampling" | "outcome_sampling";
   state_version: number;
   architecture: string;
   model_sha256: string;
@@ -51,17 +55,21 @@ function equalArray(actual: unknown, expected: readonly unknown[]): boolean {
 export function validatePolicyManifest(raw: unknown): PolicyManifest {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Policy manifest must be a JSON object");
   const manifest = raw as PolicyManifest;
-  const fields = ["version", "state_version", "architecture", "model_sha256", "objective", "iteration",
+  const fields = ["action_schema_version", "feature_schema_version", "suit_normalization", "traversal_mode", "version", "state_version", "architecture", "model_sha256", "objective", "iteration",
     "supported_player_counts", "actions", "numeric_names", "positions", "events", "normalization_bb",
     "card_encoding", "card_slots", "unknown_card", "card_vocabulary", "history_width", "full_history",
     "batch_size", "inputs", "output", "validation_max_absolute_error", "amount_units", "utility_units", "history_scope", "payout_scope"];
-  if (!equalArray(Object.keys(raw).sort(), fields.sort()) || manifest.version !== 2 || manifest.state_version !== STATE_VERSION
+  if (!equalArray(Object.keys(raw).sort(), fields.sort()) || manifest.version !== 3
+      || manifest.action_schema_version !== 1
+      || manifest.feature_schema_version !== FEATURE_SCHEMA_VERSION
+      || manifest.suit_normalization !== "first_observable_occurrence"
+      || !["external_sampling", "outcome_sampling"].includes(manifest.traversal_mode) || manifest.state_version !== STATE_VERSION
       || manifest.architecture !== ARCHITECTURE || typeof manifest.model_sha256 !== "string"
       || !/^[a-f0-9]{64}$/.test(manifest.model_sha256) || manifest.objective !== "hand_chip_delta"
       || !Number.isInteger(manifest.iteration) || manifest.iteration < 1 || !Array.isArray(manifest.supported_player_counts)
       || !manifest.supported_player_counts.length || manifest.supported_player_counts.some(count => count !== 2 && count !== 3)
       || new Set(manifest.supported_player_counts).size !== manifest.supported_player_counts.length
-      || !equalArray(manifest.actions, ACTION_IDS) || !equalArray(manifest.numeric_names, NUMERIC_NAMES)
+      || !equalArray(manifest.actions, ACTION_IDS) || !equalArray(manifest.numeric_names, NEURAL_NUMERIC_NAMES)
       || !equalArray(manifest.positions, POSITIONS) || !equalArray(manifest.events, EVENTS)
       || manifest.amount_units !== "current_big_blinds" || manifest.utility_units !== "initial_big_blind_chips"
       || manifest.history_scope !== "current_hand" || manifest.payout_scope !== "winner_take_all"
@@ -104,12 +112,13 @@ export async function loadAveragePolicy(model: ArrayBuffer, rawManifest: unknown
       }
       const integers = (values: number[]) => new BigInt64Array(values.map(value => BigInt(value)));
       const position = Math.round(observation.numeric[NUMERIC_NAMES.indexOf("hero_position")] * 2);
+      const neural = neuralObservation(observation);
       const feeds = {
-        cards: new ort.Tensor("int64", integers(observation.cards), [1, 7]),
+        cards: new ort.Tensor("int64", integers(neural.cards), [1, 7]),
         street: new ort.Tensor("int64", integers([observation.street]), [1]),
         position: new ort.Tensor("int64", integers([position]), [1]),
-        numeric: new ort.Tensor("float32", new Float32Array(observation.numeric), [1, NUMERIC_NAMES.length]),
-        history: new ort.Tensor("float32", new Float32Array(observation.history.flat()), [1, observation.history.length, HISTORY_WIDTH]),
+        numeric: new ort.Tensor("float32", new Float32Array(neural.numeric), [1, NEURAL_NUMERIC_NAMES.length]),
+        history: new ort.Tensor("float32", new Float32Array(neural.history.flat()), [1, observation.history.length, HISTORY_WIDTH]),
         mask: new ort.Tensor("bool", new Uint8Array(observation.legal_mask.map(Number)), [1, ACTION_IDS.length]),
       };
       let outputs: Awaited<ReturnType<typeof session.run>> | undefined;

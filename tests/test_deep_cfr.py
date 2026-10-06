@@ -81,7 +81,7 @@ class DeepCFRTests(unittest.TestCase):
         memory = ReservoirMemory(1, 1, "strategy", "hand_chip_delta", byte_budget=budget)
         memory.add(sample)
         before = (list(memory.samples), memory.seen, memory.used_bytes, memory.rng.getstate())
-        large = replace(sample, state=replace(obs, recall=obs.recall[:-1] + ',"' + "x" * budget + '"]'))
+        large = replace(sample, state=replace(sample.state, history_data=sample.state.history_data * (budget // len(sample.state.history_data) + 3)))
         with self.assertRaisesRegex(MemoryError, "budget"):
             memory.add(large)
         self.assertEqual(before, (memory.samples, memory.seen, memory.used_bytes, memory.rng.getstate()))
@@ -95,7 +95,7 @@ class DeepCFRTests(unittest.TestCase):
                                              byte_budget=sample_bytes(sample) * 2 + 1000)
         replacement_memory.add(sample)
         replacement_memory.add(sample)
-        larger = replace(sample, state=replace(obs, recall=obs.recall[:-1] + ',"' + "x" * 2000 + '"]'))
+        larger = replace(sample, state=replace(sample.state, history_data=sample.state.history_data * 2))
         self.assertLess(sample_bytes(larger), replacement_memory.byte_budget)
         before_rng = replacement_memory.rng.getstate()
         with self.assertRaisesRegex(MemoryError, "Reservoir update"):
@@ -156,7 +156,7 @@ class DeepCFRTests(unittest.TestCase):
         for _ in range(2):
             metrics = solver.run_iteration(lambda _: river(), traversals_per_player=2, max_nodes=1000)
             self.assertGreater(metrics["advantage_samples"], 0)
-            self.assertTrue(all(torch.isfinite(torch.tensor(v["heldout_loss"])) for v in metrics.values() if isinstance(v, dict)))
+            self.assertTrue(all(torch.isfinite(torch.tensor(v["heldout_loss"])) for v in metrics.values() if isinstance(v, dict) and "heldout_loss" in v))
         self.assertEqual(solver.version, 2)
         frozen = solver.snapshot()
         for model in solver.advantage_models.values():

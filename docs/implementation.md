@@ -1,5 +1,9 @@
 # Expresso implementation and validation
 
+> Baseline record at commit `8b7c63d`. Current neural/training contracts and
+> validation are documented in [deep-cfr-training.md](deep-cfr-training.md).
+> Historical schema/readiness/resource statements below describe that baseline.
+
 ## Readiness and current objective
 
 **SMOKE-TRAIN READY** for bounded current-hand validation and tiny fits. The solver optimizes the current hand's terminal chip delta,

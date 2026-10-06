@@ -11,28 +11,31 @@ import os
 import tempfile
 from actions import ACTION_IDS
 from cfr_solver import validate_strategy
-from infoset import STATE_VERSION, Observation
+from infoset import STATE_VERSION
+from features.neural import NeuralObservation, neural_observation
 
-MEMORY_VERSION = 4
+MEMORY_VERSION = 5
 DEFAULT_BYTE_BUDGET = 64 * 1024 * 1024
 TRAVERSAL_MODES = ("external_sampling", "outcome_sampling")
 
 
-def sample_bytes(sample: TrainingSample) -> int:
-    """Account Python-owned data recursively; count shared objects once per sample.
+def sample_bytes(sample: object) -> int:
+    """Conservative Python-owned accounting, stable across neural serialization.
 
-    Entries are accounted independently, so sharing between entries cannot hide
-    retained data. This excludes allocator overhead, tensors and process RSS.
+    Count scalar occurrences independently so pickle interning cannot change
+    budgets. Deduplicate containers within one entry; entries remain independent.
+    Excludes allocator overhead, tensors and process RSS.
     """
     visited: set[int] = set()
 
     def size(value: object) -> int:
-        if id(value) in visited:
-            return 0
-        visited.add(id(value))
+        if is_dataclass(value) or isinstance(value, (tuple, list, dict)):
+            if id(value) in visited:
+                return 0
+            visited.add(id(value))
         total = sys.getsizeof(value)
         if is_dataclass(value) and not isinstance(value, type):
-            total += sys.getsizeof(value.__dict__)
+            total += sys.getsizeof(value.__dict__) if hasattr(value, "__dict__") else 0
             total += sum(size(getattr(value, f.name)) for f in fields(value))
         elif isinstance(value, (tuple, list)):
             total += sum(size(item) for item in value)
@@ -43,16 +46,19 @@ def sample_bytes(sample: TrainingSample) -> int:
     return size(sample)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TrainingSample:
     iteration: int
     player: int
-    state: Observation
+    state: NeuralObservation
     target: tuple[float, ...]
     weight: float
     kind: str
     model_version: int
     traversal_mode: str = "external_sampling"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "state", neural_observation(self.state))
 
     def validate(self) -> None:
         if self.state.objective != "hand_chip_delta":
@@ -140,7 +146,10 @@ class ReservoirMemory:
                 for index, sample in enumerate(self.samples):
                     if index:
                         file.write(",")
-                    json.dump(asdict(sample), file, allow_nan=False)
+                    item = asdict(sample)
+                    item["state"]["numeric_data"] = sample.state.numeric_data.hex()
+                    item["state"]["history_data"] = sample.state.history_data.hex()
+                    json.dump(item, file, allow_nan=False)
                 file.write("]}")
             os.replace(temporary, path)
         finally:
@@ -167,10 +176,11 @@ class ReservoirMemory:
             if not isinstance(item, dict) or set(item) != expected_sample:
                 raise ValueError(f"Invalid sample fields at {path}: {item}")
             o = item["state"]
-            if not isinstance(o, dict) or set(o) != {f.name for f in fields(Observation)}:
+            if not isinstance(o, dict) or set(o) != {f.name for f in fields(NeuralObservation)}:
                 raise ValueError(f"Invalid observation fields at {path}: {o}")
-            obs = Observation(o["version"], o["hero"], o["objective"], tuple(o["cards"]), o["street"],
-                              tuple(o["numeric"]), tuple(o["legal_mask"]), tuple(tuple(e) for e in o["history"]), o["recall"])
+            obs = NeuralObservation(o["version"], o["hero"], o["objective"], tuple(o["cards"]), o["street"],
+                                    bytes.fromhex(o["numeric_data"]), tuple(o["legal_mask"]),
+                                    bytes.fromhex(o["history_data"]), o["feature_version"])
             memory.add(TrainingSample(item["iteration"], item["player"], obs, tuple(item["target"]),
                                       item["weight"], item["kind"], item["model_version"], item["traversal_mode"]))
         memory.seen = raw["seen"]

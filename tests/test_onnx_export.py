@@ -11,7 +11,9 @@ import onnxruntime as ort
 import torch
 
 from actions import ACTION_IDS
-from infoset import NUMERIC_NAMES, STATE_VERSION, observe
+from infoset import STATE_VERSION, observe
+from features import FEATURE_SCHEMA_VERSION
+from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES
 from ml.deep_cfr import NeuralAveragePolicy
 from ml.export_onnx import INPUT_NAMES, export_average_policy
 from ml.model import MODEL_ARCHITECTURE, AveragePolicyNetwork, encode_batch
@@ -33,7 +35,8 @@ class ONNXExportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             checkpoint, model, manifest_path = root / "untrained_fixture.pt", root / "policy.onnx", root / "policy.json"
-            torch.save({"version": 3, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
+            torch.save({"version": 4, "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                        "training_metadata": {"traversal_mode": "external_sampling"}, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
                         "actions": list(ACTION_IDS), "numeric_names": list(NUMERIC_NAMES),
                         "objective": "hand_chip_delta", "iteration": 1, "supported_player_counts": [2, 3],
                         "weights": weights, "metrics": [{"fixture": "untrained inference validation"}]}, checkpoint)

@@ -2,7 +2,7 @@
 
 An experimental Expresso training environment with a Python NLHE engine,
 persistent 3-player tournaments, a tabular external-sampling MCCFR reference,
-an explicitly selected outcome-sampling traversal, and a small Deep CFR pipeline. **Training readiness: SMOKE-TRAIN READY.**
+an explicitly selected outcome-sampling traversal, and a resumable two-track Deep CFR pipeline. **Training readiness: PILOT READY**, pending approval for substantial training.
 The learning objective is conditional **per-hand chip EV**, not tournament
 winner utility or ICM. No trained policy is claimed to be mathematically GTO.
 
@@ -16,6 +16,34 @@ schedule. Stacks persist, positions rotate, players bust, and live play moves
 to heads-up until one winner. The solver evaluates only the current hand's
 terminal chip delta in conserved initial-BB chip units. Tournament winner
 payout is an environment result, not its training utility.
+
+## Offline training
+
+The importable runner trains separate 3-max and HU policies, with compact replay,
+observable deterministic features, suit normalization, controlled tournament/
+synthetic/stratified roots, evaluation and atomic resumable checkpoints.
+
+```sh
+python -m scripts.train --config configs/deep_cfr_pilot.json --preflight
+```
+
+After reviewing measured costs and explicitly approving the substantial pilot:
+
+```sh
+python -m scripts.train --config configs/deep_cfr_pilot.json
+```
+
+Use `--resume <checkpoint>` to resume and `--iterations N` for additional
+iterations. `--export-onnx` exports separate average-policy artifacts. Core logic
+lives in `training.runner.TrainingRunner`, independently of the CLI. No online
+resolver, range model or UI work is required to train. Fresh network fitting each
+iteration is preserved.
+
+See [the complete training contract and migration report](docs/deep-cfr-training.md),
+[measured preflight data](docs/deep-cfr-preflight.json), and
+[the preflight summary](docs/deep-cfr-preflight.md), and
+[production-sized CPU profiling](docs/deep-cfr-profile.md). Only small measured iterations
+have run; no substantial pilot or full run has been launched.
 
 ## Browser Test Live
 
@@ -134,17 +162,16 @@ check imports a model for inference and does not run training.
 [The current cEV validation report](docs/hand-cev.md) and
 [hand diagnostics](docs/hand-diagnostics.json) retain 1,024 completed
 bounded traversal attempts without censoring; eight value and 39 root-regret
-comparisons pass the documented numerical smoke criterion. The Python suite
-passes 93 tests and the browser suite 64 tests. [Earlier neural smoke results](docs/smoke-results.json)
+comparisons pass the documented numerical smoke criterion. Those baseline suites passed 93 Python and 64 browser tests. [Earlier neural smoke results](docs/smoke-results.json)
 are historical state-v2 evidence; current neural fits are exercised by bounded
 tests rather than a new standalone training run. External sampling
 remains the all-action reference; outcome sampling is explicitly selectable as
 `traversal_mode="outcome_sampling"`. Neither mode follows future tournament
 hands for learning. Missing or incompatible checkpoints fail explicitly.
 
-State schema 3, checkpoint version 3, and ONNX manifest version 2 reject the
-retired tournament-winner and earlier state contracts. The previous
-[full-tournament outcome diagnostics](docs/outcome-diagnostics.json) are retained
-as historical evidence only; their extreme weights are not measurements of the
-new per-hand solver. No substantial training has been launched. Larger runs
-require measured costs, numerical/variance validation, and approval.
+Raw state schema 3 remains unchanged. Feature schema 1, replay version 5,
+average artifact version 4, runner checkpoint version 1 and ONNX manifest version
+3 explicitly reject retired neural contracts. Browser loading computes the same
+observable features/suit normalization and retains separate models for 3-max/HU.
+The preceding baseline reports remain historical evidence; current validation
+passes 113 Python and 77 browser tests. No substantial training has been launched.

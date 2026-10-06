@@ -18,13 +18,15 @@ import numpy as np
 import torch
 from torch import nn
 
-from actions import ACTION_IDS
-from infoset import EVENTS, HISTORY_WIDTH, NUMERIC_NAMES, POSITIONS, STATE_VERSION, Observation
+from actions import ACTION_IDS, ACTION_SCHEMA_VERSION
+from infoset import EVENTS, HISTORY_WIDTH, POSITIONS, STATE_VERSION, Observation
+from features import FEATURE_SCHEMA_VERSION
+from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES
 from ml.deep_cfr import NeuralAveragePolicy
 from ml.model import MODEL_ARCHITECTURE, AveragePolicyNetwork, encode_batch
 
 INPUT_NAMES = ("cards", "street", "position", "numeric", "history", "mask")
-EXPORT_VERSION = 2
+EXPORT_VERSION = 3
 
 
 class SingleObservationAveragePolicy(nn.Module):
@@ -97,7 +99,8 @@ def export_average_policy(checkpoint: str | Path, model_path: str | Path, manife
         if not np.isfinite(actual).all() or not np.allclose(actual, expected, rtol=1e-5, atol=1e-6):
             raise ValueError(f"ONNX average-policy parity failed: expected={expected.tolist()}, actual={actual.tolist()}")
         errors.append(float(np.abs(actual - expected).max()))
-    manifest = {"version": EXPORT_VERSION, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
+    manifest = {"version": EXPORT_VERSION, "action_schema_version": ACTION_SCHEMA_VERSION, "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                "suit_normalization": "first_observable_occurrence", "traversal_mode": policy.traversal_mode, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
                 "model_sha256": hashlib.sha256(model_bytes).hexdigest(), "objective": policy.objective,
                 "iteration": policy.iteration, "supported_player_counts": list(policy.supported_player_counts),
                 "actions": list(ACTION_IDS), "numeric_names": list(NUMERIC_NAMES), "positions": list(POSITIONS),

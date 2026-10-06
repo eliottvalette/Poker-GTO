@@ -33,7 +33,7 @@ def run_smoke_validation() -> dict:
         solver.run_iteration(controlled_river, traversals_per_player=2, max_nodes=1000)
     elapsed = time.perf_counter() - started
     samples = [s for memory in solver.advantage_memory.values() for s in memory.samples] + solver.strategy_memory.samples
-    serialized_bytes = sum(len(json.dumps(asdict(s)).encode()) for s in samples)
+    serialized_bytes = sum(len(json.dumps(asdict(s), default=lambda value: value.hex()).encode()) for s in samples)
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "average.pt"
         solver.export_average(path)

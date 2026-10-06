@@ -4,14 +4,16 @@ import torch
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
 from actions import ACTION_IDS
-from infoset import HISTORY_WIDTH, NUMERIC_NAMES, STATE_VERSION, Observation
+from infoset import HISTORY_WIDTH, STATE_VERSION, Observation
+from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES, NeuralObservation, neural_observation
 
-MODEL_ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_v3"
+MODEL_ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_features1"
 
 
-def encode_batch(observations: list[Observation]) -> dict[str, torch.Tensor]:
+def encode_batch(observations: list[Observation | NeuralObservation]) -> dict[str, torch.Tensor]:
     if not observations:
         raise ValueError("Cannot encode an empty observation batch")
+    observations = [neural_observation(o) for o in observations]
     for o in observations:
         if (o.version != STATE_VERSION or len(o.cards) != 7 or any(c not in range(53) for c in o.cards)
                 or len(o.numeric) != len(NUMERIC_NAMES) or len(o.legal_mask) != len(ACTION_IDS)
@@ -72,3 +74,19 @@ class AveragePolicyNetwork(nn.Module):
         if not torch.isfinite(logits).all() or not batch["mask"].any(dim=1).all():
             raise ValueError("Average policy has invalid outputs or empty legal masks")
         return logits.masked_fill(~batch["mask"], -torch.inf).softmax(dim=1)
+
+    def probabilities(self, observation: Observation | NeuralObservation) -> tuple[float, ...]:
+        """Convert float32 softmax output to a normalized float64 distribution.
+
+        Tensor softmax sums may differ from one by float32 rounding. Check that
+        bound explicitly, then normalize at the numerical transport boundary.
+        """
+        from cfr_solver import validate_strategy
+        with torch.no_grad():
+            values = tuple(self(encode_batch([observation]))[0].tolist())
+        total = sum(values)
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(f"Average-policy softmax mass outside float32 tolerance: {total}")
+        result = tuple(value / total for value in values)
+        validate_strategy(result, observation.legal_mask)
+        return result

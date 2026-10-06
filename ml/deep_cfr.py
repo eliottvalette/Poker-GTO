@@ -1,15 +1,20 @@
 """Frozen outer iterations, bounded sample generation and central Deep CFR training."""
 from __future__ import annotations
 import copy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import math
+import resource
+import sys
+import time
 from pathlib import Path
 import random
 from typing import Callable
 import torch
 from actions import ACTION_IDS
 from cfr_solver import GameState, Traversal, hand_root, regret_matching, validate_strategy
-from infoset import NUMERIC_NAMES, STATE_VERSION, Observation
+from infoset import STATE_VERSION, Observation
+from features import FEATURE_SCHEMA_VERSION
+from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES
 from ml.memory import DEFAULT_BYTE_BUDGET, TRAVERSAL_MODES, ReservoirMemory, TrainingSample, sample_bytes
 from ml.model import MODEL_ARCHITECTURE, AdvantageNetwork, AveragePolicyNetwork, encode_batch
 from ml.train import fit
@@ -47,6 +52,10 @@ class GeneratedSamples:
     traversal_mode: str = "external_sampling"
     diagnostics: dict | None = None
     max_depth_seen: int = 0
+    worker_seconds: float = field(default=0.0, compare=False)
+    worker_cpu_seconds: float = field(default=0.0, compare=False)
+    worker_peak_rss_bytes: int = field(default=0, compare=False)
+    coverage: dict | None = None
 
 
 def _diagnostic_metadata(diagnostics) -> dict:
@@ -71,6 +80,8 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask) -> GeneratedS
         raise ValueError(f"Invalid task traversal mode: {task.traversal_mode}; expected {TRAVERSAL_MODES}")
     if not math.isfinite(task.epsilon) or not 0 < task.epsilon <= 1:
         raise ValueError(f"Exploration epsilon must be in (0, 1]: {task.epsilon}")
+    started = time.perf_counter()
+    cpu_started = time.process_time()
     torch.set_num_threads(1)
     models = {}
     if snapshot.uniform_initial != (snapshot.version == 0):
@@ -93,12 +104,15 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask) -> GeneratedS
         return regret_matching(values, obs.legal_mask)
     advantages, strategies = [], []
     generated_bytes = 0
+    from training.metrics import Coverage
+    coverage = Coverage()
     def sink(kind, destination):
         def append(obs, target, weight):
             nonlocal generated_bytes
             sample = TrainingSample(snapshot.version + 1, obs.hero, obs, target,
                                     weight, kind, snapshot.version, task.traversal_mode)
             sample.validate()
+            coverage.record(sample.state, kind)
             required = generated_bytes + sample_bytes(sample)
             if required > task.sample_byte_budget:
                 raise MemoryError(f"Traversal task={task.task_id} requires {required} accounted sample bytes, "
@@ -106,21 +120,27 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask) -> GeneratedS
             destination.append(sample)
             generated_bytes = required
         return append
+    def finish(result):
+        result.worker_seconds = time.perf_counter() - started
+        result.worker_cpu_seconds = time.process_time() - cpu_started
+        result.worker_peak_rss_bytes = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * (1 if sys.platform == "darwin" else 1024)
+        result.coverage = coverage.as_dict()
+        return result
     rng = random.Random(task.seed)
     if task.traversal_mode == "outcome_sampling":
         from outcome_sampling import OutcomeSamplingTraversal
         walk = OutcomeSamplingTraversal(strategy, rng, task.max_nodes, task.max_depth, task.epsilon)
         value = walk.run(task.root, task.player, sink("advantage", advantages), sink("strategy", strategies))
-        return GeneratedSamples(task.task_id, snapshot.version, advantages, strategies, walk.nodes, value,
-                                task.traversal_mode, _diagnostic_metadata(walk.diagnostics), walk.max_depth_seen)
+        return finish(GeneratedSamples(task.task_id, snapshot.version, advantages, strategies, walk.nodes, value,
+                                task.traversal_mode, _diagnostic_metadata(walk.diagnostics), walk.max_depth_seen))
     walk = Traversal(strategy, rng, task.max_nodes, task.max_depth)
     value = walk.regrets(task.root, task.player, sink("advantage", advantages))
     nodes = walk.nodes
     max_depth_seen = walk.max_depth_seen
     walk = Traversal(strategy, rng, task.max_nodes, task.max_depth)
     walk.average(task.root, task.player, sink("strategy", strategies))
-    return GeneratedSamples(task.task_id, snapshot.version, advantages, strategies, nodes + walk.nodes, value,
-                            task.traversal_mode, None, max(max_depth_seen, walk.max_depth_seen))
+    return finish(GeneratedSamples(task.task_id, snapshot.version, advantages, strategies, nodes + walk.nodes, value,
+                            task.traversal_mode, None, max(max_depth_seen, walk.max_depth_seen)))
 
 
 class DeepCFRSolver:
@@ -152,7 +172,8 @@ class DeepCFRSolver:
                       max_nodes: int = 10000, max_depth: int = 300,
                       sample_byte_budget: int = DEFAULT_BYTE_BUDGET,
                       generation_byte_budget: int = 256 * 1024 * 1024,
-                      traversal_mode: str = "external_sampling", epsilon: float = 0.6) -> dict:
+                      traversal_mode: str = "external_sampling", epsilon: float = 0.6,
+                      learning_rate: float = 3e-4, trainer_threads: int = 1) -> dict:
         from scripts.parallel_cfr import collect_samples
         if traversals_per_player < 1 or workers < 1:
             raise ValueError(f"Invalid traversal count/workers: {traversals_per_player}, {workers}")
@@ -162,6 +183,7 @@ class DeepCFRSolver:
             raise ValueError(f"Exploration epsilon must be in (0, 1]: {epsilon}")
         rng = random.Random()
         rng.setstate(self.rng.getstate())
+        root_started = time.perf_counter()
         tasks = []
         for player in self.players:
             for _ in range(traversals_per_player):
@@ -170,7 +192,12 @@ class DeepCFRSolver:
                     raise ValueError(f"Traversal player {player} is not seated in current hand: {tuple(root.players)}")
                 tasks.append(TraversalTask(len(tasks), player, root, rng.randrange(2**31),
                                            max_nodes, max_depth, sample_byte_budget, traversal_mode, epsilon))
+        root_seconds = time.perf_counter() - root_started
+        generation_started = time.perf_counter()
         results = collect_samples(self.snapshot(), tasks, workers, aggregate_byte_budget=generation_byte_budget)
+        generation_seconds = time.perf_counter() - generation_started
+        torch.set_num_threads(trainer_threads)
+        fit_started = time.perf_counter()
         # Build the next complete state before changing any published version.
         memories = copy.deepcopy(self.advantage_memory)
         strategy_memory = copy.deepcopy(self.strategy_memory)
@@ -196,10 +223,26 @@ class DeepCFRSolver:
                 torch.manual_seed(self.seed + (self.version + 1) * 101 + player)
                 models[player] = AdvantageNetwork()
                 metrics[f"advantage_{player}"] = fit(models[player], memories[player].samples, epochs, batch_size,
-                                                      self.seed + player)
+                                                      self.seed + player, learning_rate=learning_rate)
             torch.manual_seed(self.seed + (self.version + 1) * 101 + 10)
             average = AveragePolicyNetwork()
-            metrics["average_policy"] = fit(average, strategy_memory.samples, epochs, batch_size, self.seed + 10)
+            metrics["average_policy"] = fit(average, strategy_memory.samples, epochs, batch_size, self.seed + 10, learning_rate=learning_rate)
+        metrics["fit_seconds"] = time.perf_counter() - fit_started
+        metrics["root_seconds"] = root_seconds
+        metrics["generation_seconds"] = generation_seconds
+        metrics["worker_seconds"] = sum(r.worker_seconds for r in results)
+        metrics["worker_cpu_seconds"] = sum(r.worker_cpu_seconds for r in results)
+        metrics["worker_peak_rss_bytes"] = max(r.worker_peak_rss_bytes for r in results)
+        metrics["nodes_per_traversal"] = [r.nodes for r in results]
+        metrics["traversals"] = len(tasks)
+        from training.metrics import Coverage
+        coverage = Coverage()
+        for result in results:
+            coverage.merge(result.coverage)
+        metrics["sample_coverage"] = coverage.as_dict()
+        metrics["replay"] = {str(p): {"seen": m.seen, "retained": len(m.samples), "bytes": m.used_bytes}
+                             for p, m in memories.items()}
+        metrics["replay"]["strategy"] = {"seen": strategy_memory.seen, "retained": len(strategy_memory.samples), "bytes": strategy_memory.used_bytes}
         probes = [s.state for s in strategy_memory.samples[:32]]
         if self.average_model is not None:
             with torch.no_grad():
@@ -219,7 +262,7 @@ class DeepCFRSolver:
     def export_average(self, path: str | Path) -> None:
         if self.average_model is None:
             raise ValueError("Average-policy network is unavailable before successful training")
-        torch.save({"version": 3, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
+        torch.save({"version": 4, "feature_schema_version": FEATURE_SCHEMA_VERSION, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
                     "actions": list(ACTION_IDS), "numeric_names": list(NUMERIC_NAMES),
                     "objective": self.objective, "iteration": self.version,
                     "training_metadata": {"traversal_mode": self.traversal_mode,
@@ -236,15 +279,17 @@ class DeepCFRSolver:
 class NeuralAveragePolicy:
     def __init__(self, path: str | Path):
         raw = torch.load(path, map_location="cpu", weights_only=True)
-        if (raw.get("version") != 3 or raw.get("state_version") != STATE_VERSION
+        if (raw.get("version") != 4 or raw.get("feature_schema_version") != FEATURE_SCHEMA_VERSION or raw.get("state_version") != STATE_VERSION
                 or raw.get("architecture") != MODEL_ARCHITECTURE or raw.get("actions") != list(ACTION_IDS)
                 or raw.get("numeric_names") != list(NUMERIC_NAMES) or raw.get("iteration", 0) < 1
                 or raw.get("objective") != "hand_chip_delta"
+                or raw.get("training_metadata", {}).get("traversal_mode") not in TRAVERSAL_MODES
                 or not raw.get("supported_player_counts")
                 or any(n not in (2, 3) for n in raw["supported_player_counts"])):
             raise ValueError(f"Incompatible average-policy checkpoint: {path}")
         self.objective = raw["objective"]
         self.iteration = raw["iteration"]
+        self.traversal_mode = raw["training_metadata"]["traversal_mode"]
         self.supported_player_counts = tuple(raw["supported_player_counts"])
         self.model = AveragePolicyNetwork()
         self.model.load_state_dict(raw["weights"], strict=True)
@@ -256,7 +301,4 @@ class NeuralAveragePolicy:
         count = round(obs.numeric[NUMERIC_NAMES.index("player_count")] * 3)
         if count not in self.supported_player_counts:
             raise KeyError(f"Average model has no training coverage for {count} players; supported={self.supported_player_counts}")
-        with torch.no_grad():
-            probabilities = tuple(self.model(encode_batch([obs]))[0].tolist())
-        validate_strategy(probabilities, obs.legal_mask)
-        return probabilities
+        return self.model.probabilities(obs)

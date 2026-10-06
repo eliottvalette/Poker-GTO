@@ -1,0 +1,53 @@
+{
+  "config_version": 1,
+  "seed": 42,
+  "outer_iterations": 50,
+  "workers": 8,
+  "trainer_threads": 1,
+  "epochs_per_iteration": 2,
+  "batch_size": 64,
+  "learning_rate": 0.0003,
+  "advantage_capacity": 10000,
+  "strategy_capacity": 10000,
+  "memory_byte_budget": 134217728,
+  "sample_byte_budget": 67108864,
+  "generation_byte_budget": 268435456,
+  "max_nodes": 5000,
+  "max_depth": 64,
+  "checkpoint_every": 5,
+  "evaluation_every": 5,
+  "traversal_mode": "external_sampling",
+  "root_sampler_version": 1,
+  "feature_schema_version": 1,
+  "model_schema_version": "cards8_numeric32_historyGRU32_head64_features1",
+  "output_dir": "runs/deep_cfr_pilot",
+  "evaluation_max_nodes": 20000,
+  "3max": {
+    "enabled": true,
+    "traversals_per_player": 128,
+    "root_sampling": {
+      "mixture": {
+        "on_policy": 0.5,
+        "synthetic": 0.25,
+        "stratified": 0.25
+      },
+      "max_rollout_decisions": 128,
+      "max_rollout_hands": 128,
+      "tournament_start_players": 3
+    }
+  },
+  "hu": {
+    "enabled": true,
+    "traversals_per_player": 128,
+    "root_sampling": {
+      "mixture": {
+        "on_policy": 0.5,
+        "synthetic": 0.25,
+        "stratified": 0.25
+      },
+      "max_rollout_decisions": 128,
+      "max_rollout_hands": 128,
+      "tournament_start_players": 3
+    }
+  }
+}

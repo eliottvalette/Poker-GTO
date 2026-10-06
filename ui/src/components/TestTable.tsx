@@ -26,11 +26,14 @@ export default function TestTable() {
   const locked = useRef(false);
   const started = useRef(false);
   const table = useRef<BrowserTable | null>(null);
-  const model = useRef<LoadedAveragePolicy | null>(null);
+  const models = useRef<Record<number, LoadedAveragePolicy>>({});
   const modelFiles = useRef<HTMLInputElement | null>(null);
 
-  async function viewWithPolicy(candidate: BrowserTable, policy = model.current): Promise<TableView> {
+  async function viewWithPolicy(candidate: BrowserTable, selected?: LoadedAveragePolicy): Promise<TableView> {
     const view = candidate.view();
+    const count = Object.keys(candidate.tournament.hand?.players ?? {}).length;
+    const policy = selected?.manifest.supported_player_counts.includes(count) ? selected : models.current[count];
+    if (!policy) view.policy.reason = `Average policy unavailable for ${count} players; load its model and manifest`;
     if (policy && !view.hand_terminal && view.actor === candidate.hero) {
       try {
         view.policy = { status: "experimental", reason: "Loaded average policy; equilibrium quality has not been certified",
@@ -107,10 +110,13 @@ export default function TestTable() {
       }
       loaded = await loadAveragePolicy(await weights[0].arrayBuffer(), JSON.parse(await manifests[0].text()));
       const next = table.current ? await viewWithPolicy(table.current, loaded) : null;
-      if (model.current) await model.current.release();
-      model.current = loaded;
+      const previous = new Set(loaded.manifest.supported_player_counts.map(count => models.current[count]).filter(Boolean));
+      for (const count of loaded.manifest.supported_player_counts) models.current[count] = loaded;
       loaded = null;
       if (next) setGame(next);
+      for (const policy of previous) {
+        if (!Object.values(models.current).includes(policy)) await policy.release();
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {

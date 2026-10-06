@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 from poker_game_expresso import EPS, HandState
 
+ACTION_SCHEMA_VERSION = 1
+
 ACTION_IDS = ("FOLD", "CHECK", "CALL", "RAISE_2.0X", "RAISE_2.5X", "RAISE_3.0X",
               "RAISE_4.0X", "BET_RAISE_33P", "BET_RAISE_50P", "BET_RAISE_75P",
               "BET_RAISE_100P", "BET_RAISE_150P", "ALL_IN")
