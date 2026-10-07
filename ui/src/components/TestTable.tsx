@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cardLabel, BrowserTable, type TableView } from "@/lib/game";
-import { loadAveragePolicy, PolicyCoverageError, type LoadedAveragePolicy } from "@/lib/onnx-policy";
+import { loadPublishedPolicies, loadAveragePolicy, PolicyCoverageError, type LoadedAveragePolicy } from "@/lib/onnx-policy";
 import { observe } from "@/lib/poker/observation";
 import PokerTableFrame from "@/components/PokerTableFrame";
 import styles from "./TestTable.module.css";
@@ -127,6 +127,29 @@ export default function TestTable() {
     }
   }
 
+  async function importPublishedPolicies() {
+    if (locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    setError(null);
+    let loaded: Record<number, LoadedAveragePolicy> | null = null;
+    try {
+      loaded = await loadPublishedPolicies();
+      const next = table.current ? await viewWithPolicy(table.current, loaded[Object.keys(table.current.tournament.hand?.players ?? {}).length]) : null;
+      const previous = new Set(Object.values(models.current));
+      models.current = loaded;
+      loaded = null;
+      if (next) setGame(next);
+      await Promise.all([...previous].map(policy => policy.release()));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (loaded) await Promise.all(Object.values(loaded).map(policy => policy.release()));
+      locked.current = false;
+      setBusy(false);
+    }
+  }
+
   const sessionPnL = (game?.hero_result_bb ?? 0) - pnlBaseline;
   const actionHistory = game?.history ?? [];
   const policy = game?.policy;
@@ -176,6 +199,8 @@ export default function TestTable() {
             <span>Hand {game?.hand_number ?? "—"}</span>
             {game?.tournament_terminal && <span className="font-semibold text-primary">🏆 P{game.winner}</span>}
             {game && !game.players.find(p => p.player_id === heroSeat)?.active && <span>Eliminated</span>}
+            <button type="button" disabled={busy} className="rounded border border-border px-2 py-1 disabled:opacity-50"
+              onClick={() => void importPublishedPolicies()}>Load exported policies</button>
             <input ref={modelFiles} type="file" accept=".onnx,.json" multiple hidden
               aria-label="Average policy files" onChange={event => void importPolicy(event.target.files)} />
             <button type="button" disabled={busy} className="rounded border border-border px-2 py-1 disabled:opacity-50"

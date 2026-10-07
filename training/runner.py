@@ -19,7 +19,7 @@ from training.root_sampler import RootSampler
 
 
 def source_commit() -> str | None:
-    result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False)
+    result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, check=False)
     return result.stdout.strip() if result.returncode == 0 else None
 
 
@@ -59,7 +59,8 @@ class TrainingRunner:
 
     @property
     def output_dir(self) -> Path:
-        return Path(self.config["output_dir"])
+        path = Path(self.config["output_dir"])
+        return path if path.is_absolute() else Path(__file__).resolve().parents[1] / path
 
     def run_iteration(self) -> dict:
         # A failed worker, fit, evaluation or publication leaves both tracks and
@@ -106,7 +107,7 @@ class TrainingRunner:
                 candidate.save_checkpoint(path)
             # The checkpoint contains metrics, allowing JSONL repair after a crash.
             candidate._write_metrics()
-        except Exception:
+        except BaseException:
             torch.set_rng_state(rng_state)
             raise
         finally:
@@ -206,6 +207,31 @@ class TrainingRunner:
             row = self.run_iteration()
             print(f"Iteration {self.iteration}: {row['wall_seconds']:.2f}s", flush=True)
         self.save_checkpoint(self.output_dir / "checkpoints" / f"iteration_{self.iteration:06d}.pt")
+
+    def run_for(self, seconds: float, checkpoint_path: str | Path) -> dict:
+        """Finish whole iterations until the wall budget, then save complete state."""
+        import math
+        if type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds <= 0:
+            raise ValueError(f"Positive finite training duration required: {seconds}")
+        if self.iteration == 0 and self.resume_checkpoint is None and (self.output_dir / "metrics.jsonl").exists():
+            raise FileExistsError(f"Training history exists at {self.output_dir}; an explicit checkpoint is required")
+        started = time.monotonic()
+        initial_iteration = self.iteration
+        stopped = "duration"
+        try:
+            while time.monotonic() - started < seconds:
+                row = self.run_iteration()
+                print(f"Iteration {self.iteration}: {row['wall_seconds']:.2f}s; elapsed {time.monotonic() - started:.1f}/{seconds:.1f}s", flush=True)
+        except KeyboardInterrupt:
+            stopped = "interrupted"
+            print("Interrupted; saving the last complete iteration", flush=True)
+        except BaseException:
+            self.save_checkpoint(checkpoint_path)
+            raise
+        self.save_checkpoint(checkpoint_path)
+        return {"initial_iteration": initial_iteration, "final_iteration": self.iteration,
+                "elapsed_seconds": time.monotonic() - started, "requested_seconds": seconds,
+                "stop_reason": stopped, "checkpoint": str(checkpoint_path)}
 
     def export(self, *, onnx: bool = False) -> dict:
         from ml.export_onnx import export_average_policy

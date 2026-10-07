@@ -149,3 +149,34 @@ export async function loadAveragePolicy(model: ArrayBuffer, rawManifest: unknown
     },
   };
 }
+
+/** Load the immutable ONNX bundles selected by migrate.py's atomic catalog. */
+export async function loadPublishedPolicies(): Promise<Record<number, LoadedAveragePolicy>> {
+  const response = await fetch("/policy/index.json", { cache: "no-store" });
+  if (!response.ok) throw new Error(`Published policy catalog unavailable: HTTP ${response.status}; export policies with migrate.py`);
+  const catalog = await response.json();
+  if (!catalog || catalog.version !== 1 || !catalog.exports || typeof catalog.exports !== "object") {
+    throw new Error("Invalid published policy catalog");
+  }
+  const loaded: Record<number, LoadedAveragePolicy> = {};
+  try {
+    for (const [track, count] of [["3max", 3], ["hu", 2]] as const) {
+      const entry = catalog.exports[track];
+      if (!entry || typeof entry.bundle_id !== "string" || !/^[a-f0-9]{64}$/.test(entry.bundle_id)
+          || !Number.isInteger(entry.iteration) || entry.iteration < 1) {
+        throw new Error(`Published ${track} policy is missing or invalid; export both policies with migrate.py`);
+      }
+      const base = `/policy/releases/${entry.bundle_id}/average_${track}`;
+      const [weights, manifest] = await Promise.all([fetch(`${base}.onnx`), fetch(`${base}.json`)]);
+      if (!weights.ok || !manifest.ok) throw new Error(`Published ${track} bundle unavailable: model HTTP ${weights.status}, manifest HTTP ${manifest.status}`);
+      loaded[count] = await loadAveragePolicy(await weights.arrayBuffer(), await manifest.json());
+      if (!equalArray(loaded[count].manifest.supported_player_counts, [count]) || loaded[count].manifest.iteration !== entry.iteration) {
+        throw new Error(`Published ${track} policy does not match its catalog entry`);
+      }
+    }
+    return loaded;
+  } catch (cause) {
+    await Promise.all(Object.values(loaded).map(policy => policy.release()));
+    throw cause;
+  }
+}

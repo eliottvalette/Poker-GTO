@@ -19,6 +19,14 @@ payout is an environment result, not its training utility.
 
 ## Offline training
 
+For ordinary use, run `python train-3.py` or `python train-hu.py`. Each resumes its
+checkpoint automatically, trains for one hour (editable in `training/settings.py`)
+and saves complete state. `python migrate.py` offers an ASCII menu to activate
+checkpoint policies, export both ONNX models for Test Live, or do both.
+See [the timed-script workflow](docs/training-scripts.md) for paths, safe stopping
+and publication. There are no argument-parser flags.
+
+
 The importable runner trains separate 3-max and HU policies, each with one shared advantage network
 and one average-policy network, with compact replay,
 observable deterministic features, suit normalization, controlled tournament/

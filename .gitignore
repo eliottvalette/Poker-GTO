@@ -18,3 +18,8 @@ viz/
 .DS_Store
 policy/avg_policy.csv
 runs/
+
+policy/releases/
+policy/.publication.lock
+ui/public/policy/
+policy/.compute.lock
