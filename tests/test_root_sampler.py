@@ -9,10 +9,60 @@ from training.root_sampler import RootSampler, canonical_seats
 
 def root_config(source=None):
     weights = {'on_policy': .5, 'synthetic': .25, 'stratified': .25} if source is None else {s: float(s == source) for s in ('on_policy', 'synthetic', 'stratified')}
-    return {'mixture': weights, 'max_rollout_decisions': 128, 'max_rollout_hands': 128, 'tournament_start_players': 3}
+    return {'mixture': weights, 'max_rollout_decisions': 128, 'max_rollout_hands': 128, 'tournament_start_players': 3, 'hole_card_sampling': 'random'}
 
 
 class RootSamplerTests(unittest.TestCase):
+    def test_exact_combo_cycle_multiplicities_and_conditional_decks(self):
+        from collections import Counter
+        from training.metrics import opening_hand_class
+        for count in (2, 3):
+            config = root_config('synthetic')
+            config['hole_card_sampling'] = 'stratified'
+            sampler = RootSampler(count, 42, config)
+            root = HandState.start({i: 75 / count for i in range(count)}, 0, random.Random(7))
+            hero = root.current_player
+            combos, classes = Counter(), Counter()
+            for _ in range(1326):
+                result = sampler.stratify_cards(root, hero)
+                result.assert_invariants()
+                combos[tuple(sorted(result.players[hero].cards))] += 1
+                classes[opening_hand_class(observe(result))] += 1
+                self.assertEqual(result.initial_stacks, root.initial_stacks)
+                self.assertEqual(result.history, root.history)
+            self.assertEqual(len(combos), 1326)
+            self.assertEqual(set(combos.values()), {1})
+            self.assertEqual(len(classes), 169)
+            for label, number in classes.items():
+                self.assertEqual(number, 6 if len(label) == 2 else 4 if label.endswith('s') else 12)
+
+    def test_card_cycles_resume_and_reset_between_frozen_profiles(self):
+        config = root_config('synthetic')
+        config['hole_card_sampling'] = 'stratified'
+        original, restored = (RootSampler(2, 42, config) for _ in range(2))
+        root = HandState.start({0: 37.5, 1: 37.5}, 0, random.Random(7))
+        for _ in range(19):
+            original.stratify_cards(root, 0)
+        restored.restore_card_state(original.card_state())
+        for _ in range(20):
+            self.assertEqual(asdict(original.stratify_cards(root, 0)), asdict(restored.stratify_cards(root, 0)))
+        original.begin_iteration()
+        self.assertEqual(original.card_cycles, {})
+        self.assertEqual(original.card_cursors, {})
+
+    def test_stratification_leaves_public_root_distribution_unchanged(self):
+        config = root_config()
+        config['tournament_start_players'] = 2
+        a = RootSampler(2, 42, config)
+        b = RootSampler(2, 42, {**config, 'hole_card_sampling': 'stratified'})
+        for i in range(50):
+            left, right = a.sample(), b.sample(traverser=i % 2)
+            self.assertEqual(left.initial_stacks, right.initial_stacks)
+            self.assertEqual(left.button, right.button)
+            self.assertEqual(left.history, right.history)
+            self.assertEqual(left.blind_level_index, right.blind_level_index)
+        self.assertEqual(a.rng.getstate(), b.rng.getstate())
+
     def test_reproducible_valid_conserved_roots_for_both_tracks(self):
         for count in (2, 3):
             a, b = (RootSampler(count, 42, root_config()) for _ in range(2))

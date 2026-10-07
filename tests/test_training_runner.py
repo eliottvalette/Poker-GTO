@@ -13,7 +13,7 @@ from training.runner import TrainingRunner
 
 def tiny_config(directory):
     config = load_config('configs/deep_cfr_pilot.json')
-    config.update(output_dir=str(directory), workers=1, outer_iterations=2, epochs_per_iteration=1,
+    config.update(output_dir=str(directory), workers=1, outer_iterations=2, advantage_epochs=1, average_epochs=1,
                   checkpoint_every=1, evaluation_every=2, max_nodes=20000,
                   strategy_capacity=1000)
     for name in ('3max', 'hu'):
@@ -39,10 +39,15 @@ class TrainingRunnerTests(unittest.TestCase):
 
     def test_iteration_checkpoint_resume_and_scheduled_evaluation(self):
         with tempfile.TemporaryDirectory() as directory:
-            runner = TrainingRunner(tiny_config(directory))
+            config = tiny_config(directory)
+            for track in ('hu', '3max'):
+                config[track]['root_sampling']['hole_card_sampling'] = 'stratified'
+            config.update(advantage_epochs=3, average_epochs=1)
+            runner = TrainingRunner(config)
             row = runner.run_iteration()
             self.assertEqual(runner.iteration, 1)
             self.assertEqual(set(row['tracks']), {'3max', 'hu'})
+            self.assertTrue(all(t['fit_epochs'] == {'advantage': 3, 'average_policy': 1} for t in row['tracks'].values()))
             self.assertTrue(all('evaluation' not in t for t in row['tracks'].values()))
             path = Path(directory) / 'checkpoints/iteration_000001.pt'
             restored = TrainingRunner.load_checkpoint(path)
@@ -53,6 +58,7 @@ class TrainingRunnerTests(unittest.TestCase):
                 self.assertEqual(solver.strategy_memory.samples, loaded.strategy_memory.samples)
                 self.assertEqual(solver.strategy_memory.used_bytes, loaded.strategy_memory.used_bytes)
                 self.assertEqual(runner.samplers[name].rng.getstate(), restored.samplers[name].rng.getstate())
+                self.assertEqual(runner.samplers[name].card_state(), restored.samplers[name].card_state())
             a, b = runner.run_iteration(), restored.run_iteration()
             self.assertEqual(deterministic_metric(a), deterministic_metric(b))
             for name in runner.solvers:

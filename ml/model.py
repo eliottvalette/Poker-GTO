@@ -6,7 +6,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from actions import ACTION_IDS
 from infoset import HISTORY_WIDTH, STATE_VERSION, Observation
 from features import FEATURE_SCHEMA_VERSION, SUPPORTED_FEATURE_VERSIONS
-from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES, NeuralObservation, neural_observation
+from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES, NeuralObservation, neural_observation, numeric_names
 
 def model_architecture(feature_version: int) -> str:
     if feature_version not in SUPPORTED_FEATURE_VERSIONS:
@@ -27,7 +27,7 @@ def encode_batch(observations: list[Observation | NeuralObservation],
     histories = [o.history for o in observations]
     for o, numeric_values, history_values in zip(observations, numerics, histories):
         if (o.version != STATE_VERSION or len(o.cards) != 7 or any(c not in range(53) for c in o.cards)
-                or len(numeric_values) != len(NUMERIC_NAMES) or len(o.legal_mask) != len(ACTION_IDS)
+                or len(numeric_values) != len(numeric_names(feature_version)) or len(o.legal_mask) != len(ACTION_IDS)
                 or not any(o.legal_mask) or not history_values or o.street not in range(4)
                 or any(len(e) != HISTORY_WIDTH for e in history_values)):
             raise ValueError(f"Invalid neural observation contract: {o}")
@@ -46,12 +46,12 @@ def encode_batch(observations: list[Observation | NeuralObservation],
 
 
 class StateEncoder(nn.Module):
-    def __init__(self):
+    def __init__(self, feature_version: int = FEATURE_SCHEMA_VERSION):
         super().__init__()
         self.cards = nn.Embedding(53, 8)
         self.street = nn.Embedding(4, 4)
         self.position = nn.Embedding(3, 4)
-        self.numeric = nn.Sequential(nn.Linear(len(NUMERIC_NAMES), 32), nn.ReLU(), nn.Linear(32, 32), nn.ReLU())
+        self.numeric = nn.Sequential(nn.Linear(len(numeric_names(feature_version)), 32), nn.ReLU(), nn.Linear(32, 32), nn.ReLU())
         self.history = nn.GRU(HISTORY_WIDTH, 32, batch_first=True)
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -66,7 +66,7 @@ class AdvantageNetwork(nn.Module):
         super().__init__()
         model_architecture(feature_version)
         self.feature_version = feature_version
-        self.encoder = StateEncoder()
+        self.encoder = StateEncoder(feature_version)
         self.head = nn.Sequential(nn.Linear(128, 64), nn.ReLU(), nn.Linear(64, len(ACTION_IDS)))
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -81,7 +81,7 @@ class AveragePolicyNetwork(nn.Module):
         super().__init__()
         model_architecture(feature_version)
         self.feature_version = feature_version
-        self.encoder = StateEncoder()
+        self.encoder = StateEncoder(feature_version)
         self.head = nn.Sequential(nn.Linear(128, 64), nn.ReLU(), nn.Linear(64, len(ACTION_IDS)))
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:

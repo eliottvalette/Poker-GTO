@@ -35,7 +35,7 @@ def read_frozen_replay(path: Path, track: str) -> tuple[dict, dict]:
         raise ValueError(f"Invalid frozen checkpoint checksum: {path}")
     raw = torch.load(io.BytesIO(envelope["payload"]), map_location="cpu", weights_only=True)
     expected = {**CONTRACT, "checkpoint": 2, "feature": 2,
-                "model": "cards8_numeric32_historyGRU32_head64_features2"}
+                "model": "cards8_numeric32_historyGRU32_head64_features2", "root_sampler": 1}
     del expected["external_strategy_collectors"]
     if raw["contract"] != expected or config_hash(raw["config"]) != raw["config_hash"]:
         raise ValueError(f"Frozen replay requires the original feature-v2 checkpoint contract: {path}")

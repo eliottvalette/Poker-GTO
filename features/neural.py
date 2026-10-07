@@ -8,10 +8,17 @@ from infoset import EVENTS, HISTORY_WIDTH, NUMERIC_NAMES, POSITIONS, STATE_VERSI
 from poker_game_expresso import HandState
 from tournament import TournamentState
 from features import FEATURE_SCHEMA_VERSION, SUPPORTED_FEATURE_VERSIONS
-from features.cards import canonical_suits, canonical_private_cards
+from features.cards import canonical_suits, canonical_private_cards, PRIVATE_CARD_FEATURE_NAMES, private_card_features
 from features.deterministic import DERIVED_NAMES, derived_features
 
-NEURAL_NUMERIC_NAMES = NUMERIC_NAMES + DERIVED_NAMES
+def numeric_names(feature_version: int = FEATURE_SCHEMA_VERSION) -> tuple[str, ...]:
+    """Return the exact numeric contract; old compact replay widths stay intact."""
+    if feature_version not in SUPPORTED_FEATURE_VERSIONS:
+        raise ValueError(f"Unsupported feature schema: {feature_version}")
+    return NUMERIC_NAMES + DERIVED_NAMES + (PRIVATE_CARD_FEATURE_NAMES if feature_version >= 4 else ())
+
+
+NEURAL_NUMERIC_NAMES = numeric_names()
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +50,7 @@ class NeuralObservation:
                 or len(set(c for c in self.cards if c != 52)) != sum(c != 52 for c in self.cards)
                 or len(self.legal_mask) != len(ACTION_IDS) or not any(self.legal_mask)
                 or any(type(m) is not bool for m in self.legal_mask)
-                or len(self.numeric_data) != 8 * len(NEURAL_NUMERIC_NAMES)
+                or len(self.numeric_data) != 8 * len(numeric_names(self.feature_version))
                 or not self.history_data or len(self.history_data) % (8 * HISTORY_WIDTH)
                 or any(not math.isfinite(v) for v in self.numeric)
                 or any(not math.isfinite(v) for row in self.history for v in row)):
@@ -90,14 +97,14 @@ def neural_observation(obs: ObservationFields | NeuralObservation,
             raise ValueError(f"Encoded observation feature={obs.feature_version}, requested={feature_version}; explicit migration required")
         return obs
     raw_numeric, raw_history = canonical_player_fields(obs)
-    cards, mapping = (canonical_private_cards(obs.cards) if feature_version == 3 else canonical_suits(obs.cards))
+    cards, mapping = (canonical_private_cards(obs.cards) if feature_version >= 3 else canonical_suits(obs.cards))
     history = []
     count = round(raw_numeric[NUMERIC_NAMES.index("player_count")] * 3)
     for index, row in enumerate(raw_history):
         event = list(row)
         if event[-1] == 1:
             card = round(event[10] * 51)
-            if feature_version == 3 and count <= index < count + 2:
+            if feature_version >= 3 and count <= index < count + 2:
                 if card != obs.cards[index - count]:
                     raise ValueError("Private-card history disagrees with observable cards")
                 event[10] = cards[index - count] / 51
@@ -105,6 +112,8 @@ def neural_observation(obs: ObservationFields | NeuralObservation,
                 event[10] = (card // 4 * 4 + mapping[card % 4]) / 51
         history.extend(event)
     numeric = (*raw_numeric, *derived_features(obs.cards, raw_numeric, NUMERIC_NAMES))
+    if feature_version >= 4:
+        numeric += private_card_features(obs.cards[:2])
     return NeuralObservation(obs.version, obs.hero, obs.objective, cards, obs.street,
                              struct.pack(f"<{len(numeric)}d", *numeric), obs.legal_mask,
                              struct.pack(f"<{len(history)}d", *history), feature_version)

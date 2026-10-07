@@ -50,7 +50,7 @@ def run_preflight(config: dict, *, iterations: int = 2, traversals_per_player: i
               "root_sampler_distribution": {name: config[name]["root_sampling"] for name in ("3max", "hu") if config[name]["enabled"]},
               "strategy_collectors": {name: strategy_collector(2 if name == "hu" else 3, config["traversal_mode"])
                                       for name in ("3max", "hu") if config[name]["enabled"]},
-              "traversal_unit": "one task: HU external shares regret/strategy traversal; 3max external adds a uniform strategy pass; outcome shares its trajectory",
+              "traversal_unit": "one task: HU external shares regret/strategy traversal; 3max external adds two partial-enumeration strategy passes with half weights; outcome shares its trajectory",
               "preflight_iterations_requested": iterations, "preflight_traversals_per_player": traversals_per_player,
               "measured_iterations": [], "failure": None}
     report["traversals_per_iteration_proposed"] = sum((3 if name == "3max" else 2) * config[name]["traversals_per_player"] for name in ("3max", "hu") if config[name]["enabled"])

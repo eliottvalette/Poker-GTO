@@ -2,6 +2,7 @@
 from __future__ import annotations
 from dataclasses import replace
 from collections import Counter
+from itertools import combinations
 import random
 import math
 from typing import Callable
@@ -14,8 +15,9 @@ from poker_game_expresso import HandState
 from tournament import TournamentState
 from training.metrics import Coverage
 
-ROOT_SAMPLER_VERSION = 1
+ROOT_SAMPLER_VERSION = 2
 SOURCES = ("on_policy", "synthetic", "stratified")
+HOLE_COMBOS = tuple(combinations(range(52), 2))
 
 
 def canonical_seats(hand: HandState) -> HandState:
@@ -34,7 +36,7 @@ def canonical_seats(hand: HandState) -> HandState:
 
 class RootSampler:
     def __init__(self, player_count: int, seed: int, config: dict) -> None:
-        if player_count not in (2, 3) or set(config) != {"mixture", "max_rollout_decisions", "max_rollout_hands", "tournament_start_players"}:
+        if player_count not in (2, 3) or set(config) != {"mixture", "max_rollout_decisions", "max_rollout_hands", "tournament_start_players", "hole_card_sampling"}:
             raise ValueError(f"Invalid root configuration: players={player_count}, config={config}")
         mixture = config["mixture"]
         if set(mixture) != set(SOURCES) or any(type(w) not in (int, float) or not math.isfinite(w) or w < 0 for w in mixture.values()) or abs(sum(mixture.values()) - 1) > 1e-9:
@@ -45,11 +47,87 @@ class RootSampler:
                 or type(config["max_rollout_hands"]) is not int or config["max_rollout_hands"] < 1):
             raise ValueError(f"Invalid tournament root search configuration: {config}")
         self.player_count, self.config = player_count, config
+        if config["hole_card_sampling"] not in ("random", "stratified"):
+            raise ValueError(f"Invalid hole-card sampling mode: {config['hole_card_sampling']}")
         self.rng = random.Random(seed)
+        self.card_rng = random.Random(seed + 1000003)
+        self.card_cycles: dict[str, list[int]] = {}
+        self.card_cursors: dict[str, int] = {}
+        self.hole_coverage: dict[str, Counter] = {}
         self.tournament: TournamentState | None = None
         self.stratum_index = 0
         self.coverage = Coverage()
         self.policy: Callable | None = None
+
+    def begin_iteration(self) -> None:
+        """Use fresh random permutations for each frozen strategy profile.
+
+        Incomplete cycles must not carry across policy updates, which would
+        couple the next profile to its remaining private-card strata.
+        """
+        self.card_cycles.clear()
+        self.card_cursors.clear()
+
+    def task_factory(self, players: tuple[int, ...], traversals_per_player: int) -> Callable[[random.Random], HandState]:
+        """Bind the solver's player-major task order to explicit card strata."""
+        if players != tuple(range(self.player_count)) or type(traversals_per_player) is not int or traversals_per_player < 1:
+            raise ValueError(f"Invalid root task schedule: players={players}, traversals={traversals_per_player}")
+        self.begin_iteration()
+        scheduled = iter(player for player in players for _ in range(traversals_per_player))
+
+        def sample_task(rng: random.Random) -> HandState:
+            try:
+                player = next(scheduled)
+            except StopIteration:
+                raise ValueError("Root task schedule exhausted") from None
+            return self.sample(rng, traverser=player)
+
+        return sample_task
+
+    def stratify_cards(self, root: HandState, player: int) -> HandState:
+        """Uniform exact combos without replacement, then a conditional deal.
+
+        Public roots are sampled first with their original RNG. The independent
+        card stream cannot affect stack/blind/source selection or rollouts.
+        Each full 1326-record cycle has class multiplicities 6/4/12.
+        """
+        if player not in root.players or root.street != "PREFLOP" or root.board or root.terminal:
+            raise ValueError("Hole-card stratification requires a live preflop root and a seated player")
+        key = f"{player}:{root.players[player].position}"
+        cursor = self.card_cursors.get(key, len(HOLE_COMBOS))
+        if cursor == len(HOLE_COMBOS):
+            order = list(range(len(HOLE_COMBOS)))
+            self.card_rng.shuffle(order)
+            self.card_cycles[key] = order
+            cursor = 0
+        combo = HOLE_COMBOS[self.card_cycles[key][cursor]]
+        self.card_cursors[key] = cursor + 1
+        result = root.clone()
+        remaining = [card for card in range(52) if card not in combo]
+        self.card_rng.shuffle(remaining)
+        result.players[player].cards = combo if self.card_rng.random() < .5 else combo[::-1]
+        for seat, other in result.players.items():
+            if seat != player:
+                other.cards = (remaining.pop(), remaining.pop())
+        result.deck = remaining
+        result.assert_invariants()
+        self.hole_coverage.setdefault(key, Counter())[f"{combo[0]},{combo[1]}"] += 1
+        return result
+
+    def card_state(self) -> dict:
+        return {"rng": self.card_rng.getstate(), "cycles": self.card_cycles,
+                "cursors": self.card_cursors, "coverage": {k: dict(v) for k, v in self.hole_coverage.items()}}
+
+    def restore_card_state(self, raw: dict) -> None:
+        if set(raw) != {"rng", "cycles", "cursors", "coverage"} or set(raw["cycles"]) != set(raw["cursors"]):
+            raise ValueError("Invalid stratified card checkpoint fields")
+        for key, order in raw["cycles"].items():
+            if sorted(order) != list(range(len(HOLE_COMBOS))) or type(raw["cursors"][key]) is not int or not 0 <= raw["cursors"][key] <= len(HOLE_COMBOS):
+                raise ValueError(f"Invalid card cycle/cursor: {key}")
+        self.card_rng.setstate(raw["rng"])
+        self.card_cycles = {k: list(v) for k, v in raw["cycles"].items()}
+        self.card_cursors = dict(raw["cursors"])
+        self.hole_coverage = {k: Counter(v) for k, v in raw["coverage"].items()}
 
     def _new_tournament(self) -> TournamentState:
         count = self.config["tournament_start_players"]
@@ -111,9 +189,13 @@ class RootSampler:
         return HandState.start(stacks, button, self.rng, stage.blinds,
                                hand_number=stage.first_hand, blind_level_index=level)
 
-    def sample(self, _solver_rng: random.Random | None = None) -> HandState:
+    def sample(self, _solver_rng: random.Random | None = None, *, traverser: int | None = None) -> HandState:
+        if self.config["hole_card_sampling"] == "stratified" and traverser not in range(self.player_count):
+            raise ValueError("Stratified hole-card roots require an explicit seated traverser")
         source = self.rng.choices(SOURCES, weights=[self.config["mixture"][s] for s in SOURCES], k=1)[0]
         root = self._on_policy() if source == "on_policy" else self._exploration(source == "stratified")
+        if self.config["hole_card_sampling"] == "stratified" and not root.terminal:
+            root = self.stratify_cards(root, traverser)
         if root.terminal:
             # Terminal roots are legitimate draws, retained in counts and not resampled.
             self.coverage.counts.setdefault("terminal_roots", Counter())[source] += 1

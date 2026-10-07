@@ -69,7 +69,7 @@ def tasks_for(count: int, amount: int, config: dict, snapshot_models: dict) -> t
         return model_policy(snapshot_models[players], obs)
     sampler.policy = policy
     rng = random.Random(20000 + count)
-    tasks = [TraversalTask(index, index % count, sampler.sample(), rng.randrange(2**31),
+    tasks = [TraversalTask(index, index % count, sampler.sample(traverser=index % count), rng.randrange(2**31),
                            config['max_nodes'], config['max_depth']) for index in range(amount)]
     return tasks, sampler.coverage.as_dict()
 

@@ -134,6 +134,49 @@ class Traversal:
         sink(obs, target, 1.0)
         return value
 
+    def average_partial(self, state: GameState, player: int, enumerated_opponent: int,
+                        sink: SampleSink, sample_reach: float = 1.0, depth: int = 0) -> None:
+        """Sample own strategy, enumerate one opponent, correct other uniform sampling.
+
+        Each orientation estimates the same own-reach action mass. Combining both
+        orientations in three-player games requires equal weighting (one half
+        each to retain the mass of one collection pass). Chance stays in the deal.
+        """
+        if depth == 0:
+            state = hand_root(state)
+            if player not in state.players or enumerated_opponent not in state.players or player == enumerated_opponent:
+                raise ValueError(f"Distinct seated collector players required: {player}, {enumerated_opponent}")
+        elif not isinstance(state, HandState):
+            raise TypeError("Recursive traversal must remain inside its extracted hand")
+        if not math.isfinite(sample_reach) or not 0 < sample_reach <= 1:
+            raise ValueError(f"Invalid partial collector sampling reach: {sample_reach}")
+        terminal = self._visit(state, depth)
+        if settled_value(state, player) is not None:
+            self.settled_prunes += int(not terminal)
+            return
+        actions = self._children(state)
+        actor = state.current_player
+        if actor == enumerated_opponent:
+            for action in actions:
+                self.average_partial(self.child(state, action), player, enumerated_opponent,
+                                     sink, sample_reach, depth + 1)
+            return
+        if actor == player:
+            obs = self.observer(state)
+            strategy = self.strategy(obs)
+            validate_strategy(strategy, obs.legal_mask)
+            weight = 1.0 / sample_reach
+            if not math.isfinite(weight):
+                raise ValueError(f"Nonfinite partial collector importance weight: {weight}")
+            sink(obs, strategy, weight)
+            chosen = ACTION_IDS[sample_index(strategy, self.rng)]
+            action = next(a for a in actions if a.action_id == chosen)
+        else:
+            action = self.rng.choice(actions)
+            sample_reach /= len(actions)
+        self.average_partial(self.child(state, action), player, enumerated_opponent,
+                             sink, sample_reach, depth + 1)
+
     def average(self, state: GameState, player: int, sink: SampleSink, own_reach: float = 1.0,
                 sample_reach: float = 1.0, depth: int = 0) -> None:
         if depth == 0:

@@ -52,7 +52,8 @@ def benchmark_checkpoint(checkpoint: Path, track: str, task_ids: tuple[int, ...]
                 return model_policy(runner.solvers[name].average_model, obs)
             sampler.policy = None if runner.iteration == 0 else rollout
             config = runner.config
-            tasks, _ = solver.traversal_tasks(sampler.sample, config[track]['traversals_per_player'],
+            factory = sampler.task_factory(solver.players, config[track]['traversals_per_player'])
+            tasks, _ = solver.traversal_tasks(factory, config[track]['traversals_per_player'],
                 max_nodes, config['max_depth'], config['sample_byte_budget'], config['traversal_mode'],
                 config.get('outcome_epsilon', 0.6))
             if any(type(index) is not int or index < 0 or index >= len(tasks) for index in task_ids):

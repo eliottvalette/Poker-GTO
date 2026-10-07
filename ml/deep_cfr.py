@@ -17,7 +17,7 @@ from tournament import TournamentState
 from cfr_solver import GameState, Traversal, TraversalBudgetExceeded, hand_root, regret_matching, validate_strategy
 from infoset import STATE_VERSION, Observation
 from features import FEATURE_SCHEMA_VERSION, SUPPORTED_FEATURE_VERSIONS
-from features.neural import NeuralObservation, observe_neural
+from features.neural import NeuralObservation, observe_neural, numeric_names
 from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES
 from ml.memory import DEFAULT_BYTE_BUDGET, TRAVERSAL_MODES, ReservoirMemory, TrainingSample, sample_bytes
 from ml.model import MODEL_ARCHITECTURE, AdvantageNetwork, AveragePolicyNetwork, encode_batch, model_architecture
@@ -31,7 +31,7 @@ def strategy_collector(player_count: int, traversal_mode: str) -> str:
         raise ValueError(f"Invalid collector context: players={player_count}, mode={traversal_mode}")
     if traversal_mode == "outcome_sampling":
         return "outcome_importance"
-    return "opponent_nodes" if player_count == 2 else "uniform_importance"
+    return "opponent_nodes" if player_count == 2 else "partial_enumeration"
 
 
 @dataclass(frozen=True)
@@ -186,10 +186,17 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask,
     value = checked_traversal("advantage", lambda: walk.regrets(task.root, task.player, sink("advantage", advantages)))
     nodes = walk.nodes
     max_depth_seen = walk.max_depth_seen
-    walk = Traversal(strategy, rng, task.max_nodes, task.max_depth, observer=observe_neural)
-    checked_traversal("strategy", lambda: walk.average(task.root, task.player, sink("strategy", strategies)))
-    return finish(GeneratedSamples(task.task_id, snapshot.version, advantages, strategies, nodes + walk.nodes, value,
-                            task.traversal_mode, None, max(max_depth_seen, walk.max_depth_seen)))
+    strategy_sink = sink("strategy", strategies)
+    for opponent in root.players:
+        if opponent == task.player:
+            continue
+        walk = Traversal(strategy, rng, task.max_nodes, task.max_depth, observer=observe_neural)
+        checked_traversal(f"strategy_enumerate_{opponent}", lambda: walk.average_partial(
+            task.root, task.player, opponent, lambda obs, target, weight: strategy_sink(obs, target, weight / 2)))
+        nodes += walk.nodes
+        max_depth_seen = max(max_depth_seen, walk.max_depth_seen)
+    return finish(GeneratedSamples(task.task_id, snapshot.version, advantages, strategies, nodes, value,
+                            task.traversal_mode, None, max_depth_seen))
 
 
 class DeepCFRSolver:
@@ -244,7 +251,7 @@ class DeepCFRSolver:
         return tasks, rng
 
     def run_iteration(self, root_factory: Callable[[random.Random], GameState], traversals_per_player: int = 1,
-                      workers: int = 1, epochs: int = 1, batch_size: int = 32,
+                      workers: int = 1, advantage_epochs: int = 1, average_epochs: int = 1, batch_size: int = 32,
                       max_nodes: int = 10000, max_depth: int = 300,
                       sample_byte_budget: int = DEFAULT_BYTE_BUDGET,
                       generation_byte_budget: int = 256 * 1024 * 1024,
@@ -293,11 +300,12 @@ class DeepCFRSolver:
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(self.seed + (self.version + 1) * 101)
             advantage = AdvantageNetwork()
-            metrics["advantage"] = fit(advantage, advantage_memory.samples, epochs, batch_size,
+            metrics["advantage"] = fit(advantage, advantage_memory.samples, advantage_epochs, batch_size,
                                        self.seed, learning_rate=learning_rate)
             torch.manual_seed(self.seed + (self.version + 1) * 101 + 10)
             average = AveragePolicyNetwork()
-            metrics["average_policy"] = fit(average, strategy_memory.samples, epochs, batch_size, self.seed + 10, learning_rate=learning_rate)
+            metrics["average_policy"] = fit(average, strategy_memory.samples, average_epochs, batch_size, self.seed + 10, learning_rate=learning_rate)
+        metrics["fit_epochs"] = {"advantage": advantage_epochs, "average_policy": average_epochs}
         metrics["fit_seconds"] = time.perf_counter() - fit_started
         metrics["root_seconds"] = root_seconds
         metrics["generation_seconds"] = generation_seconds
@@ -361,7 +369,7 @@ class NeuralAveragePolicy:
         feature_version = raw.get("feature_schema_version")
         if (raw.get("version") != 5 or feature_version not in SUPPORTED_FEATURE_VERSIONS or raw.get("state_version") != STATE_VERSION
                 or raw.get("architecture") != model_architecture(feature_version) or raw.get("actions") != list(ACTION_IDS)
-                or raw.get("numeric_names") != list(NUMERIC_NAMES) or raw.get("iteration", 0) < 1
+                or raw.get("numeric_names") != list(numeric_names(feature_version)) or raw.get("iteration", 0) < 1
                 or raw.get("objective") != "hand_chip_delta"
                 or raw.get("training_metadata", {}).get("traversal_mode") not in TRAVERSAL_MODES
                 or not raw.get("supported_player_counts")

@@ -4,10 +4,10 @@ from itertools import permutations
 import random
 import unittest
 from actions import ACTION_IDS
-from features.cards import canonical_suits, card_features, made_category
+from features.cards import canonical_suits, card_features, made_category, private_card_features
 from features.deterministic import DERIVED_NAMES, derived_features
 from features.equity import equity, hand_equity
-from features.neural import neural_observation
+from features.neural import neural_observation, numeric_names
 from features.range_features import normalize_range
 from infoset import NUMERIC_NAMES, observe
 from ml.memory import TrainingSample, sample_bytes
@@ -16,6 +16,43 @@ from poker_game_expresso import HandState
 
 
 class FeatureTests(unittest.TestCase):
+    def test_private_descriptors_cover_rank_structure_and_ace_low(self):
+        examples = {
+            (48, 49): (1, 1, 0, 1, 0, 0, 1),
+            (44, 45): (11/12, 11/12, 0, 1, 0, 0, 1),
+            (48, 44): (1, 11/12, 1/12, 0, 1, 1, 1),
+            (48, 45): (1, 11/12, 1/12, 0, 0, 1, 1),
+            (20, 1): (5/12, 0, 5/12, 0, 0, 0, 0),
+            (4, 1): (1/12, 0, 1/12, 0, 0, 1, 0),
+            (48, 0): (1, 0, 1, 0, 1, 1, .5),
+            (48, 5): (1, 1/12, 11/12, 0, 0, 0, .5),
+        }
+        for cards, expected in examples.items():
+            self.assertEqual(private_card_features(cards), expected)
+            self.assertEqual(private_card_features(cards[::-1]), expected)
+
+    def test_numeric_width_is_declared_by_feature_version(self):
+        from ml.model import AveragePolicyNetwork
+        obs = observe(HandState.start({0: 25, 1: 25}, 0, random.Random(3)))
+        widths = {}
+        for version in (2, 3, 4):
+            encoded = neural_observation(obs, version)
+            widths[version] = len(encoded.numeric)
+            self.assertEqual(widths[version], len(numeric_names(version)))
+            model = AveragePolicyNetwork(version)
+            self.assertEqual(model.encoder.numeric[0].in_features, widths[version])
+            self.assertEqual(model(encode_batch([encoded], version)).shape, (1, len(ACTION_IDS)))
+            if version != 4:
+                with self.assertRaisesRegex(ValueError, "explicit migration"):
+                    encode_batch([encoded])
+                with self.assertRaisesRegex(ValueError, "Invalid compact neural schema"):
+                    replace(encoded, feature_version=4)
+        self.assertEqual(widths[2], widths[3])
+        self.assertEqual(widths[4] - widths[3], 7)
+        old = AveragePolicyNetwork(3)
+        current = AveragePolicyNetwork(4)
+        self.assertEqual(sum(p.numel() for p in current.parameters()) - sum(p.numel() for p in old.parameters()), 224)
+
     def test_private_card_order_and_suits_preserve_all_inputs(self):
         from ml.model import AveragePolicyNetwork
         import torch

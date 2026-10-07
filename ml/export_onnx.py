@@ -20,7 +20,7 @@ from torch import nn
 
 from actions import ACTION_IDS, ACTION_SCHEMA_VERSION
 from infoset import EVENTS, HISTORY_WIDTH, POSITIONS, STATE_VERSION, Observation
-from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES
+from features.neural import numeric_names
 from ml.deep_cfr import NeuralAveragePolicy
 from ml.model import AveragePolicyNetwork, encode_batch, model_architecture
 
@@ -99,10 +99,10 @@ def export_average_policy(checkpoint: str | Path, model_path: str | Path, manife
             raise ValueError(f"ONNX average-policy parity failed: expected={expected.tolist()}, actual={actual.tolist()}")
         errors.append(float(np.abs(actual - expected).max()))
     manifest = {"version": EXPORT_VERSION, "action_schema_version": ACTION_SCHEMA_VERSION, "feature_schema_version": policy.model.feature_version,
-                "suit_normalization": "private_order_minimum" if policy.model.feature_version == 3 else "first_observable_occurrence", "seat_normalization": "hero_then_clockwise_positions", "traversal_mode": policy.traversal_mode, "state_version": STATE_VERSION, "architecture": model_architecture(policy.model.feature_version),
+                "suit_normalization": "private_order_minimum" if policy.model.feature_version >= 3 else "first_observable_occurrence", "seat_normalization": "hero_then_clockwise_positions", "traversal_mode": policy.traversal_mode, "state_version": STATE_VERSION, "architecture": model_architecture(policy.model.feature_version),
                 "model_sha256": hashlib.sha256(model_bytes).hexdigest(), "objective": policy.objective,
                 "iteration": policy.iteration, "supported_player_counts": list(policy.supported_player_counts),
-                "actions": list(ACTION_IDS), "numeric_names": list(NUMERIC_NAMES), "positions": list(POSITIONS),
+                "actions": list(ACTION_IDS), "numeric_names": list(numeric_names(policy.model.feature_version)), "positions": list(POSITIONS),
                 "events": list(EVENTS), "normalization_bb": 25.0, "card_encoding": "rank_index_times_4_plus_suit_index",
                 "card_slots": 7, "unknown_card": 52, "card_vocabulary": 53, "history_width": HISTORY_WIDTH,
                 "full_history": True, "batch_size": 1, "inputs": list(INPUT_NAMES), "output": "probabilities",

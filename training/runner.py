@@ -88,8 +88,10 @@ class TrainingRunner:
                         raise KeyError(f"On-policy tournament requires the {count}-player average policy at iteration {self.iteration}")
                     return model_policy(self.solvers[track_name].average_model, obs)
                 sampler.policy = None if self.iteration == 0 else rollout_policy
-                metric = solver.run_iteration(sampler.sample, config[name]["traversals_per_player"],
-                    workers=config["workers"], epochs=config["epochs_per_iteration"], batch_size=config["batch_size"],
+                root_factory = sampler.task_factory(solver.players, config[name]["traversals_per_player"])
+                metric = solver.run_iteration(root_factory, config[name]["traversals_per_player"],
+                    workers=config["workers"], advantage_epochs=config["advantage_epochs"],
+                    average_epochs=config["average_epochs"], batch_size=config["batch_size"],
                     max_nodes=config["max_nodes"], max_depth=config["max_depth"],
                     sample_byte_budget=config["sample_byte_budget"], generation_byte_budget=config["generation_byte_budget"],
                     traversal_mode=config["traversal_mode"], learning_rate=config["learning_rate"],
@@ -98,6 +100,7 @@ class TrainingRunner:
                 sampler.policy = None
                 metric["fixed_probe_policy_drift"] = fixed_drift(previous, solver.average_model, self.probes[name])
                 metric["root_coverage"] = sampler.coverage.as_dict()
+                metric["hole_card_coverage"] = {key: dict(values) for key, values in sampler.hole_coverage.items()}
                 if row["iteration"] % config["evaluation_every"] == 0:
                     metric["evaluation"] = evaluate_solver(solver, self.probes[name], config["evaluation_max_nodes"], config["batch_size"], self.solvers[name].snapshot())
                 row["tracks"][name] = metric
@@ -143,6 +146,7 @@ class TrainingRunner:
                 "advantage_memory": pack_memory(solver.advantage_memory),
                 "strategy_memory": pack_memory(solver.strategy_memory), "metrics": solver.metrics,
                 "traversal_mode": solver.traversal_mode, "sampler_rng": sampler.rng.getstate(),
+                "card_sampling_state": sampler.card_state(),
                 "stratum_index": sampler.stratum_index, "root_coverage": sampler.coverage.as_dict(),
                 "tournament": pack_tournament(sampler.tournament)}
         write_checkpoint(Path(path), raw)
@@ -209,6 +213,7 @@ class TrainingRunner:
                     solver.average_model.load_state_dict(track["average_weights"], strict=True)
                     solver.average_model.eval()
                 sampler.rng.setstate(track["sampler_rng"])
+                sampler.restore_card_state(track["card_sampling_state"])
                 sampler.stratum_index = track["stratum_index"]
                 sampler.coverage.merge(track["root_coverage"])
                 sampler.tournament = unpack_tournament(track["tournament"])

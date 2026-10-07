@@ -20,7 +20,7 @@ def run_hu_repair_pilot(output: Path, iterations: int = 3, traversals_per_player
         raise FileExistsError(f"Pilot output already exists: {output}")
     config = load_config("configs/train_hu.json")
     config.update(output_dir=str(output), outer_iterations=iterations, workers=1,
-                  epochs_per_iteration=epochs, checkpoint_every=1, evaluation_every=iterations)
+                  advantage_epochs=epochs, average_epochs=epochs, checkpoint_every=1, evaluation_every=iterations)
     config["hu"]["traversals_per_player"] = traversals_per_player
     output.mkdir(parents=True)
     atomic_bytes(output / "config.json", (json.dumps(config, indent=2) + "\n").encode())

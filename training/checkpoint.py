@@ -17,11 +17,11 @@ from poker_game_expresso import ActionEvent, BlindLevel, HandPlayer, HandState
 from tournament import TournamentState
 from training.root_sampler import ROOT_SAMPLER_VERSION
 
-CHECKPOINT_VERSION = 3
+CHECKPOINT_VERSION = 4
 CONTRACT = {"checkpoint": CHECKPOINT_VERSION, "advantage_layout": "shared_per_player_count", "state": STATE_VERSION, "feature": FEATURE_SCHEMA_VERSION,
             "memory": MEMORY_VERSION, "action_schema": ACTION_SCHEMA_VERSION, "evaluation_schema": 2, "actions": list(ACTION_IDS), "model": MODEL_ARCHITECTURE,
             "objective": "hand_chip_delta", "root_sampler": ROOT_SAMPLER_VERSION, "traversal_modes": ["external_sampling", "outcome_sampling"],
-            "external_strategy_collectors": {"hu": "opponent_nodes", "3max": "uniform_importance"}}
+            "external_strategy_collectors": {"hu": "opponent_nodes", "3max": "partial_enumeration"}}
 
 
 def atomic_bytes(path: Path, payload: bytes) -> None:

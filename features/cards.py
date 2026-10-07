@@ -78,3 +78,23 @@ def card_features(hero: tuple[int, int], board: tuple[int, ...]) -> tuple[float,
             max(board_ranks.values(), default=0) / 4, max(board_suits.values(), default=0) / 5,
             (max(board_ranks) - min(board_ranks)) / 12 if board else 0,
             sum(c // 4 == 12 and board_suits[c % 4] > 0 for c in hero) / 2)
+
+
+PRIVATE_CARD_FEATURE_NAMES = ("high_rank", "low_rank", "rank_gap", "is_pair", "is_suited",
+                              "is_connected", "broadway_count")
+
+
+def private_card_features(hero: tuple[int, int]) -> tuple[float, ...]:
+    """Board-independent private-card descriptors, retained on every street.
+
+    Rank indices use 2=0 through A=12; high, low and absolute gap divide by
+    12. Connectivity includes adjacent ranks and A2 (ace low), but pairs are
+    not connected. Broadway counts T/J/Q/K/A cards and divides by two.
+    """
+    if len(hero) != 2 or len(set(hero)) != 2 or any(c not in range(52) for c in hero):
+        raise ValueError(f"Invalid private cards: {hero}")
+    low, high = sorted(c // 4 for c in hero)
+    gap = high - low
+    return (high / 12, low / 12, gap / 12, float(gap == 0),
+            float(hero[0] % 4 == hero[1] % 4), float(gap in (1, 12)),
+            sum(c // 4 >= 8 for c in hero) / 2)

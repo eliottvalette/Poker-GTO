@@ -13,7 +13,7 @@ import torch
 from actions import ACTION_IDS
 from infoset import STATE_VERSION, observe
 from features import FEATURE_SCHEMA_VERSION
-from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES
+from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES, numeric_names
 from ml.deep_cfr import NeuralAveragePolicy
 from ml.export_onnx import INPUT_NAMES, export_average_policy
 from ml.model import MODEL_ARCHITECTURE, AveragePolicyNetwork, encode_batch, model_architecture
@@ -66,23 +66,25 @@ class ONNXExportTests(unittest.TestCase):
             self.assertFalse(model.exists())
             self.assertFalse(manifest.exists())
 
-    def test_feature_v2_inference_and_export_keep_the_declared_encoding(self):
+    def test_old_feature_inference_and_export_keep_the_declared_encoding(self):
         observation = observe(HandState.start({0: 25.0, 1: 25.0}, 0, random.Random(19)))
-        model = AveragePolicyNetwork(feature_version=2).eval()
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            checkpoint = root / "feature_v2.pt"
-            torch.save({"version": 5, "feature_schema_version": 2, "state_version": STATE_VERSION,
-                        "architecture": model_architecture(2), "actions": list(ACTION_IDS),
-                        "numeric_names": list(NUMERIC_NAMES), "iteration": 1, "objective": "hand_chip_delta",
-                        "supported_player_counts": [2], "training_metadata": {"traversal_mode": "external_sampling"},
-                        "weights": model.state_dict()}, checkpoint)
-            policy = NeuralAveragePolicy(checkpoint)
-            self.assertEqual(policy.query(observation), model.probabilities(observation))
-            manifest = export_average_policy(checkpoint, root / "policy.onnx", root / "manifest.json", observation)
-            self.assertEqual(manifest["feature_schema_version"], 2)
-            self.assertEqual(manifest["suit_normalization"], "first_observable_occurrence")
-            self.assertEqual(manifest["architecture"], model_architecture(2))
+        for version in (2, 3):
+            with self.subTest(feature_version=version), tempfile.TemporaryDirectory() as directory:
+                model = AveragePolicyNetwork(feature_version=version).eval()
+                root = Path(directory)
+                checkpoint = root / f"feature_v{version}.pt"
+                torch.save({"version": 5, "feature_schema_version": version, "state_version": STATE_VERSION,
+                            "architecture": model_architecture(version), "actions": list(ACTION_IDS),
+                            "numeric_names": list(numeric_names(version)), "iteration": 1, "objective": "hand_chip_delta",
+                            "supported_player_counts": [2], "training_metadata": {"traversal_mode": "external_sampling"},
+                            "weights": model.state_dict()}, checkpoint)
+                policy = NeuralAveragePolicy(checkpoint)
+                self.assertEqual(policy.query(observation), model.probabilities(observation))
+                manifest = export_average_policy(checkpoint, root / "policy.onnx", root / "manifest.json", observation)
+                self.assertEqual(manifest["feature_schema_version"], version)
+                self.assertEqual(manifest["numeric_names"], list(numeric_names(version)))
+                self.assertEqual(manifest["suit_normalization"], "first_observable_occurrence" if version == 2 else "private_order_minimum")
+                self.assertEqual(manifest["architecture"], model_architecture(version))
 
 
 if __name__ == "__main__":

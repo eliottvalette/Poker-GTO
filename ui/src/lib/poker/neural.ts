@@ -2,12 +2,19 @@
 import { ACTION_IDS } from "./actions";
 import { NUMERIC_NAMES, type Observation } from "./observation";
 
-export const FEATURE_SCHEMA_VERSION = 3;
-export const ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_features3";
+export const FEATURE_SCHEMA_VERSION = 4;
+export const ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_features4";
 const CARD_FEATURE_NAMES = ["made_category", "flush_draw", "straight_outs", "flush_outs", "overcards",
   "board_pair_multiplicity", "board_max_suit", "board_rank_span", "ace_suit_blockers"];
-export const NEURAL_NUMERIC_NAMES = [...NUMERIC_NAMES, "pot_odds", "call_pot", "hero_stack_pot", "spr_1", "spr_2",
+const LEGACY_NUMERIC_NAMES = [...NUMERIC_NAMES, "pot_odds", "call_pot", "hero_stack_pot", "spr_1", "spr_2",
   ...ACTION_IDS.map(a => `target_pot_${a}`), ...CARD_FEATURE_NAMES];
+
+const PRIVATE_CARD_FEATURE_NAMES = ["high_rank", "low_rank", "rank_gap", "is_pair", "is_suited", "is_connected", "broadway_count"];
+export function numericNames(featureVersion: number = FEATURE_SCHEMA_VERSION): string[] {
+  if (![2, 3, 4].includes(featureVersion)) throw new Error(`Unsupported feature schema: ${featureVersion}`);
+  return featureVersion >= 4 ? [...LEGACY_NUMERIC_NAMES, ...PRIVATE_CARD_FEATURE_NAMES] : [...LEGACY_NUMERIC_NAMES];
+}
+export const NEURAL_NUMERIC_NAMES = numericNames();
 
 function counts(values: number[]): Map<number, number> {
   const result = new Map<number, number>();
@@ -38,7 +45,7 @@ function category(cards: number[]): number {
 }
 
 export function neuralObservation(obs: Observation, featureVersion: number = FEATURE_SCHEMA_VERSION): { cards: number[]; numeric: number[]; history: number[][] } {
-  if (![2, 3].includes(featureVersion)) throw new Error(`Unsupported feature schema: ${featureVersion}`);
+  if (![2, 3, 4].includes(featureVersion)) throw new Error(`Unsupported feature schema: ${featureVersion}`);
   const count = Math.round(obs.numeric[NUMERIC_NAMES.indexOf("player_count")] * 3);
   const positions = count === 3 ? [0, 1, 2] : [1, 2];
   const stacks = obs.history.slice(0, count);
@@ -72,7 +79,7 @@ export function neuralObservation(obs: Observation, featureVersion: number = FEA
     return { cards, suits };
   };
   let selected = normalize(obs.cards);
-  if (featureVersion === 3) {
+  if (featureVersion >= 3) {
     const reversed = normalize([obs.cards[1], obs.cards[0], ...obs.cards.slice(2)]);
     const different = selected.cards.findIndex((card, i) => card !== reversed.cards[i]);
     if (different >= 0 && reversed.cards[different] < selected.cards[different]) selected = reversed;
@@ -86,7 +93,7 @@ export function neuralObservation(obs: Observation, featureVersion: number = FEA
     if (event[11] === 1) {
       const card = Math.round(event[10] * 51);
       if (!suits.has(card % 4)) throw new Error(`History contains an unobservable card: ${card}`);
-      if (featureVersion === 3 && index >= count && index < count + 2) {
+      if (featureVersion >= 3 && index >= count && index < count + 2) {
         if (card !== obs.cards[index - count]) throw new Error("Private-card history disagrees with observable cards");
         event[10] = cards[index - count] / 51;
       } else event[10] = (Math.floor(card / 4) * 4 + suits.get(card % 4)!) / 51;
@@ -113,5 +120,12 @@ export function neuralObservation(obs: Observation, featureVersion: number = FEA
     Math.max(0, ...boardRanks.values()) / 4, Math.max(0, ...boardSuits.values()) / 5,
     board.length ? (Math.max(...boardRanks.keys()) - Math.min(...boardRanks.keys())) / 12 : 0,
     hero.filter(c => Math.floor(c / 4) === 12 && (boardSuits.get(c % 4) ?? 0) > 0).length / 2];
+  if (featureVersion >= 4) {
+    // 2=0 through A=12; A2 is connected, absolute rank gap remains 12.
+    const ranks = hero.map(c => Math.floor(c / 4));
+    const low = Math.min(...ranks), high = Math.max(...ranks), gap = high - low;
+    derived.push(high / 12, low / 12, gap / 12, Number(gap === 0), Number(hero[0] % 4 === hero[1] % 4),
+      Number(gap === 1 || gap === 12), ranks.filter(rank => rank >= 8).length / 2);
+  }
   return { cards, numeric: [...rawNumeric, ...derived], history };
 }

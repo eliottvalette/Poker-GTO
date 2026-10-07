@@ -129,7 +129,7 @@ class SharedAdvantageTests(unittest.TestCase):
         from training.checkpoint import read_checkpoint, write_checkpoint
         with tempfile.TemporaryDirectory() as directory:
             config = load_config('configs/deep_cfr_pilot.json')
-            config.update(output_dir=directory, workers=1, epochs_per_iteration=1,
+            config.update(output_dir=directory, workers=1, advantage_epochs=1, average_epochs=1,
                           checkpoint_every=1, evaluation_every=100)
             for name in ('3max', 'hu'):
                 config[name]['traversals_per_player'] = 2

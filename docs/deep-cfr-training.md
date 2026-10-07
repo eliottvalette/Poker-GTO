@@ -42,15 +42,20 @@ External sampling remains the primary generator. Every future traverser decision
 in an explored branch produces an advantage target; opponents are sampled.
 HU strategy records now come from opponent nodes of the same external-sampling
 traversal, with unit collection weights and linear iteration weighting. The
-3-max independent average pass remains reach/importance weighted: direct
-opponent-node collection fails the exact three-player average-policy comparison.
-See `training-repair-audit.md` and `strategy-collector-audit.json`.
+3-max average collection now uses two partial-enumeration passes: sample the
+recorded player from its strategy, enumerate one opponent, sample the other
+uniformly, and correct only that remaining opponent's prefix sampling reach.
+Each orientation receives half weight. Direct opponent-node collection fails
+the exact three-player average-policy comparison and remains diagnostic only.
+See `three-player-collector-audit.md` for correctness and measured cost.
 Outcome sampling remains implemented, tested and explicitly selectable. It is
 not tuned or enabled in the supplied configurations.
 
 The modest architecture remains card embeddings (8), numeric MLP (32), history
-GRU (32), and head (64). Each model has 17,329 parameters after adding 27 derived
-numeric inputs. The two tracks have two advantage models and two average
+GRU (32), and head (64). Feature schema 4 adds seven private-card descriptors
+to the existing 27 derived numeric inputs, adding 224 input weights per model
+without widening hidden layers. Old feature-2/3 inference retains its exact
+numeric width. The two tracks have two advantage models and two average
 models: one of each per player-count track. Models are **freshly initialized and
 fitted from their reservoirs each outer iteration**, preserving the baseline semantics. Adam state exists only
 inside one fit and therefore is not a persistent checkpoint requirement.
@@ -248,8 +253,25 @@ Every successful iteration logs time, root/worker/fit costs, traversals, node
 counts and per-task node distribution, depth, generated samples, reservoir
 seen/retained/bytes, losses, fixed drift and coverage. Scheduled evaluations and
 checkpoint paths are machine-readable. One external task consists of a shared
-regret/strategy traversal in HU, and a regret traversal plus an independent
-average-policy pass in 3-max. Metrics explicitly identify the strategy collector.
+regret/strategy traversal in HU, and a regret traversal plus two independent
+partial-enumeration average-policy passes in 3-max. Metrics explicitly identify
+the strategy collector. Configuration schema 3 sets `advantage_epochs` and
+`average_epochs` independently; the old combined epoch field is rejected.
+
+Root sampler schema 2 exposes `hole_card_sampling` as `random` or `stratified`.
+Stratification targets each traversal player's private cards, cycles through a
+random permutation of the 1326 exact combinations per player/position, and
+samples other private cards and the deck uniformly conditional on those cards.
+The independent card RNG leaves public-context selection unchanged. Cycles are
+reset before each frozen CFR iteration; incomplete cycles do not carry into a
+new learned strategy. Checkpoint schema 4 retains card RNG/cursors/coverage and
+rejects older training checkpoints. Historical average-policy inference remains
+version-aware. New coverage pilots explicitly enable stratification; ordinary
+presets retain their existing random-deal choice and two-epoch fit budgets until
+a substantive run passes acceptance.
+
+`hu-coverage-preflight.md` records the feature-4 calibration, prepared medium
+configurations, and the decision not to launch them within a 30-minute ceiling.
 
 Workers use one Torch inference thread. The central trainer thread count is
 explicit. Workers neither train nor merge local regret tables. GPU is unused.

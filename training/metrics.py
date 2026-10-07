@@ -3,8 +3,21 @@ from __future__ import annotations
 from collections import Counter
 from features.neural import NEURAL_NUMERIC_NAMES, NeuralObservation
 from infoset import Observation
-from infoset import POSITIONS
+from infoset import POSITIONS, EVENTS
 from actions import ACTION_IDS
+
+
+def opening_hand_class(obs: Observation | NeuralObservation) -> str | None:
+    """Classify a first SB (HU) or BTN (3-max) preflop decision."""
+    if obs.street != 0 or any(round(row[4] * 6) not in (EVENTS.index("STACK"), EVENTS.index("CARD"), EVENTS.index("BLIND")) for row in obs.history):
+        return None
+    player_count = round(obs.numeric[NEURAL_NUMERIC_NAMES.index("player_count")] * 3)
+    position = round(obs.numeric[NEURAL_NUMERIC_NAMES.index("hero_position")] * 2)
+    if position != (POSITIONS.index("SB") if player_count == 2 else POSITIONS.index("BTN")):
+        return None
+    high, low = sorted((card // 4 for card in obs.cards[:2]), reverse=True)
+    ranks = "23456789TJQKA"
+    return ranks[high] + ranks[low] + ("" if high == low else "s" if obs.cards[0] % 4 == obs.cards[1] % 4 else "o")
 
 
 class Coverage:
@@ -12,6 +25,9 @@ class Coverage:
         self.counts: dict[str, Counter] = {}
 
     def record(self, obs: Observation | NeuralObservation, source: str) -> None:
+        holding = opening_hand_class(obs)
+        if holding is not None:
+            self.counts.setdefault(f"{source}_opening_hand_class", Counter())[holding] += 1
         values = dict(zip(NEURAL_NUMERIC_NAMES, obs.numeric))
         pot = values["pot"]
         effective = [values[f"effective_{i}"] * 25 for i in range(1, round(values["player_count"] * 3))]

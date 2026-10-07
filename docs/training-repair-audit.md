@@ -1,5 +1,11 @@
 # Training repair audit
 
+Subsequent work adds feature-4 descriptors and private-card stratification; see
+[hu-coverage-preflight.md](hu-coverage-preflight.md). The proposed corrected
+three-player collector is now implemented and checked in
+[three-player-collector-audit.md](three-player-collector-audit.md). This report
+retains the earlier feature-3 measurements and decisions for comparison.
+
 ## Implemented contracts
 
 Feature schema 3 canonicalizes private-card order jointly with suit labels. It

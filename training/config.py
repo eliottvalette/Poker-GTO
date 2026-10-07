@@ -8,12 +8,12 @@ from features import FEATURE_SCHEMA_VERSION
 from ml.model import MODEL_ARCHITECTURE
 from training.root_sampler import ROOT_SAMPLER_VERSION, RootSampler
 
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
 
 
 def validate_config(raw: dict) -> dict:
     expected = {"config_version", "seed", "outer_iterations", "3max", "hu", "workers", "trainer_threads",
-                "epochs_per_iteration", "batch_size", "learning_rate", "strategy_capacity",
+                "advantage_epochs", "average_epochs", "batch_size", "learning_rate", "strategy_capacity",
                 "memory_byte_budget", "sample_byte_budget", "generation_byte_budget", "max_nodes", "max_depth",
                 "checkpoint_every", "evaluation_every", "traversal_mode", "root_sampler_version", "feature_schema_version",
                 "model_schema_version", "output_dir", "evaluation_max_nodes"}

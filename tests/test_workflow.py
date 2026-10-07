@@ -28,7 +28,7 @@ class WorkflowTests(unittest.TestCase):
         (self.root / 'configs').mkdir()
         for track in ('3max', 'hu'):
             config = load_config(f'configs/train_{track}.json')
-            config.update(output_dir=str(self.root / 'runs' / track), workers=1, epochs_per_iteration=1,
+            config.update(output_dir=str(self.root / 'runs' / track), workers=1, advantage_epochs=1, average_epochs=1,
                           checkpoint_every=1, evaluation_every=100)
             config[track]['traversals_per_player'] = 2
             (self.root / 'configs' / f'train_{track}.json').write_text(json.dumps(config))
