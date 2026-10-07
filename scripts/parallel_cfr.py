@@ -11,7 +11,7 @@ def _snapshot_bytes(snapshot: ModelSnapshot) -> bytes:
     buffer = io.BytesIO()
     torch.save({"version": snapshot.version, "objective": snapshot.objective,
                 "advantage_weights": snapshot.advantage_weights,
-                "uniform_initial": snapshot.uniform_initial}, buffer)
+                "uniform_initial": snapshot.uniform_initial, "player_count": snapshot.player_count}, buffer)
     return buffer.getvalue()
 
 
@@ -19,7 +19,7 @@ def _worker_generate(payload: bytes, task: TraversalTask) -> GeneratedSamples:
     # Ordinary bytes have explicit ownership; torch multiprocessing tensor transport
     # would otherwise create an implicit shared-memory manager for frozen weights.
     raw = torch.load(io.BytesIO(payload), map_location="cpu", weights_only=True)
-    snapshot = ModelSnapshot(raw["version"], raw["objective"], raw["advantage_weights"], raw["uniform_initial"])
+    snapshot = ModelSnapshot(raw["version"], raw["objective"], raw["advantage_weights"], raw["uniform_initial"], raw["player_count"])
     return generate_samples(snapshot, task)
 
 

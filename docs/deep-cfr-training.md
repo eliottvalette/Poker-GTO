@@ -3,10 +3,11 @@
 ## Readiness and scope
 
 **PILOT READY**, pending explicit approval to execute the substantial pilot.
-The migration implements phases A–F. Only bounded tests and two small measured
+The migration implements phases A–F, with shared advantage approximation in each player-count track. Only bounded tests and two small measured
 iterations have run. It does not certify convergence or a credible playing policy.
-The complete measured record is [deep-cfr-preflight.json](deep-cfr-preflight.json).
-The baseline commit is `8b7c63d9efe130c58b701efa1c2c500768a047e7`; these changes
+The original measured record is [deep-cfr-preflight.json](deep-cfr-preflight.json);
+shared-model measurements are stored separately in [shared-advantage-preflight.json](shared-advantage-preflight.json).
+The shared-model migration starts from `9fda3f2` on main; these changes
 are uncommitted. Checkpoints record the base commit, dirty flag and source-code
 fingerprint as well as the configuration hash.
 
@@ -30,7 +31,7 @@ Persistent tournament rollouts + synthetic simplex strata + coverage grid
                                   ↓
              advantage replay       strategy replay
                                   ↓
-           player advantage models   average-policy model
+           shared advantage model   average-policy model
                                   ↓
               complete two-track atomic checkpoint
                                   ↓
@@ -45,9 +46,9 @@ not tuned or enabled in the supplied configurations.
 
 The modest architecture remains card embeddings (8), numeric MLP (32), history
 GRU (32), and head (64). Each model has 17,329 parameters after adding 27 derived
-numeric inputs. The two tracks have five advantage models and two average
-models. Models are **freshly initialized and fitted from their reservoirs each
-outer iteration**, preserving the baseline semantics. Adam state exists only
+numeric inputs. The two tracks have two advantage models and two average
+models: one of each per player-count track. Models are **freshly initialized and
+fitted from their reservoirs each outer iteration**, preserving the baseline semantics. Adam state exists only
 inside one fit and therefore is not a persistent checkpoint requirement.
 The method's research reference is [Deep CFR, Brown et al., 2019](https://proceedings.mlr.press/v97/brown19b.html).
 
@@ -83,6 +84,12 @@ Global suits are normalized in first observable occurrence order: hero cards,
 then current board. The same mapping is applied to card history events. This
 preserves rank/suit relationships under every global suit permutation while
 leaving betting semantics unchanged. Raw diagnostic cards remain untouched.
+
+Feature schema 2 also orders numeric opponents and history actors as Hero then
+clockwise by public positions, and sorts the simultaneous initial STACK tokens
+into that order. Card and betting chronology are preserved. Absolute player IDs
+remain diagnostic sample metadata and do not select a neural model. Renaming
+seats or rotating the ring starting point yields identical consumed tensors.
 Python and browser neural inputs are parity-tested.
 
 The equity engine accepts explicit hands or weighted ranges, including two
@@ -125,8 +132,14 @@ effective stack bins, stack ratios, stacks, pot, SPR, call/pot, masks, targets
 and full history length. Sample coverage is aggregated in workers and merged
 centrally. Each evaluation interval persists the cumulative coverage report.
 
-3-max and HU have independent replay, advantage networks, average networks and
-metrics. A single atomic runner checkpoint contains both tracks and their
+3-max and HU have independent replay, one shared advantage network each,
+one average network each, and separate metrics. Advantage samples from all
+traversers of a track enter one Algorithm R reservoir and one fresh fit. Position
+remains a feature, not a model identity. The pilot preserves total replay size:
+30,000 advantage samples for 3-max, 20,000 for HU, and 10,000 strategy samples per
+track (70,000 total). Advantage byte budgets aggregate the former seat budgets:
+384 MiB and 256 MiB respectively; strategy budgets stay at 128 MiB per track.
+Config version 2 records the advantage capacity/budget inside each track. A single atomic runner checkpoint contains both tracks and their
 independent sampler states, preventing publication of one completed track when
 the other fails. Python and Test Live route average policies by the number of
 seated players in the current hand; folding during a 3-max hand does not switch
@@ -147,7 +160,7 @@ report = run_preflight(config)
 
 This runs two measured iterations at four traversals per player, including the
 uniform and learned-policy phases, fixed evaluation, checkpointing and ONNX
-parity. It writes `runs/deep_cfr_pilot/preflight.json` and discards temporary
+parity. It writes `runs/deep_cfr_shared_pilot/preflight.json` and discards temporary
 measurement weights. It never launches the configured pilot.
 
 After reviewing costs and explicitly approving the substantial run:
@@ -164,7 +177,7 @@ For explicit resume:
 
 ```python
 runner = TrainingRunner.load_checkpoint(
-    "runs/deep_cfr_pilot/checkpoints/iteration_000005.pt", config
+    "runs/deep_cfr_shared_pilot/checkpoints/iteration_000005.pt", config
 )
 runner.run()
 ```
@@ -184,7 +197,7 @@ Missing or incompatible inputs fail explicitly. The former `scripts/train.py`
 argument parser was removed; orchestration lives in `training.runner`.
 
 ```text
-runs/deep_cfr_pilot/
+runs/deep_cfr_shared_pilot/
   metrics.jsonl
   preflight.json
   3max/metrics.jsonl
@@ -291,11 +304,11 @@ Updated modules: `actions.py` (version identifier only), `ml/model.py`,
 `ui/src/components/TestTable.tsx`, existing neural/export tests, browser test
 runner, README, baseline-document labels and `.gitignore`.
 
-No engine or reference traversal was replaced. Legacy stays isolated. Raw JSON
-recall replay (memory schema 4), average checkpoint schema 3, ONNX manifest 2 and
-the old neural architecture are now incompatible with the feature schema.
-Current versions: raw state 3, feature 1, action 1, replay 5, average artifact 4,
-runner checkpoint 1, ONNX manifest 3. Tabular state remains unchanged.
+No engine or reference traversal was replaced. Legacy stays isolated. The per-seat advantage-model/replay layout, raw JSON recall replay and
+previous neural ordering are retired. Old checkpoints are rejected rather than
+merging arbitrary seat weights or guessing how to convert encoded data.
+Current versions: raw state 3, feature 2, action 1, replay 6, average artifact 5,
+runner checkpoint 2, ONNX manifest 4. Tabular state remains unchanged.
 
 A discovered float32 softmax rounding error is repaired at the neural probability
 transport boundary: mass must already be within 1e-6 of one, then float64
@@ -304,10 +317,12 @@ reference solver's stricter validation and regret targets are unchanged.
 
 ## Verification and approximations
 
-Validated: 113 Python tests, 77 browser engine/table/neural tests, Python
-compilation, smoke validation, TypeScript checking and ESLint. The production UI build passes and produces a static export. ONNX singleton dynamic
-history parity is tested against PyTorch, and Python/browser features are tested
-on both counts and all streets. An interactive WASM browser session is not part
+Shared-model validation passes 120 Python tests and 78 browser tests, including
+pooled fitting, seat/ring invariance, resume, worker atomicity, outcome sampling,
+PyTorch/ONNX parity and Python/browser feature parity. Python compilation,
+TypeScript checking and ESLint also pass. The preceding baseline production build
+is recorded separately; an interactive WASM browser session
+ is not part
 of this preflight; full PyTorch/ONNX/browser-session parity remains a phase-H
 verification against the eventual useful policies.
 

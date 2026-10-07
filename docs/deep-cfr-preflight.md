@@ -1,5 +1,9 @@
 # Deep CFR pilot preflight — 2026-10-06
 
+> Historical measurements for the former per-seat advantage models and feature
+> schema 1. Current training shares one advantage model/replay per track;
+> see [shared-advantage.md](shared-advantage.md). Total replay capacity is preserved.
+
 **PILOT READY. No substantial training has been launched.**
 
 The original cost extrapolation below is retained as historical measurement.

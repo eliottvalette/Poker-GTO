@@ -32,7 +32,7 @@ def run_smoke_validation() -> dict:
     for _ in range(2):
         solver.run_iteration(controlled_river, traversals_per_player=2, max_nodes=1000)
     elapsed = time.perf_counter() - started
-    samples = [s for memory in solver.advantage_memory.values() for s in memory.samples] + solver.strategy_memory.samples
+    samples = solver.advantage_memory.samples + solver.strategy_memory.samples
     serialized_bytes = sum(len(json.dumps(asdict(s), default=lambda value: value.hex()).encode()) for s in samples)
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "average.pt"
@@ -66,7 +66,7 @@ def run_smoke_validation() -> dict:
     average_seconds = time.perf_counter() - before
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return {"architecture": "card embeddings + numeric MLP + full-history GRU + 64-wide head",
-            "advantage_parameters_per_player": sum(p.numel() for p in AdvantageNetwork().parameters()),
+            "shared_advantage_parameters": sum(p.numel() for p in AdvantageNetwork().parameters()),
             "average_policy_parameters": sum(p.numel() for p in AveragePolicyNetwork().parameters()),
             "smoke_seconds": elapsed, "smoke_metrics": solver.metrics,
             "mean_serialized_sample_bytes": serialized_bytes / len(samples),

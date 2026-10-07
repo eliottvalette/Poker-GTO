@@ -26,7 +26,7 @@ from ml.deep_cfr import NeuralAveragePolicy
 from ml.model import MODEL_ARCHITECTURE, AveragePolicyNetwork, encode_batch
 
 INPUT_NAMES = ("cards", "street", "position", "numeric", "history", "mask")
-EXPORT_VERSION = 3
+EXPORT_VERSION = 4
 
 
 class SingleObservationAveragePolicy(nn.Module):
@@ -100,7 +100,7 @@ def export_average_policy(checkpoint: str | Path, model_path: str | Path, manife
             raise ValueError(f"ONNX average-policy parity failed: expected={expected.tolist()}, actual={actual.tolist()}")
         errors.append(float(np.abs(actual - expected).max()))
     manifest = {"version": EXPORT_VERSION, "action_schema_version": ACTION_SCHEMA_VERSION, "feature_schema_version": FEATURE_SCHEMA_VERSION,
-                "suit_normalization": "first_observable_occurrence", "traversal_mode": policy.traversal_mode, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
+                "suit_normalization": "first_observable_occurrence", "seat_normalization": "hero_then_clockwise_positions", "traversal_mode": policy.traversal_mode, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
                 "model_sha256": hashlib.sha256(model_bytes).hexdigest(), "objective": policy.objective,
                 "iteration": policy.iteration, "supported_player_counts": list(policy.supported_player_counts),
                 "actions": list(ACTION_IDS), "numeric_names": list(NUMERIC_NAMES), "positions": list(POSITIONS),

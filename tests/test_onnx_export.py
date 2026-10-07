@@ -35,7 +35,7 @@ class ONNXExportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             checkpoint, model, manifest_path = root / "untrained_fixture.pt", root / "policy.onnx", root / "policy.json"
-            torch.save({"version": 4, "feature_schema_version": FEATURE_SCHEMA_VERSION,
+            torch.save({"version": 5, "feature_schema_version": FEATURE_SCHEMA_VERSION,
                         "training_metadata": {"traversal_mode": "external_sampling"}, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
                         "actions": list(ACTION_IDS), "numeric_names": list(NUMERIC_NAMES),
                         "objective": "hand_chip_delta", "iteration": 1, "supported_player_counts": [2, 3],

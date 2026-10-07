@@ -17,9 +17,9 @@ from poker_game_expresso import ActionEvent, BlindLevel, HandPlayer, HandState
 from tournament import TournamentState
 from training.root_sampler import ROOT_SAMPLER_VERSION
 
-CHECKPOINT_VERSION = 1
-CONTRACT = {"checkpoint": CHECKPOINT_VERSION, "state": STATE_VERSION, "feature": FEATURE_SCHEMA_VERSION,
-            "memory": MEMORY_VERSION, "action_schema": ACTION_SCHEMA_VERSION, "evaluation_schema": 1, "actions": list(ACTION_IDS), "model": MODEL_ARCHITECTURE,
+CHECKPOINT_VERSION = 2
+CONTRACT = {"checkpoint": CHECKPOINT_VERSION, "advantage_layout": "shared_per_player_count", "state": STATE_VERSION, "feature": FEATURE_SCHEMA_VERSION,
+            "memory": MEMORY_VERSION, "action_schema": ACTION_SCHEMA_VERSION, "evaluation_schema": 2, "actions": list(ACTION_IDS), "model": MODEL_ARCHITECTURE,
             "objective": "hand_chip_delta", "root_sampler": ROOT_SAMPLER_VERSION, "traversal_modes": ["external_sampling", "outcome_sampling"]}
 
 

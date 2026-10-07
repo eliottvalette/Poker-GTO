@@ -21,7 +21,7 @@ from training.checkpoint import atomic_bytes
 from training.config import config_hash, validate_config
 from training.runner import TrainingRunner, source_commit, source_metadata
 
-PREFLIGHT_VERSION = 1
+PREFLIGHT_VERSION = 2
 
 
 def percentile(values: list[float], probability: float) -> float:
@@ -42,6 +42,7 @@ def run_preflight(config: dict, *, iterations: int = 2, traversals_per_player: i
     report = {**source_metadata(), "version": PREFLIGHT_VERSION, "git_commit": source_commit(), "config_hash": config_hash(config),
               "feature_schema": FEATURE_SCHEMA_VERSION, "model_architecture": MODEL_ARCHITECTURE,
               "parameters_per_model": sum(p.numel() for p in AdvantageNetwork().parameters()),
+              "advantage_layout": "shared_per_player_count",
               "objective": "hand_chip_delta", "traversal_mode": config["traversal_mode"],
               "workers": config["workers"], "worker_torch_threads": 1, "trainer_threads": config["trainer_threads"],
               "gpu_usage": "none", "outer_iterations_proposed": config["outer_iterations"],
@@ -82,7 +83,7 @@ def run_preflight(config: dict, *, iterations: int = 2, traversals_per_player: i
                 report["checkpoint_bytes"] = (Path(directory) / "checkpoints" / f"iteration_{runner.iteration:06d}.pt").stat().st_size
                 report["onnx_model_bytes"] = {name: (Path(directory) / "policy" / f"average_{name}.onnx").stat().st_size for name in runner.solvers}
                 report["preflight_artifact_bytes"] = sum(p.stat().st_size for p in Path(directory).rglob('*') if p.is_file())
-                samples = [s for solver in runner.solvers.values() for memory in (*solver.advantage_memory.values(), solver.strategy_memory) for s in memory.samples]
+                samples = [s for solver in runner.solvers.values() for memory in (solver.advantage_memory, solver.strategy_memory) for s in memory.samples]
                 sizes = [sample_bytes(s) for s in samples]
                 report["bytes_per_sample"] = {"mean": statistics.mean(sizes), "p95": percentile(sizes, .95), "max": max(sizes),
                                              "measurement": "conservative Python-owned accounting; excludes allocator and process overhead"}
@@ -104,19 +105,19 @@ def run_preflight(config: dict, *, iterations: int = 2, traversals_per_player: i
                                           "root_seconds": sum(track["root_seconds"] for track in row["tracks"].values()),
                                           "fit_seconds": sum(track["fit_seconds"] for track in row["tracks"].values()),
                                           "nodes": sum(track["nodes"] for track in row["tracks"].values())} for row in report["measured_iterations"]]
-                advantage_models = sum(len(s.players) for s in runner.solvers.values())
+                report["model_count"] = 2 * len(runner.solvers)
                 strategies = len(runner.solvers)
-                capacity = advantage_models * config["advantage_capacity"] + strategies * config["strategy_capacity"]
-                retained = sum(len(m.samples) for s in runner.solvers.values() for m in (*s.advantage_memory.values(), s.strategy_memory))
+                capacity = sum(config[name]["advantage_capacity"] for name in runner.solvers) + strategies * config["strategy_capacity"]
+                retained = sum(len(m.samples) for s in runner.solvers.values() for m in (s.advantage_memory, s.strategy_memory))
                 replay_ram = capacity * report["bytes_per_sample"]["mean"]
                 fit_seconds = sum(row["fit_seconds"] for row in rows) / runner.iteration
                 generation_iteration = report["traversals_per_iteration_proposed"] / report["traversals_per_second"]
                 full_fit = fit_seconds * capacity / retained
                 evaluation_seconds = max(0, statistics.mean(row["wall_seconds"] for row in report["measured_iterations"]) - generation_seconds / runner.iteration - fit_seconds)
                 iteration_estimate = generation_iteration + full_fit + evaluation_seconds / config["evaluation_every"]
-                report["replay_capacities"] = {"advantage_per_model": config["advantage_capacity"], "strategy_per_track": config["strategy_capacity"], "total_samples": capacity}
+                report["replay_capacities"] = {"advantage_by_track": {name: config[name]["advantage_capacity"] for name in runner.solvers}, "strategy_per_track": config["strategy_capacity"], "total_samples": capacity}
                 report["ram_estimate"] = {"retained_replay_bytes": replay_ram, "staged_replay_conservative_bytes": 3 * replay_ram,
-                                          "configured_replay_budget_bytes": (advantage_models + strategies) * config["memory_byte_budget"],
+                                          "configured_replay_budget_bytes": sum(config[name]["advantage_byte_budget"] for name in runner.solvers) + strategies * config["memory_byte_budget"],
                                           "generation_budget_bytes": config["generation_byte_budget"],
                                           "pending_worker_sample_budget_bytes": config["workers"] * config["sample_byte_budget"]}
                 report["runtime_estimates_seconds"] = {"pilot": iteration_estimate * config["outer_iterations"],

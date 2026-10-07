@@ -19,7 +19,8 @@ payout is an environment result, not its training utility.
 
 ## Offline training
 
-The importable runner trains separate 3-max and HU policies, with compact replay,
+The importable runner trains separate 3-max and HU policies, each with one shared advantage network
+and one average-policy network, with compact replay,
 observable deterministic features, suit normalization, controlled tournament/
 synthetic/stratified roots, evaluation and atomic resumable checkpoints.
 
@@ -40,7 +41,8 @@ For resume, call `TrainingRunner.load_checkpoint(explicit_checkpoint_path, confi
 and has no argument parser. No online resolver, range model or UI work is required
 to train. Fresh network fitting each iteration is preserved.
 
-See [the complete training contract and migration report](docs/deep-cfr-training.md),
+See [the shared-advantage migration](docs/shared-advantage.md),
+[the complete training contract and migration report](docs/deep-cfr-training.md),
 [measured preflight data](docs/deep-cfr-preflight.json), and
 [the preflight summary](docs/deep-cfr-preflight.md), and
 [production-sized CPU profiling](docs/deep-cfr-profile.md). Only small measured iterations
@@ -170,9 +172,9 @@ remains the all-action reference; outcome sampling is explicitly selectable as
 `traversal_mode="outcome_sampling"`. Neither mode follows future tournament
 hands for learning. Missing or incompatible checkpoints fail explicitly.
 
-Raw state schema 3 remains unchanged. Feature schema 1, replay version 5,
-average artifact version 4, runner checkpoint version 1 and ONNX manifest version
-3 explicitly reject retired neural contracts. Browser loading computes the same
+Raw state schema 3 remains unchanged. Feature schema 2, replay version 6,
+average artifact version 5, runner checkpoint version 2 and ONNX manifest version
+4 explicitly reject retired neural contracts. Browser loading computes the same
 observable features/suit normalization and retains separate models for 3-max/HU.
 The preceding baseline reports remain historical evidence; current validation
-passes 113 Python and 77 browser tests. No substantial training has been launched.
+passes 120 Python and 78 browser tests. No substantial training has been launched.

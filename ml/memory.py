@@ -14,7 +14,7 @@ from cfr_solver import validate_strategy
 from infoset import STATE_VERSION
 from features.neural import NeuralObservation, neural_observation
 
-MEMORY_VERSION = 5
+MEMORY_VERSION = 6
 DEFAULT_BYTE_BUDGET = 64 * 1024 * 1024
 TRAVERSAL_MODES = ("external_sampling", "outcome_sampling")
 

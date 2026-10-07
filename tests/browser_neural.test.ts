@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { neuralObservation, NEURAL_NUMERIC_NAMES } from "../ui/src/lib/poker/neural";
-import { type Observation } from "../ui/src/lib/poker/observation";
+import { NUMERIC_NAMES, type Observation } from "../ui/src/lib/poker/observation";
 
 const fixtures = JSON.parse(readFileSync("tests/fixtures/neural_parity.json", "utf8")) as {
   name: string; observation: Observation; neural: ReturnType<typeof neuralObservation>
@@ -31,4 +31,25 @@ test("global suit permutation preserves browser neural cards/history/features", 
     return row;
   });
   assert.deepEqual(neuralObservation(changed), neuralObservation(fixture.observation));
+});
+
+test("arbitrary opponent indexing and stack-token order preserve neural inputs", () => {
+  for (const fixture of fixtures) {
+    const changed = structuredClone(fixture.observation);
+    const count = Math.round(changed.numeric[NUMERIC_NAMES.indexOf("player_count")] * 3);
+    changed.hero += 10;
+    if (count === 3) {
+      for (const feature of ["stack", "street_bet", "contribution", "folded", "effective", "initial"]) {
+        const first = NUMERIC_NAMES.indexOf(`${feature}_1`);
+        const second = NUMERIC_NAMES.indexOf(`${feature}_2`);
+        [changed.numeric[first], changed.numeric[second]] = [changed.numeric[second], changed.numeric[first]];
+      }
+      const button = NUMERIC_NAMES.indexOf("button");
+      const remap = (value: number) => value === 0.5 ? 1 : value === 1 ? 0.5 : value;
+      changed.numeric[button] = remap(changed.numeric[button]);
+      for (const row of changed.history) row[2] = remap(row[2]);
+    }
+    changed.history.splice(0, count, ...changed.history.slice(1, count), changed.history[0]);
+    assert.deepEqual(neuralObservation(changed), neuralObservation(fixture.observation), fixture.name);
+  }
 });

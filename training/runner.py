@@ -52,8 +52,8 @@ class TrainingRunner:
         for name, count in (("3max", 3), ("hu", 2)):
             if config[name]["enabled"]:
                 self.solvers[name] = DeepCFRSolver(tuple(range(count)), seed=config["seed"] + count,
-                    advantage_capacity=config["advantage_capacity"], strategy_capacity=config["strategy_capacity"],
-                    memory_byte_budget=config["memory_byte_budget"])
+                    advantage_capacity=config[name]["advantage_capacity"], strategy_capacity=config["strategy_capacity"],
+                    memory_byte_budget=config["memory_byte_budget"], advantage_byte_budget=config[name]["advantage_byte_budget"])
                 self.samplers[name] = RootSampler(count, config["seed"] + count * 1000, config[name]["root_sampling"])
         self.probes = {name: fixed_roots(len(solver.players)) for name, solver in self.solvers.items()}
 
@@ -134,7 +134,7 @@ class TrainingRunner:
             raw["tracks"][name] = {"version": solver.version, "seed": solver.seed, "rng": solver.rng.getstate(),
                 "advantage_weights": solver.snapshot().advantage_weights,
                 "average_weights": None if solver.average_model is None else solver.average_model.state_dict(),
-                "advantage_memory": {p: pack_memory(m) for p, m in solver.advantage_memory.items()},
+                "advantage_memory": pack_memory(solver.advantage_memory),
                 "strategy_memory": pack_memory(solver.strategy_memory), "metrics": solver.metrics,
                 "traversal_mode": solver.traversal_mode, "sampler_rng": sampler.rng.getstate(),
                 "stratum_index": sampler.stratum_index, "root_coverage": sampler.coverage.as_dict(),
@@ -156,25 +156,34 @@ class TrainingRunner:
                 if (track["traversal_mode"] != (runner.config["traversal_mode"] if runner.iteration else None)
                         or track["seed"] != solver.seed or len(track["metrics"]) != runner.iteration):
                     raise ValueError(f"Inconsistent checkpoint mode/seed/metrics at {path}: {name}")
-                if track["version"] != runner.iteration or set(track["advantage_memory"]) != set(solver.players):
+                if track["version"] != runner.iteration:
                     raise ValueError(f"Inconsistent checkpoint model/replay version at {path}: {name}")
                 solver.version, solver.metrics, solver.traversal_mode = track["version"], track["metrics"], track["traversal_mode"]
                 solver.rng.setstate(track["rng"])
-                solver.advantage_memory = {p: unpack_memory(m) for p, m in track["advantage_memory"].items()}
+                solver.advantage_memory = unpack_memory(track["advantage_memory"])
                 solver.strategy_memory = unpack_memory(track["strategy_memory"])
-                for memory in (*solver.advantage_memory.values(), solver.strategy_memory):
-                    capacity = runner.config["strategy_capacity" if memory.kind == "strategy" else "advantage_capacity"]
-                    if memory.capacity != capacity or memory.byte_budget != runner.config["memory_byte_budget"]:
+                if solver.advantage_memory.kind != "advantage" or solver.strategy_memory.kind != "strategy":
+                    raise ValueError(f"Checkpoint replay slot kind mismatch at {path}: {name}")
+                if not runner.iteration and (track["advantage_weights"] is not None or track["average_weights"] is not None
+                                             or solver.advantage_memory.seen or solver.strategy_memory.seen):
+                    raise ValueError(f"Uninitialized checkpoint contains trained state at {path}: {name}")
+                for memory in (solver.advantage_memory, solver.strategy_memory):
+                    capacity = runner.config[name]["advantage_capacity"] if memory.kind == "advantage" else runner.config["strategy_capacity"]
+                    budget = runner.config[name]["advantage_byte_budget"] if memory.kind == "advantage" else runner.config["memory_byte_budget"]
+                    if memory.capacity != capacity or memory.byte_budget != budget:
                         raise ValueError(f"Checkpoint replay/config capacity mismatch: {name}")
+                    if any(s.player not in solver.players or s.iteration > runner.iteration
+                           or round(s.state.numeric[NUMERIC_NAMES.index("player_count")] * 3) != len(solver.players)
+                           for s in memory.samples):
+                        raise ValueError(f"Checkpoint contains foreign/future samples: {name}/{memory.kind}")
                     if runner.iteration and memory.traversal_mode != runner.config["traversal_mode"]:
                         raise ValueError(f"Checkpoint replay traversal mismatch: {name}")
                 if runner.iteration:
-                    if set(track["advantage_weights"]) != set(solver.players) or track["average_weights"] is None:
-                        raise ValueError(f"Missing checkpoint model at {path}: {name}")
-                    for p, weights in track["advantage_weights"].items():
-                        model = AdvantageNetwork()
-                        model.load_state_dict(weights, strict=True)
-                        solver.advantage_models[p] = model.eval()
+                    if not track["advantage_weights"] or track["average_weights"] is None:
+                        raise ValueError(f"Missing shared checkpoint model at {path}: {name}")
+                    solver.advantage_model = AdvantageNetwork()
+                    solver.advantage_model.load_state_dict(track["advantage_weights"], strict=True)
+                    solver.advantage_model.eval()
                     solver.average_model = AveragePolicyNetwork()
                     solver.average_model.load_state_dict(track["average_weights"], strict=True)
                     solver.average_model.eval()

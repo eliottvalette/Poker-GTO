@@ -8,12 +8,12 @@ from features import FEATURE_SCHEMA_VERSION
 from ml.model import MODEL_ARCHITECTURE
 from training.root_sampler import ROOT_SAMPLER_VERSION, RootSampler
 
-CONFIG_VERSION = 1
+CONFIG_VERSION = 2
 
 
 def validate_config(raw: dict) -> dict:
     expected = {"config_version", "seed", "outer_iterations", "3max", "hu", "workers", "trainer_threads",
-                "epochs_per_iteration", "batch_size", "learning_rate", "advantage_capacity", "strategy_capacity",
+                "epochs_per_iteration", "batch_size", "learning_rate", "strategy_capacity",
                 "memory_byte_budget", "sample_byte_budget", "generation_byte_budget", "max_nodes", "max_depth",
                 "checkpoint_every", "evaluation_every", "traversal_mode", "root_sampler_version", "feature_schema_version",
                 "model_schema_version", "output_dir", "evaluation_max_nodes"}
@@ -41,8 +41,11 @@ def validate_config(raw: dict) -> dict:
         raise ValueError(f"Explicit output_dir required: {raw['output_dir']}")
     for name, count in (("3max", 3), ("hu", 2)):
         track = raw[name]
-        if not isinstance(track, dict) or set(track) != {"enabled", "traversals_per_player", "root_sampling"} or type(track["enabled"]) is not bool or type(track["traversals_per_player"]) is not int or track["traversals_per_player"] < 1:
+        if not isinstance(track, dict) or set(track) != {"enabled", "traversals_per_player", "root_sampling", "advantage_capacity", "advantage_byte_budget"} or type(track["enabled"]) is not bool or type(track["traversals_per_player"]) is not int or track["traversals_per_player"] < 1:
             raise ValueError(f"Invalid training track {name}: {track}")
+        for field in ("advantage_capacity", "advantage_byte_budget"):
+            if type(track[field]) is not int or track[field] < 1:
+                raise ValueError(f"Track {name} requires positive integer {field}: {track[field]}")
         RootSampler(count, raw["seed"], track["root_sampling"])
     if not any(raw[t]["enabled"] for t in ("3max", "hu")):
         raise ValueError("At least one training track must be enabled")

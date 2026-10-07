@@ -55,11 +55,11 @@ def main():
     print('Construct independently owned replay buffers for checkpoint measurement',flush=True)
     start=time.perf_counter()
     for name,solver in runner.solvers.items():
-        for memory_key,memory in (*solver.advantage_memory.items(),('strategy',solver.strategy_memory)):
-            source=[s for s in samples[name] if s.kind==memory.kind and (memory.kind=='strategy' or s.player==memory_key)]
-            if not source: raise RuntimeError(f'No profiling samples for {name}/{memory_key}')
+        for kind,memory in (('advantage',solver.advantage_memory),('strategy',solver.strategy_memory)):
+            source=[s for s in samples[name] if s.kind==kind]
+            if not source: raise RuntimeError(f'No profiling samples for {name}/{kind}')
             records=[]
-            for index in range(10000):
+            for index in range(memory.capacity):
                 s=source[index%len(source)]
                 state=replace(s.state,numeric_data=memoryview(s.state.numeric_data).tobytes(),
                               history_data=memoryview(s.state.history_data).tobytes())

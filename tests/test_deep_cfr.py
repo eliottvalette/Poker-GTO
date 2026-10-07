@@ -66,7 +66,7 @@ class DeepCFRTests(unittest.TestCase):
                 ReservoirMemory.load(path)
 
     def test_parallel_frozen_generation_matches_single_worker(self):
-        snapshot = ModelSnapshot(0, "hand_chip_delta", {}, True)
+        snapshot = ModelSnapshot(0, "hand_chip_delta", None, True, 2)
         tasks = [TraversalTask(i, i % 2, river(), i + 17, 1000, 100) for i in range(4)]
         sequential = collect_samples(snapshot, tasks, 1)
         parallel = collect_samples(snapshot, tasks, 2)
@@ -115,7 +115,7 @@ class DeepCFRTests(unittest.TestCase):
         self.assertEqual(solver.version, 0)
         self.assertEqual(solver.rng.getstate(), before_rng)
         self.assertEqual(solver.strategy_memory.seen, 0)
-        self.assertTrue(all(m.seen == 0 for m in solver.advantage_memory.values()))
+        self.assertTrue(solver.advantage_memory.seen == 0)
         self.assertEqual(solver.metrics, [])
         with self.assertRaisesRegex(MemoryError, "budget"):
             solver.run_iteration(lambda _: river(), max_nodes=1000, generation_byte_budget=1)
@@ -159,10 +159,9 @@ class DeepCFRTests(unittest.TestCase):
             self.assertTrue(all(torch.isfinite(torch.tensor(v["heldout_loss"])) for v in metrics.values() if isinstance(v, dict) and "heldout_loss" in v))
         self.assertEqual(solver.version, 2)
         frozen = solver.snapshot()
-        for model in solver.advantage_models.values():
-            with torch.no_grad():
-                next(model.parameters()).add_(1)
-        self.assertFalse(torch.equal(next(iter(frozen.advantage_weights[0].values())), next(solver.advantage_models[0].parameters())))
+        with torch.no_grad():
+            next(solver.advantage_model.parameters()).add_(1)
+        self.assertFalse(torch.equal(next(iter(frozen.advantage_weights.values())), next(solver.advantage_model.parameters())))
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "average.pt"
             solver.export_average(path)

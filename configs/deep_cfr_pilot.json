@@ -1,5 +1,5 @@
 {
-  "config_version": 1,
+  "config_version": 2,
   "seed": 42,
   "outer_iterations": 50,
   "workers": 8,
@@ -7,7 +7,6 @@
   "epochs_per_iteration": 2,
   "batch_size": 64,
   "learning_rate": 0.0003,
-  "advantage_capacity": 10000,
   "strategy_capacity": 10000,
   "memory_byte_budget": 134217728,
   "sample_byte_budget": 67108864,
@@ -18,9 +17,9 @@
   "evaluation_every": 5,
   "traversal_mode": "external_sampling",
   "root_sampler_version": 1,
-  "feature_schema_version": 1,
-  "model_schema_version": "cards8_numeric32_historyGRU32_head64_features1",
-  "output_dir": "runs/deep_cfr_pilot",
+  "feature_schema_version": 2,
+  "model_schema_version": "cards8_numeric32_historyGRU32_head64_features2",
+  "output_dir": "runs/deep_cfr_shared_pilot",
   "evaluation_max_nodes": 20000,
   "3max": {
     "enabled": true,
@@ -34,7 +33,9 @@
       "max_rollout_decisions": 128,
       "max_rollout_hands": 128,
       "tournament_start_players": 3
-    }
+    },
+    "advantage_capacity": 30000,
+    "advantage_byte_budget": 402653184
   },
   "hu": {
     "enabled": true,
@@ -48,6 +49,8 @@
       "max_rollout_decisions": 128,
       "max_rollout_hands": 128,
       "tournament_start_players": 3
-    }
+    },
+    "advantage_capacity": 20000,
+    "advantage_byte_budget": 268435456
   }
 }

@@ -28,7 +28,7 @@ from training.evaluation import evaluate_solver, model_policy
 from training.root_sampler import RootSampler
 from training.runner import TrainingRunner, source_metadata
 
-OUTPUT = Path('profiling/deep_cfr_costs')
+OUTPUT = Path('profiling/deep_cfr_shared_costs')
 
 
 def measured(operation: Callable, repeats: int = 1) -> tuple[dict, object]:
@@ -98,7 +98,7 @@ def run_profile() -> dict:
         task_sets[name] = tasks
         report['stages'][f'{name}_128_roots'] = dict(**timing, coverage=coverage)
         # Same root/deal/task seeds under uniform and learned snapshots.
-        for phase, snapshot in (('uniform', ModelSnapshot(0, 'hand_chip_delta', {}, True)), ('learned', snapshots[name])):
+        for phase, snapshot in (('uniform', ModelSnapshot(0, 'hand_chip_delta', None, True, count)), ('learned', snapshots[name])):
             results = profiled(f'{name}_{phase}_traversal', lambda: collect_samples(snapshot, tasks[:16], 1), report)
             if phase == 'learned':
                 collected[name] = results
@@ -126,7 +126,7 @@ def run_profile() -> dict:
             config['evaluation_max_nodes'], config['batch_size'], solver.snapshot()), report)
     obs = observe(task_sets['3max'][0].root)
     compact = neural_observation(obs)
-    model = runner.solvers['3max'].advantage_models[obs.hero]
+    model = runner.solvers['3max'].advantage_model
     batch = encode_batch([compact])
     operations = {
         'hand_clone_1000': lambda: [task_sets['3max'][0].root.clone() for _ in range(1000)],
@@ -135,7 +135,7 @@ def run_profile() -> dict:
         'encode_singleton_1000': lambda: [encode_batch([compact]) for _ in range(1000)],
         'sample_bytes_1000': lambda: [sample_bytes(pooled[0]) for _ in range(1000)],
         'snapshot_serialize_1000': lambda: [_snapshot_bytes(snapshots['3max']) for _ in range(1000)],
-        'model_construct_load_100': lambda: [load_model(snapshots['3max'].advantage_weights[obs.hero]) for _ in range(100)],
+        'model_construct_load_100': lambda: [load_model(snapshots['3max'].advantage_weights) for _ in range(100)],
         'worker_payload_pickle': lambda: [pickle.dumps(task, protocol=pickle.HIGHEST_PROTOCOL) for task in task_sets['3max']],
         'result_payload_pickle': lambda: [pickle.dumps(result, protocol=pickle.HIGHEST_PROTOCOL) for result in collected['3max']],
     }
@@ -144,29 +144,30 @@ def run_profile() -> dict:
     with torch.no_grad():
         report['microbenchmarks']['inference_preencoded_1000'], _ = measured(lambda: [model(batch) for _ in range(1000)], 3)
         report['microbenchmarks']['inference_end_to_end_1000'], _ = measured(lambda: [model(encode_batch([obs])) for _ in range(1000)], 3)
-    for kind, network in (('advantage', AdvantageNetwork), ('strategy', AveragePolicyNetwork)):
-        source = [sample for sample in pooled if sample.kind == kind]
-        data = [source[index % len(source)] for index in range(10000)]
-        report['stages'][f'{kind}_data'] = {'distinct_samples': len(source), 'benchmark_samples': len(data),
-            'history_mean': statistics.mean(len(s.state.history) for s in data),
-            'history_max': max(len(s.state.history) for s in data), 'accounted_bytes': sum(sample_bytes(s) for s in data)}
-        print(f'Benchmark full-capacity {kind} fit', flush=True)
-        torch.manual_seed(909)
-        report['stages'][f'{kind}_fit_10000'], _ = measured(lambda: fit(network(), data, 2, 64, 42), 2)
-        profiled(f'{kind}_fit_10000', lambda: fit(network(), data, 2, 64, 42), report)
-        memory = ReservoirMemory(10000, 42, kind, 'hand_chip_delta', byte_budget=config['memory_byte_budget'])
-        report['stages'][f'{kind}_replay_add_10000'], _ = measured(lambda: add_all(memory, data))
-        report['stages'][f'{kind}_replay_deepcopy_10000'], _ = measured(lambda: copy.deepcopy(memory), 3)
-        profiled(f'{kind}_replay_add', lambda: add_all(ReservoirMemory(10000, 42, kind, 'hand_chip_delta', byte_budget=config['memory_byte_budget']), data), report)
-        # Fill actual seven memory slots for a capacity-scale checkpoint benchmark.
-        for solver in runner.solvers.values():
-            destinations = solver.advantage_memory.values() if kind == 'advantage' else (solver.strategy_memory,)
-            for destination in destinations:
-                candidates = [s for s in source if s.player in solver.players]
-                destination.samples = [candidates[index % len(candidates)] for index in range(10000)]
-                destination.seen = len(destination.samples)
-                destination._sample_sizes = [sample_bytes(s) for s in destination.samples]
-                destination.used_bytes = sum(destination._sample_sizes)
+    for name, solver in runner.solvers.items():
+        track_samples = [s for result in collected[name] for s in (*result.advantages, *result.strategies)]
+        for kind, network in (('advantage', AdvantageNetwork), ('strategy', AveragePolicyNetwork)):
+            source = [sample for sample in track_samples if sample.kind == kind]
+            capacity = config[name]['advantage_capacity'] if kind == 'advantage' else config['strategy_capacity']
+            data = [source[index % len(source)] for index in range(capacity)]
+            key = f'{name}_{kind}_{capacity}'
+            report['stages'][key + '_data'] = {'distinct_samples': len(source), 'benchmark_samples': len(data),
+                'history_mean': statistics.mean(len(s.state.history) for s in data),
+                'history_max': max(len(s.state.history) for s in data), 'accounted_bytes': sum(sample_bytes(s) for s in data)}
+            print(f'Benchmark full-capacity {key} fit', flush=True)
+            torch.manual_seed(909)
+            report['stages'][key + '_fit'], _ = measured(lambda: fit(network(), data, 2, 64, 42), 2)
+            profiled(key + '_fit', lambda: fit(network(), data, 2, 64, 42), report)
+            budget = config[name]['advantage_byte_budget'] if kind == 'advantage' else config['memory_byte_budget']
+            memory = ReservoirMemory(capacity, 42, kind, 'hand_chip_delta', byte_budget=budget)
+            report['stages'][key + '_replay_add'], _ = measured(lambda: add_all(memory, data))
+            report['stages'][key + '_replay_deepcopy'], _ = measured(lambda: copy.deepcopy(memory), 3)
+            profiled(key + '_replay_add', lambda: add_all(ReservoirMemory(capacity, 42, kind, 'hand_chip_delta', byte_budget=budget), data), report)
+            destination = solver.advantage_memory if kind == 'advantage' else solver.strategy_memory
+            destination.samples = data
+            destination.seen = len(data)
+            destination._sample_sizes = [sample_bytes(s) for s in data]
+            destination.used_bytes = sum(destination._sample_sizes)
     print('Benchmark full-capacity checkpoint', flush=True)
     checkpoint = OUTPUT / 'capacity_checkpoint.pt'
     report['stages']['checkpoint_full_capacity'], _ = measured(lambda: save_benchmark_checkpoint(runner, checkpoint), 2)
@@ -188,7 +189,7 @@ def save_benchmark_checkpoint(runner: TrainingRunner, path: Path) -> None:
         raw['tracks'][name] = {'version': solver.version, 'seed': solver.seed, 'rng': solver.rng.getstate(),
             'advantage_weights': solver.snapshot().advantage_weights,
             'average_weights': solver.average_model.state_dict(),
-            'advantage_memory': {player: pack_memory(memory) for player, memory in solver.advantage_memory.items()},
+            'advantage_memory': pack_memory(solver.advantage_memory),
             'strategy_memory': pack_memory(solver.strategy_memory), 'metrics': solver.metrics,
             'traversal_mode': solver.traversal_mode, 'sampler_rng': sampler.rng.getstate(),
             'stratum_index': sampler.stratum_index, 'root_coverage': sampler.coverage.as_dict(),

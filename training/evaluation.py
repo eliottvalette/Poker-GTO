@@ -12,7 +12,7 @@ from ml.train import evaluate_loss
 from poker_game_expresso import BlindLevel, HandState
 from scripts.benchmark_policy import BOT_NAMES, scripted_action
 
-EVALUATION_VERSION = 1
+EVALUATION_VERSION = 2
 
 
 def fixed_roots(count: int) -> list[tuple[str, HandState]]:
@@ -76,7 +76,8 @@ def evaluate_solver(solver, roots: list[tuple[str, HandState]], max_nodes: int, 
                                       epsilon=solver.metrics[-1]["epsilon"] if solver.traversal_mode == "outcome_sampling" else 0.6))
             heldout_advantages[player].extend(result.advantages)
             heldout_strategies.extend(result.strategies)
-    losses = {str(p): evaluate_loss(solver.advantage_models[p], rows, batch_size) for p, rows in heldout_advantages.items()}
+    losses = {str(p): evaluate_loss(solver.advantage_model, rows, batch_size) for p, rows in heldout_advantages.items()}
+    pooled_loss = evaluate_loss(solver.advantage_model, [s for rows in heldout_advantages.values() for s in rows], batch_size)
     average_loss = evaluate_loss(solver.average_model, heldout_strategies, batch_size)
     scripted = {}
     for bot in BOT_NAMES:
@@ -98,5 +99,5 @@ def evaluate_solver(solver, roots: list[tuple[str, HandState]], max_nodes: int, 
             utilities.append(hand.utility(hero))
         scripted[bot] = {"hand_chip_deltas": utilities, "mean": sum(utilities) / len(utilities), "scope": "three_fixed_hands_sanity_only"}
     return {"version": EVALUATION_VERSION, "bounded_best_response": br,
-            "independent_advantage_loss": losses, "independent_average_policy_loss": average_loss,
+            "independent_advantage_loss": pooled_loss, "independent_advantage_loss_by_player": losses, "independent_average_policy_loss": average_loss,
             "scripted_opponents": scripted}

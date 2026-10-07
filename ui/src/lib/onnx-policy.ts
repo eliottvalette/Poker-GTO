@@ -9,6 +9,7 @@ export type PolicyManifest = {
   version: number;
   action_schema_version: number;
   feature_schema_version: number;
+  seat_normalization: "hero_then_clockwise_positions";
   suit_normalization: "first_observable_occurrence";
   traversal_mode: "external_sampling" | "outcome_sampling";
   state_version: number;
@@ -55,14 +56,15 @@ function equalArray(actual: unknown, expected: readonly unknown[]): boolean {
 export function validatePolicyManifest(raw: unknown): PolicyManifest {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Policy manifest must be a JSON object");
   const manifest = raw as PolicyManifest;
-  const fields = ["action_schema_version", "feature_schema_version", "suit_normalization", "traversal_mode", "version", "state_version", "architecture", "model_sha256", "objective", "iteration",
+  const fields = ["action_schema_version", "feature_schema_version", "suit_normalization", "seat_normalization", "traversal_mode", "version", "state_version", "architecture", "model_sha256", "objective", "iteration",
     "supported_player_counts", "actions", "numeric_names", "positions", "events", "normalization_bb",
     "card_encoding", "card_slots", "unknown_card", "card_vocabulary", "history_width", "full_history",
     "batch_size", "inputs", "output", "validation_max_absolute_error", "amount_units", "utility_units", "history_scope", "payout_scope"];
-  if (!equalArray(Object.keys(raw).sort(), fields.sort()) || manifest.version !== 3
+  if (!equalArray(Object.keys(raw).sort(), fields.sort()) || manifest.version !== 4
       || manifest.action_schema_version !== 1
       || manifest.feature_schema_version !== FEATURE_SCHEMA_VERSION
       || manifest.suit_normalization !== "first_observable_occurrence"
+      || manifest.seat_normalization !== "hero_then_clockwise_positions"
       || !["external_sampling", "outcome_sampling"].includes(manifest.traversal_mode) || manifest.state_version !== STATE_VERSION
       || manifest.architecture !== ARCHITECTURE || typeof manifest.model_sha256 !== "string"
       || !/^[a-f0-9]{64}$/.test(manifest.model_sha256) || manifest.objective !== "hand_chip_delta"

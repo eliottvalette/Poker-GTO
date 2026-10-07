@@ -11,6 +11,8 @@ import random
 from typing import Callable
 import torch
 from actions import ACTION_IDS
+from poker_game_expresso import HandState
+from tournament import TournamentState
 from cfr_solver import GameState, Traversal, hand_root, regret_matching, validate_strategy
 from infoset import STATE_VERSION, Observation
 from features import FEATURE_SCHEMA_VERSION
@@ -24,8 +26,9 @@ from ml.train import fit
 class ModelSnapshot:
     version: int
     objective: str
-    advantage_weights: dict[int, dict[str, torch.Tensor]]
+    advantage_weights: dict[str, torch.Tensor] | None
     uniform_initial: bool
+    player_count: int
 
 
 @dataclass(frozen=True)
@@ -83,24 +86,30 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask) -> GeneratedS
     started = time.perf_counter()
     cpu_started = time.process_time()
     torch.set_num_threads(1)
-    models = {}
     if snapshot.uniform_initial != (snapshot.version == 0):
         raise ValueError(f"Invalid snapshot initial/version contract: {snapshot.version}")
+    if snapshot.player_count not in (2, 3) or snapshot.uniform_initial != (snapshot.advantage_weights is None):
+        raise ValueError(f"Invalid shared advantage snapshot: version={snapshot.version}, players={snapshot.player_count}")
+    if isinstance(task.root, HandState):
+        root = task.root
+    elif isinstance(task.root, TournamentState):
+        root = task.root.hand
+    else:
+        raise TypeError(f"Traversal requires HandState/TournamentState, received {type(task.root).__name__}")
+    if root is None or len(root.players) != snapshot.player_count or task.player not in root.players:
+        raise ValueError(f"Snapshot/root track mismatch: expected {snapshot.player_count} players, traverser={task.player}")
+    model = None
     if not snapshot.uniform_initial:
-        for player, weights in snapshot.advantage_weights.items():
-            model = AdvantageNetwork()
-            model.load_state_dict(weights, strict=True)
-            model.eval()
-            models[player] = model
+        model = AdvantageNetwork()
+        model.load_state_dict(snapshot.advantage_weights, strict=True)
+        model.eval()
     def strategy(obs):
         if obs.objective != snapshot.objective:
             raise ValueError(f"Snapshot objective {snapshot.objective} != root {obs.objective}")
         if snapshot.uniform_initial:
             return regret_matching([0.0] * len(ACTION_IDS), obs.legal_mask)
-        if obs.hero not in models:
-            raise ValueError(f"Missing advantage model for player {obs.hero}, version={snapshot.version}")
         with torch.no_grad():
-            values = tuple(models[obs.hero](encode_batch([obs]))[0].tolist())
+            values = tuple(model(encode_batch([obs]))[0].tolist())
         return regret_matching(values, obs.legal_mask)
     advantages, strategies = [], []
     generated_bytes = 0
@@ -145,8 +154,8 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask) -> GeneratedS
 
 class DeepCFRSolver:
     def __init__(self, players: tuple[int, ...], objective: str = "hand_chip_delta", seed: int = 0,
-                 advantage_capacity: int = 10000, strategy_capacity: int = 10000,
-                 memory_byte_budget: int = DEFAULT_BYTE_BUDGET):
+                 advantage_capacity: int | None = None, strategy_capacity: int = 10000,
+                 memory_byte_budget: int = DEFAULT_BYTE_BUDGET, advantage_byte_budget: int | None = None):
         if len(players) not in (2, 3) or len(set(players)) != len(players):
             raise ValueError(f"Expected distinct 2/3 player IDs: {players}")
         if objective != "hand_chip_delta":
@@ -154,18 +163,20 @@ class DeepCFRSolver:
         self.players, self.objective, self.seed = players, objective, seed
         self.version = 0
         self.rng = random.Random(seed)
-        self.advantage_memory = {p: ReservoirMemory(advantage_capacity, seed + i, "advantage", objective, memory_byte_budget)
-                                 for i, p in enumerate(players)}
+        # Capacity and budget are totals for the pooled track, not per seat.
+        advantage_capacity = len(players) * 10000 if advantage_capacity is None else advantage_capacity
+        advantage_byte_budget = len(players) * memory_byte_budget if advantage_byte_budget is None else advantage_byte_budget
+        self.advantage_memory = ReservoirMemory(advantage_capacity, seed, "advantage", objective, advantage_byte_budget)
         self.strategy_memory = ReservoirMemory(strategy_capacity, seed + 10, "strategy", objective, memory_byte_budget)
-        self.advantage_models: dict[int, AdvantageNetwork] = {}
+        self.advantage_model: AdvantageNetwork | None = None
         self.average_model: AveragePolicyNetwork | None = None
         self.metrics: list[dict] = []
         self.traversal_mode: str | None = None
 
     def snapshot(self) -> ModelSnapshot:
-        return ModelSnapshot(self.version, self.objective,
-                             {p: {k: v.detach().cpu().clone() for k, v in m.state_dict().items()}
-                              for p, m in self.advantage_models.items()}, self.version == 0)
+        weights = None if self.advantage_model is None else {
+            k: v.detach().cpu().clone() for k, v in self.advantage_model.state_dict().items()}
+        return ModelSnapshot(self.version, self.objective, weights, self.version == 0, len(self.players))
 
     def run_iteration(self, root_factory: Callable[[random.Random], GameState], traversals_per_player: int = 1,
                       workers: int = 1, epochs: int = 1, batch_size: int = 32,
@@ -199,7 +210,7 @@ class DeepCFRSolver:
         torch.set_num_threads(trainer_threads)
         fit_started = time.perf_counter()
         # Build the next complete state before changing any published version.
-        memories = copy.deepcopy(self.advantage_memory)
+        advantage_memory = copy.deepcopy(self.advantage_memory)
         strategy_memory = copy.deepcopy(self.strategy_memory)
         for result in results:
             if result.version != self.version:
@@ -207,10 +218,13 @@ class DeepCFRSolver:
             if result.traversal_mode != traversal_mode:
                 raise ValueError(f"Worker traversal mode={result.traversal_mode}, expected {traversal_mode}")
             for sample in result.advantages:
-                memories[sample.player].add(sample)
+                if sample.player not in self.players or round(sample.state.numeric[NUMERIC_NAMES.index("player_count")] * 3) != len(self.players):
+                    raise ValueError(f"Advantage sample perspective/player count is not in track {self.players}")
+                advantage_memory.add(sample)
             for sample in result.strategies:
+                if sample.player not in self.players or round(sample.state.numeric[NUMERIC_NAMES.index("player_count")] * 3) != len(self.players):
+                    raise ValueError(f"Strategy sample perspective/player count is not in track {self.players}")
                 strategy_memory.add(sample)
-        models = {}
         metrics = {"version": self.version + 1, "nodes": sum(r.nodes for r in results),
                    "advantage_samples": sum(len(r.advantages) for r in results),
                    "strategy_samples": sum(len(r.strategies) for r in results),
@@ -219,11 +233,10 @@ class DeepCFRSolver:
                    "traversal_diagnostics": [r.diagnostics for r in results]}
         metrics["max_depth_seen"] = max(r.max_depth_seen for r in results)
         with torch.random.fork_rng(devices=[]):
-            for player in self.players:
-                torch.manual_seed(self.seed + (self.version + 1) * 101 + player)
-                models[player] = AdvantageNetwork()
-                metrics[f"advantage_{player}"] = fit(models[player], memories[player].samples, epochs, batch_size,
-                                                      self.seed + player, learning_rate=learning_rate)
+            torch.manual_seed(self.seed + (self.version + 1) * 101)
+            advantage = AdvantageNetwork()
+            metrics["advantage"] = fit(advantage, advantage_memory.samples, epochs, batch_size,
+                                       self.seed, learning_rate=learning_rate)
             torch.manual_seed(self.seed + (self.version + 1) * 101 + 10)
             average = AveragePolicyNetwork()
             metrics["average_policy"] = fit(average, strategy_memory.samples, epochs, batch_size, self.seed + 10, learning_rate=learning_rate)
@@ -240,9 +253,14 @@ class DeepCFRSolver:
         for result in results:
             coverage.merge(result.coverage)
         metrics["sample_coverage"] = coverage.as_dict()
-        metrics["replay"] = {str(p): {"seen": m.seen, "retained": len(m.samples), "bytes": m.used_bytes}
-                             for p, m in memories.items()}
-        metrics["replay"]["strategy"] = {"seen": strategy_memory.seen, "retained": len(strategy_memory.samples), "bytes": strategy_memory.used_bytes}
+        metrics["replay"] = {"advantage": {"seen": advantage_memory.seen, "retained": len(advantage_memory.samples),
+                                             "bytes": advantage_memory.used_bytes},
+                             "strategy": {"seen": strategy_memory.seen, "retained": len(strategy_memory.samples),
+                                            "bytes": strategy_memory.used_bytes}}
+        metrics["advantage_samples_by_player"] = {str(p): sum(s.player == p for r in results for s in r.advantages)
+                                                  for p in self.players}
+        metrics["advantage_retained_by_player"] = {str(p): sum(s.player == p for s in advantage_memory.samples)
+                                                   for p in self.players}
         probes = [s.state for s in strategy_memory.samples[:32]]
         if self.average_model is not None:
             with torch.no_grad():
@@ -251,8 +269,8 @@ class DeepCFRSolver:
             metrics["policy_change_l1_on_replay_probes"] = float(difference)
         else:
             metrics["policy_change_l1_on_replay_probes"] = None
-        self.advantage_memory, self.strategy_memory = memories, strategy_memory
-        self.advantage_models, self.average_model = models, average
+        self.advantage_memory, self.strategy_memory = advantage_memory, strategy_memory
+        self.advantage_model, self.average_model = advantage, average
         self.rng.setstate(rng.getstate())
         self.traversal_mode = traversal_mode
         self.version += 1
@@ -262,10 +280,12 @@ class DeepCFRSolver:
     def export_average(self, path: str | Path) -> None:
         if self.average_model is None:
             raise ValueError("Average-policy network is unavailable before successful training")
-        torch.save({"version": 4, "feature_schema_version": FEATURE_SCHEMA_VERSION, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
+        torch.save({"version": 5, "feature_schema_version": FEATURE_SCHEMA_VERSION, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
                     "actions": list(ACTION_IDS), "numeric_names": list(NUMERIC_NAMES),
                     "objective": self.objective, "iteration": self.version,
-                    "training_metadata": {"traversal_mode": self.traversal_mode,
+                    "training_metadata": {"advantage_layout": "shared_per_player_count",
+                                          "seat_normalization": "hero_then_clockwise_positions",
+                                          "traversal_mode": self.traversal_mode,
                                           "utility_units": "initial_big_blind_chips",
                                           "history_scope": "current_hand", "payout_scope": "winner_take_all",
                                           "epsilon_by_iteration": [metric["epsilon"] for metric in self.metrics],
@@ -279,7 +299,7 @@ class DeepCFRSolver:
 class NeuralAveragePolicy:
     def __init__(self, path: str | Path):
         raw = torch.load(path, map_location="cpu", weights_only=True)
-        if (raw.get("version") != 4 or raw.get("feature_schema_version") != FEATURE_SCHEMA_VERSION or raw.get("state_version") != STATE_VERSION
+        if (raw.get("version") != 5 or raw.get("feature_schema_version") != FEATURE_SCHEMA_VERSION or raw.get("state_version") != STATE_VERSION
                 or raw.get("architecture") != MODEL_ARCHITECTURE or raw.get("actions") != list(ACTION_IDS)
                 or raw.get("numeric_names") != list(NUMERIC_NAMES) or raw.get("iteration", 0) < 1
                 or raw.get("objective") != "hand_chip_delta"

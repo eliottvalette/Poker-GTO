@@ -7,7 +7,7 @@ from actions import ACTION_IDS
 from infoset import HISTORY_WIDTH, STATE_VERSION, Observation
 from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES, NeuralObservation, neural_observation
 
-MODEL_ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_features1"
+MODEL_ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_features2"
 
 
 def encode_batch(observations: list[Observation | NeuralObservation]) -> dict[str, torch.Tensor]:

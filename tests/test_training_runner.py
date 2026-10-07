@@ -15,9 +15,10 @@ def tiny_config(directory):
     config = load_config('configs/deep_cfr_pilot.json')
     config.update(output_dir=str(directory), workers=1, outer_iterations=2, epochs_per_iteration=1,
                   checkpoint_every=1, evaluation_every=2, max_nodes=20000,
-                  advantage_capacity=1000, strategy_capacity=1000)
+                  strategy_capacity=1000)
     for name in ('3max', 'hu'):
         config[name]['traversals_per_player'] = 2
+        config[name]['advantage_capacity'] = 1000
     return config
 
 
@@ -55,7 +56,7 @@ class TrainingRunnerTests(unittest.TestCase):
             a, b = runner.run_iteration(), restored.run_iteration()
             self.assertEqual(deterministic_metric(a), deterministic_metric(b))
             for name in runner.solvers:
-                self.assertEqual(set(a['tracks'][name]['evaluation']), {'version', 'bounded_best_response', 'independent_advantage_loss', 'independent_average_policy_loss', 'scripted_opponents'})
+                self.assertEqual(set(a['tracks'][name]['evaluation']), {'version', 'bounded_best_response', 'independent_advantage_loss', 'independent_advantage_loss_by_player', 'independent_average_policy_loss', 'scripted_opponents'})
                 for key, weight in runner.solvers[name].average_model.state_dict().items():
                     self.assertTrue(torch.equal(weight, restored.solvers[name].average_model.state_dict()[key]))
             lines = (Path(directory) / 'metrics.jsonl').read_text().splitlines()

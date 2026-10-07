@@ -56,7 +56,7 @@ class HandSolverBoundaryTests(unittest.TestCase):
         rng_before = tournament.rng.getstate()
         for mode in ("external_sampling", "outcome_sampling"):
             task = TraversalTask(0, 0, tournament, 17, 1000, 100, traversal_mode=mode)
-            snapshot = ModelSnapshot(0, "hand_chip_delta", {}, True)
+            snapshot = ModelSnapshot(0, "hand_chip_delta", None, True, len(tournament.hand.players))
             actual = generate_samples(snapshot, task)
             expected = generate_samples(snapshot, TraversalTask(0, 0, hand_root(tournament), 17, 1000, 100,
                                                                 traversal_mode=mode))

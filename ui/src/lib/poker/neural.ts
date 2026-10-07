@@ -2,8 +2,8 @@
 import { ACTION_IDS } from "./actions";
 import { NUMERIC_NAMES, type Observation } from "./observation";
 
-export const FEATURE_SCHEMA_VERSION = 1;
-export const ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_features1";
+export const FEATURE_SCHEMA_VERSION = 2;
+export const ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_features2";
 const CARD_FEATURE_NAMES = ["made_category", "flush_draw", "straight_outs", "flush_outs", "overcards",
   "board_pair_multiplicity", "board_max_suit", "board_rank_span", "ace_suit_blockers"];
 export const NEURAL_NUMERIC_NAMES = [...NUMERIC_NAMES, "pot_odds", "call_pot", "hero_stack_pot", "spr_1", "spr_2",
@@ -38,6 +38,28 @@ function category(cards: number[]): number {
 }
 
 export function neuralObservation(obs: Observation): { cards: number[]; numeric: number[]; history: number[][] } {
+  const count = Math.round(obs.numeric[NUMERIC_NAMES.indexOf("player_count")] * 3);
+  const positions = count === 3 ? [0, 1, 2] : [1, 2];
+  const stacks = obs.history.slice(0, count);
+  const byPosition = new Map(stacks.map(row => [Math.round(row[3] * 2), Math.round(row[2] * 2)]));
+  const heroPosition = Math.round(obs.numeric[NUMERIC_NAMES.indexOf("hero_position")] * 2);
+  if (![2, 3].includes(count) || stacks.some(row => row[4] !== 1) || byPosition.size !== count
+      || positions.some(position => !byPosition.has(position)) || byPosition.get(heroPosition) !== 0
+      || new Set(byPosition.values()).size !== count
+      || [...byPosition.values()].some(index => index < 0 || index >= count)) {
+    throw new Error(`Invalid observable position mapping: players=${count}, heroPosition=${heroPosition}`);
+  }
+  const offset = positions.indexOf(heroPosition);
+  const order = positions.map((_, i) => byPosition.get(positions[(offset + i) % count])!);
+  const mapping = new Map(order.map((old, current) => [old, current]));
+  const rawNumeric = [...obs.numeric];
+  for (const feature of ["stack", "street_bet", "contribution", "folded", "effective", "initial"]) {
+    order.forEach((old, current) => {
+      rawNumeric[NUMERIC_NAMES.indexOf(`${feature}_${current}`)] = obs.numeric[NUMERIC_NAMES.indexOf(`${feature}_${old}`)];
+    });
+  }
+  const button = NUMERIC_NAMES.indexOf("button");
+  rawNumeric[button] = mapping.get(Math.round(obs.numeric[button] * 2))! / 2;
   const suits = new Map<number, number>();
   const cards = obs.cards.map(card => {
     if (card === 52) return card;
@@ -47,6 +69,9 @@ export function neuralObservation(obs: Observation): { cards: number[]; numeric:
   });
   const history = obs.history.map(row => {
     const event = [...row];
+    const actor = mapping.get(Math.round(row[2] * 2));
+    if (actor === undefined) throw new Error(`History actor outside observed seats: ${row[2]}`);
+    event[2] = actor / 2;
     if (event[11] === 1) {
       const card = Math.round(event[10] * 51);
       if (!suits.has(card % 4)) throw new Error(`History contains an unobservable card: ${card}`);
@@ -54,7 +79,8 @@ export function neuralObservation(obs: Observation): { cards: number[]; numeric:
     }
     return event;
   });
-  const state = Object.fromEntries(NUMERIC_NAMES.map((name, index) => [name, obs.numeric[index]]));
+  history.splice(0, count, ...history.slice(0, count).sort((a, b) => a[2] - b[2]));
+  const state = Object.fromEntries(NUMERIC_NAMES.map((name, index) => [name, rawNumeric[index]]));
   const pot = state.pot, call = Math.min(state.to_call, state.stack_0);
   if (pot <= 0) throw new Error(`Live hand must have a positive pot: ${pot}`);
   const hero = obs.cards.slice(0, 2), board = obs.cards.slice(2).filter(c => c !== 52), known = [...hero, ...board];
@@ -73,5 +99,5 @@ export function neuralObservation(obs: Observation): { cards: number[]; numeric:
     Math.max(0, ...boardRanks.values()) / 4, Math.max(0, ...boardSuits.values()) / 5,
     board.length ? (Math.max(...boardRanks.keys()) - Math.min(...boardRanks.keys())) / 12 : 0,
     hero.filter(c => Math.floor(c / 4) === 12 && (boardSuits.get(c % 4) ?? 0) > 0).length / 2];
-  return { cards, numeric: [...obs.numeric, ...derived], history };
+  return { cards, numeric: [...rawNumeric, ...derived], history };
 }

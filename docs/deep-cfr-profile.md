@@ -1,5 +1,9 @@
 # Deep CFR CPU profile — 2026-10-06
 
+> Historical measurements for the former per-seat advantage models and feature
+> schema 1. Current training shares one advantage model/replay per track;
+> see [shared-advantage.md](shared-advantage.md). Total replay capacity is preserved.
+
 The earlier 90-minute pilot estimate was too pessimistic. It multiplied the cost
 of starting process pools for tiny task counts as if that cost increased linearly
 with traversals. Production-sized frozen lots measure approximately 9.5 seconds

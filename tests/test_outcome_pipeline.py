@@ -23,7 +23,7 @@ class OutcomePipelineTests(unittest.TestCase):
         torch.set_num_threads(1)
 
     def test_outcome_generation_metadata_and_worker_determinism(self):
-        snapshot = ModelSnapshot(0, "hand_chip_delta", {}, True)
+        snapshot = ModelSnapshot(0, "hand_chip_delta", None, True, 2)
         tasks = [TraversalTask(i, i % 2, river(), i + 17, 100, 100,
                                traversal_mode="outcome_sampling", epsilon=0.6) for i in range(4)]
         sequential = collect_samples(snapshot, tasks, 1)
@@ -58,8 +58,8 @@ class OutcomePipelineTests(unittest.TestCase):
                 parameter.zero_()
             model.head[-1].bias.fill_(-1)
             model.head[-1].bias[ACTION_IDS.index("ALL_IN")] = 1
-        weights = {player: model.state_dict() for player in (0, 1)}
-        snapshot = ModelSnapshot(1, "hand_chip_delta", weights, False)
+        weights = model.state_dict()
+        snapshot = ModelSnapshot(1, "hand_chip_delta", weights, False, 2)
         task = TraversalTask(0, 0, river(), 18, 100, 100, traversal_mode="outcome_sampling")
         result = generate_samples(snapshot, task)
         self.assertGreater(sum(result.diagnostics["structural_zero_log_counts"].values()), 0)
@@ -75,7 +75,7 @@ class OutcomePipelineTests(unittest.TestCase):
         self.assertEqual(solver.version, 0)
         self.assertEqual(solver.rng.getstate(), before)
         self.assertEqual(solver.strategy_memory.seen, 0)
-        self.assertTrue(all(memory.traversal_mode is None for memory in solver.advantage_memory.values()))
+        self.assertTrue(solver.advantage_memory.traversal_mode is None)
 
     def test_outcome_tiny_training_records_estimator_and_rejects_mode_switch(self):
         solver = DeepCFRSolver((0, 1), "hand_chip_delta", seed=17)
@@ -98,7 +98,7 @@ class OutcomePipelineTests(unittest.TestCase):
             self.assertEqual(metadata["epsilon_by_iteration"], [0.6])
 
     def test_invalid_sampling_configuration_fails_before_generation(self):
-        snapshot = ModelSnapshot(0, "hand_chip_delta", {}, True)
+        snapshot = ModelSnapshot(0, "hand_chip_delta", None, True, 2)
         task = TraversalTask(0, 0, river(), 17, 100, 100, traversal_mode="invalid")
         with self.assertRaisesRegex(ValueError, "traversal mode"):
             generate_samples(snapshot, task)
