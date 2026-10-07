@@ -183,7 +183,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
                   onClick={() => void command("action", action.action_id)}
                   className="relative h-10 w-full min-w-0 flex-col gap-0 overflow-hidden border border-border bg-white px-2 py-1 text-xs text-black hover:bg-white/90">
                   <span className="relative z-10">{actionLabel(action)}</span>
-                  {probability !== undefined && <span className="relative z-10 text-[10px]">{(probability * 100).toFixed(0)}%</span>}
+                  {probability !== undefined && <span className="relative z-10 text-xs">{(probability * 100).toFixed(0)}%</span>}
                   {probability !== undefined && <span className="absolute inset-y-0 left-0 bg-black/10" style={{ width: `${probability * 100}%` }} />}
                 </Button>
               );

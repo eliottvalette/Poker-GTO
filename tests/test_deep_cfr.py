@@ -23,6 +23,14 @@ class DeepCFRTests(unittest.TestCase):
     def setUpClass(cls):
         torch.set_num_threads(1)
 
+    def test_budget_failure_identifies_reproducible_task_and_pass(self):
+        from cfr_solver import TraversalBudgetExceeded
+        root = river()
+        snapshot = ModelSnapshot(0, 'hand_chip_delta', None, True, len(root.players))
+        task = TraversalTask(104, root.current_player, root, 48896305, 1, 64)
+        with self.assertRaisesRegex(TraversalBudgetExceeded, 'task=104, snapshot=0, player=.*seed=48896305, stage=advantage'):
+            generate_samples(snapshot, task)
+
     def test_shapes_masking_and_invalid_inputs(self):
         obs = observe(river())
         batch = encode_batch([obs, obs])
@@ -150,6 +158,26 @@ class DeepCFRTests(unittest.TestCase):
         solver.run_iteration(lambda _: river(), traversals_per_player=2, max_nodes=1000)
         tasks = [TraversalTask(i, i % 2, river(), i + 17, 1000, 100) for i in range(4)]
         self.assertEqual(collect_samples(solver.snapshot(), tasks, 1), collect_samples(solver.snapshot(), tasks, 2))
+
+    def test_persistent_workers_refresh_same_version_changed_weights(self):
+        from scripts.parallel_cfr import traversal_workers
+        torch.manual_seed(11)
+        model = AdvantageNetwork()
+        with torch.no_grad():
+            for parameter in model.parameters():
+                parameter.zero_()
+            model.head[-1].bias[ACTION_IDS.index('FOLD')] = 1
+        first = ModelSnapshot(1, 'hand_chip_delta', {k: v.clone() for k, v in model.state_dict().items()}, False, 2)
+        with torch.no_grad():
+            model.head[-1].bias.zero_()
+            model.head[-1].bias[ACTION_IDS.index('CALL')] = 1
+        second = ModelSnapshot(1, 'hand_chip_delta', {k: v.clone() for k, v in model.state_dict().items()}, False, 2)
+        tasks = [TraversalTask(i, river().current_player, river(), 17 + i, 1000, 64) for i in range(2)]
+        expected = [collect_samples(snapshot, tasks, 1) for snapshot in (first, second)]
+        self.assertNotEqual(expected[0], expected[1])
+        with traversal_workers(2) as executor:
+            for snapshot, samples in zip((first, second), expected):
+                self.assertEqual(collect_samples(snapshot, tasks, 2, executor=executor), samples)
 
     def test_two_outer_iterations_and_average_export(self):
         solver = DeepCFRSolver((0, 1), "hand_chip_delta", seed=2, advantage_capacity=100, strategy_capacity=100)

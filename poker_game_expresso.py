@@ -106,7 +106,16 @@ class HandState:
         return hand
 
     def clone(self) -> HandState:
-        return copy.deepcopy(self)
+        """Copy mutable hand state; immutable cards, blinds and events can be shared."""
+        result = copy.copy(self)
+        result.players = {seat: copy.copy(player) for seat, player in self.players.items()}
+        result.deck = self.deck.copy()
+        result.initial_stacks = self.initial_stacks.copy()
+        result.board = self.board.copy()
+        result.pending = self.pending.copy()
+        result.history = self.history.copy()
+        result.awards = self.awards.copy()
+        return result
 
     def previous(self, seat: int) -> int:
         seats = list(self.players)

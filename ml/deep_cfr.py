@@ -1,5 +1,6 @@
 """Frozen outer iterations, bounded sample generation and central Deep CFR training."""
 from __future__ import annotations
+from concurrent.futures import ProcessPoolExecutor
 import copy
 from dataclasses import asdict, dataclass, field
 import math
@@ -8,18 +9,21 @@ import sys
 import time
 from pathlib import Path
 import random
-from typing import Callable
+from typing import Callable, TypeVar
 import torch
 from actions import ACTION_IDS
 from poker_game_expresso import HandState
 from tournament import TournamentState
-from cfr_solver import GameState, Traversal, hand_root, regret_matching, validate_strategy
+from cfr_solver import GameState, Traversal, TraversalBudgetExceeded, hand_root, regret_matching, validate_strategy
 from infoset import STATE_VERSION, Observation
 from features import FEATURE_SCHEMA_VERSION
+from features.neural import NeuralObservation, observe_neural
 from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES
 from ml.memory import DEFAULT_BYTE_BUDGET, TRAVERSAL_MODES, ReservoirMemory, TrainingSample, sample_bytes
 from ml.model import MODEL_ARCHITECTURE, AdvantageNetwork, AveragePolicyNetwork, encode_batch
 from ml.train import fit
+
+_TraversalResult = TypeVar("_TraversalResult")
 
 
 @dataclass(frozen=True)
@@ -29,6 +33,14 @@ class ModelSnapshot:
     advantage_weights: dict[str, torch.Tensor] | None
     uniform_initial: bool
     player_count: int
+
+    def validate(self) -> None:
+        if self.objective != "hand_chip_delta":
+            raise ValueError(f"Only per-hand chip-delta learning is supported, received snapshot objective={self.objective}")
+        if self.uniform_initial != (self.version == 0):
+            raise ValueError(f"Invalid snapshot initial/version contract: {self.version}")
+        if self.player_count not in (2, 3) or self.uniform_initial != (self.advantage_weights is None):
+            raise ValueError(f"Invalid shared advantage snapshot: version={self.version}, players={self.player_count}")
 
 
 @dataclass(frozen=True)
@@ -74,9 +86,30 @@ def _diagnostic_metadata(diagnostics) -> dict:
     return raw
 
 
-def generate_samples(snapshot: ModelSnapshot, task: TraversalTask) -> GeneratedSamples:
-    if snapshot.objective != "hand_chip_delta":
-        raise ValueError(f"Only per-hand chip-delta learning is supported, received snapshot objective={snapshot.objective}")
+class FrozenStrategy:
+    """One immutable inference model per frozen worker snapshot."""
+    def __init__(self, snapshot: ModelSnapshot) -> None:
+        snapshot.validate()
+        self.snapshot = snapshot
+        self.model = None
+        if not snapshot.uniform_initial:
+            self.model = AdvantageNetwork()
+            self.model.load_state_dict(snapshot.advantage_weights, strict=True)
+            self.model.eval()
+
+    def __call__(self, obs: Observation | NeuralObservation) -> tuple[float, ...]:
+        if obs.objective != self.snapshot.objective:
+            raise ValueError(f"Snapshot objective {self.snapshot.objective} != root {obs.objective}")
+        if self.snapshot.uniform_initial:
+            return regret_matching([0.0] * len(ACTION_IDS), obs.legal_mask)
+        with torch.no_grad():
+            values = tuple(self.model(encode_batch([obs]))[0].tolist())
+        return regret_matching(values, obs.legal_mask)
+
+
+def generate_samples(snapshot: ModelSnapshot, task: TraversalTask,
+                     frozen_strategy: FrozenStrategy | None = None) -> GeneratedSamples:
+    snapshot.validate()
     if not isinstance(task.sample_byte_budget, int) or task.sample_byte_budget < 1:
         raise ValueError(f"Traversal sample byte budget must be positive: {task.sample_byte_budget}")
     if task.traversal_mode not in TRAVERSAL_MODES:
@@ -86,10 +119,6 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask) -> GeneratedS
     started = time.perf_counter()
     cpu_started = time.process_time()
     torch.set_num_threads(1)
-    if snapshot.uniform_initial != (snapshot.version == 0):
-        raise ValueError(f"Invalid snapshot initial/version contract: {snapshot.version}")
-    if snapshot.player_count not in (2, 3) or snapshot.uniform_initial != (snapshot.advantage_weights is None):
-        raise ValueError(f"Invalid shared advantage snapshot: version={snapshot.version}, players={snapshot.player_count}")
     if isinstance(task.root, HandState):
         root = task.root
     elif isinstance(task.root, TournamentState):
@@ -98,19 +127,9 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask) -> GeneratedS
         raise TypeError(f"Traversal requires HandState/TournamentState, received {type(task.root).__name__}")
     if root is None or len(root.players) != snapshot.player_count or task.player not in root.players:
         raise ValueError(f"Snapshot/root track mismatch: expected {snapshot.player_count} players, traverser={task.player}")
-    model = None
-    if not snapshot.uniform_initial:
-        model = AdvantageNetwork()
-        model.load_state_dict(snapshot.advantage_weights, strict=True)
-        model.eval()
-    def strategy(obs):
-        if obs.objective != snapshot.objective:
-            raise ValueError(f"Snapshot objective {snapshot.objective} != root {obs.objective}")
-        if snapshot.uniform_initial:
-            return regret_matching([0.0] * len(ACTION_IDS), obs.legal_mask)
-        with torch.no_grad():
-            values = tuple(model(encode_batch([obs]))[0].tolist())
-        return regret_matching(values, obs.legal_mask)
+    if frozen_strategy is not None and frozen_strategy.snapshot is not snapshot:
+        raise ValueError("Frozen inference strategy does not belong to the requested snapshot")
+    strategy = FrozenStrategy(snapshot) if frozen_strategy is None else frozen_strategy
     advantages, strategies = [], []
     generated_bytes = 0
     from training.metrics import Coverage
@@ -136,18 +155,26 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask) -> GeneratedS
         result.coverage = coverage.as_dict()
         return result
     rng = random.Random(task.seed)
+    def checked_traversal(stage: str, run: Callable[[], _TraversalResult]) -> _TraversalResult:
+        try:
+            return run()
+        except TraversalBudgetExceeded as error:
+            raise TraversalBudgetExceeded(
+                f"task={task.task_id}, snapshot={snapshot.version}, player={task.player}, "
+                f"seed={task.seed}, stage={stage}: {error}; no partial samples returned"
+            ) from error
     if task.traversal_mode == "outcome_sampling":
         from outcome_sampling import OutcomeSamplingTraversal
         walk = OutcomeSamplingTraversal(strategy, rng, task.max_nodes, task.max_depth, task.epsilon)
-        value = walk.run(task.root, task.player, sink("advantage", advantages), sink("strategy", strategies))
+        value = checked_traversal("outcome", lambda: walk.run(task.root, task.player, sink("advantage", advantages), sink("strategy", strategies)))
         return finish(GeneratedSamples(task.task_id, snapshot.version, advantages, strategies, walk.nodes, value,
                                 task.traversal_mode, _diagnostic_metadata(walk.diagnostics), walk.max_depth_seen))
-    walk = Traversal(strategy, rng, task.max_nodes, task.max_depth)
-    value = walk.regrets(task.root, task.player, sink("advantage", advantages))
+    walk = Traversal(strategy, rng, task.max_nodes, task.max_depth, observer=observe_neural)
+    value = checked_traversal("advantage", lambda: walk.regrets(task.root, task.player, sink("advantage", advantages)))
     nodes = walk.nodes
     max_depth_seen = walk.max_depth_seen
-    walk = Traversal(strategy, rng, task.max_nodes, task.max_depth)
-    walk.average(task.root, task.player, sink("strategy", strategies))
+    walk = Traversal(strategy, rng, task.max_nodes, task.max_depth, observer=observe_neural)
+    checked_traversal("strategy", lambda: walk.average(task.root, task.player, sink("strategy", strategies)))
     return finish(GeneratedSamples(task.task_id, snapshot.version, advantages, strategies, nodes + walk.nodes, value,
                             task.traversal_mode, None, max(max_depth_seen, walk.max_depth_seen)))
 
@@ -173,28 +200,26 @@ class DeepCFRSolver:
         self.metrics: list[dict] = []
         self.traversal_mode: str | None = None
 
+    def fork(self) -> DeepCFRSolver:
+        """Stage an iteration without duplicating read-only models or replay."""
+        result = copy.copy(self)
+        result.rng = random.Random()
+        result.rng.setstate(self.rng.getstate())
+        result.metrics = self.metrics.copy()
+        return result
+
     def snapshot(self) -> ModelSnapshot:
         weights = None if self.advantage_model is None else {
             k: v.detach().cpu().clone() for k, v in self.advantage_model.state_dict().items()}
         return ModelSnapshot(self.version, self.objective, weights, self.version == 0, len(self.players))
 
-    def run_iteration(self, root_factory: Callable[[random.Random], GameState], traversals_per_player: int = 1,
-                      workers: int = 1, epochs: int = 1, batch_size: int = 32,
-                      max_nodes: int = 10000, max_depth: int = 300,
-                      sample_byte_budget: int = DEFAULT_BYTE_BUDGET,
-                      generation_byte_budget: int = 256 * 1024 * 1024,
-                      traversal_mode: str = "external_sampling", epsilon: float = 0.6,
-                      learning_rate: float = 3e-4, trainer_threads: int = 1) -> dict:
-        from scripts.parallel_cfr import collect_samples
-        if traversals_per_player < 1 or workers < 1:
-            raise ValueError(f"Invalid traversal count/workers: {traversals_per_player}, {workers}")
-        if traversal_mode not in TRAVERSAL_MODES or (self.traversal_mode is not None and self.traversal_mode != traversal_mode):
-            raise ValueError(f"Invalid/mixed traversal mode: requested={traversal_mode}, solver={self.traversal_mode}; expected {TRAVERSAL_MODES}")
-        if not math.isfinite(epsilon) or not 0 < epsilon <= 1:
-            raise ValueError(f"Exploration epsilon must be in (0, 1]: {epsilon}")
+    def traversal_tasks(self, root_factory: Callable[[random.Random], GameState],
+                        traversals_per_player: int, max_nodes: int, max_depth: int,
+                        sample_byte_budget: int, traversal_mode: str = "external_sampling",
+                        epsilon: float = 0.6) -> tuple[list[TraversalTask], random.Random]:
+        """Prepare reproducible tasks without advancing the solver RNG or fitting."""
         rng = random.Random()
         rng.setstate(self.rng.getstate())
-        root_started = time.perf_counter()
         tasks = []
         for player in self.players:
             for _ in range(traversals_per_player):
@@ -203,9 +228,28 @@ class DeepCFRSolver:
                     raise ValueError(f"Traversal player {player} is not seated in current hand: {tuple(root.players)}")
                 tasks.append(TraversalTask(len(tasks), player, root, rng.randrange(2**31),
                                            max_nodes, max_depth, sample_byte_budget, traversal_mode, epsilon))
+        return tasks, rng
+
+    def run_iteration(self, root_factory: Callable[[random.Random], GameState], traversals_per_player: int = 1,
+                      workers: int = 1, epochs: int = 1, batch_size: int = 32,
+                      max_nodes: int = 10000, max_depth: int = 300,
+                      sample_byte_budget: int = DEFAULT_BYTE_BUDGET,
+                      generation_byte_budget: int = 256 * 1024 * 1024,
+                      traversal_mode: str = "external_sampling", epsilon: float = 0.6,
+                      learning_rate: float = 3e-4, trainer_threads: int = 1, executor: ProcessPoolExecutor | None = None) -> dict:
+        from scripts.parallel_cfr import collect_samples
+        if traversals_per_player < 1 or workers < 1:
+            raise ValueError(f"Invalid traversal count/workers: {traversals_per_player}, {workers}")
+        if traversal_mode not in TRAVERSAL_MODES or (self.traversal_mode is not None and self.traversal_mode != traversal_mode):
+            raise ValueError(f"Invalid/mixed traversal mode: requested={traversal_mode}, solver={self.traversal_mode}; expected {TRAVERSAL_MODES}")
+        if not math.isfinite(epsilon) or not 0 < epsilon <= 1:
+            raise ValueError(f"Exploration epsilon must be in (0, 1]: {epsilon}")
+        root_started = time.perf_counter()
+        tasks, rng = self.traversal_tasks(root_factory, traversals_per_player, max_nodes, max_depth,
+                                          sample_byte_budget, traversal_mode, epsilon)
         root_seconds = time.perf_counter() - root_started
         generation_started = time.perf_counter()
-        results = collect_samples(self.snapshot(), tasks, workers, aggregate_byte_budget=generation_byte_budget)
+        results = collect_samples(self.snapshot(), tasks, workers, aggregate_byte_budget=generation_byte_budget, executor=executor)
         generation_seconds = time.perf_counter() - generation_started
         torch.set_num_threads(trainer_threads)
         fit_started = time.perf_counter()

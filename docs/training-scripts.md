@@ -27,8 +27,13 @@ The exact working checkpoint paths are `runs/3max/checkpoint.pt` and
 
 An incompatible or corrupt existing checkpoint raises an error; it does not fall
 back to an older active policy or restart silently. Checkpoint configuration hashes
-must match the corresponding track configuration. The duration is an operational
-budget outside that learning configuration, so it can change between sessions.
+must match the corresponding track configuration, except for explicitly logged
+increases to `max_nodes`/`max_depth`. The timed workflow permits those guard
+increases, preserves the complete trained state, and records old/new hashes in
+checkpoint metadata; other changes and guard reductions still fail. See
+[HU traversal budget recovery](hu-traversal-budget.md) for measured limits.
+The duration is an operational budget outside that learning configuration, so
+it can change between sessions.
 
 The wall budget is checked between complete iterations. A session may overrun by
 one iteration; traversal values are never fabricated to meet a timeout. At normal
@@ -124,3 +129,8 @@ finally:
 safe persistence. Publication work is separate from training. No GPU, online
 resolver or range model is needed. Implementing these scripts does not launch an
 hour of training; only bounded temporary sessions exercised the new workflow.
+
+Performance implementation and measured real-checkpoint comparison are documented
+in [Deep CFR performance refactor](deep-cfr-optimization.md). Timed sessions now
+reuse traversal workers across outer iterations; existing checkpoint/config
+contracts and training semantics remain compatible.

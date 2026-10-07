@@ -14,22 +14,25 @@ def encode_batch(observations: list[Observation | NeuralObservation]) -> dict[st
     if not observations:
         raise ValueError("Cannot encode an empty observation batch")
     observations = [neural_observation(o) for o in observations]
-    for o in observations:
+    # Compact replay stores packed bytes: decode each numeric/history vector once.
+    numerics = [o.numeric for o in observations]
+    histories = [o.history for o in observations]
+    for o, numeric_values, history_values in zip(observations, numerics, histories):
         if (o.version != STATE_VERSION or len(o.cards) != 7 or any(c not in range(53) for c in o.cards)
-                or len(o.numeric) != len(NUMERIC_NAMES) or len(o.legal_mask) != len(ACTION_IDS)
-                or not any(o.legal_mask) or not o.history or o.street not in range(4)
-                or any(len(e) != HISTORY_WIDTH for e in o.history)):
+                or len(numeric_values) != len(NUMERIC_NAMES) or len(o.legal_mask) != len(ACTION_IDS)
+                or not any(o.legal_mask) or not history_values or o.street not in range(4)
+                or any(len(e) != HISTORY_WIDTH for e in history_values)):
             raise ValueError(f"Invalid neural observation contract: {o}")
-    lengths = torch.tensor([len(o.history) for o in observations], dtype=torch.long)
+    lengths = torch.tensor([len(values) for values in histories], dtype=torch.long)
     history = torch.zeros(len(observations), int(lengths.max()), HISTORY_WIDTH)
-    for i, o in enumerate(observations):
-        history[i, :len(o.history)] = torch.tensor(o.history)
-    numeric = torch.tensor([o.numeric for o in observations], dtype=torch.float32)
+    for i, values in enumerate(histories):
+        history[i, :len(values)] = torch.tensor(values)
+    numeric = torch.tensor(numerics, dtype=torch.float32)
     if not torch.isfinite(numeric).all() or not torch.isfinite(history).all():
         raise ValueError("Nonfinite numerical/history input")
     return {"cards": torch.tensor([o.cards for o in observations], dtype=torch.long),
             "street": torch.tensor([o.street for o in observations], dtype=torch.long),
-            "position": torch.tensor([round(o.numeric[NUMERIC_NAMES.index("hero_position")] * 2) for o in observations], dtype=torch.long),
+            "position": torch.tensor([round(values[NUMERIC_NAMES.index("hero_position")] * 2) for values in numerics], dtype=torch.long),
             "numeric": numeric, "history": history, "lengths": lengths,
             "mask": torch.tensor([o.legal_mask for o in observations], dtype=torch.bool)}
 

@@ -16,6 +16,18 @@ from poker_game_expresso import HandState
 
 
 class FeatureTests(unittest.TestCase):
+    def test_neural_observation_matches_diagnostic_inputs_without_json(self):
+        from unittest.mock import patch
+        from features.neural import observe_neural
+        hand = HandState.start({0: 25, 1: 25, 2: 25}, 0, random.Random(7))
+        from actions import legal_actions
+        while not hand.terminal:
+            expected = neural_observation(observe(hand))
+            with patch('infoset.json.dumps', side_effect=AssertionError('Diagnostic JSON in neural path')):
+                self.assertEqual(observe_neural(hand), expected)
+            choices = legal_actions(hand)
+            next(action for action in choices if action.action_id in ('CHECK', 'CALL')).apply(hand)
+
     def test_arithmetic_uses_call_payment_and_per_opponent_stacks(self):
         hand = HandState.start({0: 25, 1: 10, 2: 40}, 0, random.Random(1))
         obs = observe(hand)

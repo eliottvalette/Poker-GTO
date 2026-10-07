@@ -1,0 +1,41 @@
+{
+  "workload": "same six actual HU tasks, snapshot 40 and 20000 retained advantage samples; CPU one thread",
+  "baseline_commit": "804858ce6ca1a18cd903d1b613bdabfa3682520d",
+  "before": {
+    "generation_seconds": [
+      14.967192457988858,
+      10.777031834004447,
+      11.435604332946241
+    ],
+    "generation_median": 11.435604332946241,
+    "fit_seconds": 7.364439582917839,
+    "fit_metrics": {
+      "train_loss": 395.0262957763672,
+      "heldout_loss": 397.1054855957031,
+      "training_samples": 16000.0,
+      "heldout_samples": 4000.0
+    },
+    "total_nodes": 13280,
+    "torch_threads": 1
+  },
+  "after": {
+    "generation_seconds": [
+      6.325699917040765,
+      5.969808749854565,
+      6.450961207970977
+    ],
+    "generation_median": 6.325699917040765,
+    "fit_seconds": 6.186478791991249,
+    "fit_metrics": {
+      "train_loss": 395.0262957763672,
+      "heldout_loss": 397.1054855957031,
+      "training_samples": 16000.0,
+      "heldout_samples": 4000.0
+    },
+    "total_nodes": 13280,
+    "torch_threads": 1
+  },
+  "exact_samples_equal": true,
+  "trained_weights_bitwise_equal": true,
+  "generation_speedup": 1.807800635964399
+}

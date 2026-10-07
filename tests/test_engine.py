@@ -13,6 +13,21 @@ def hand(stacks=(25, 25, 25), button=0):
 
 
 class BettingTests(unittest.TestCase):
+    def test_clone_isolates_all_mutable_branch_state(self):
+        from dataclasses import asdict
+        original = hand()
+        before = asdict(original)
+        branch = original.clone()
+        branch.actor.stack -= 1
+        branch.actor.cards = (0, 1)
+        branch.deck.pop()
+        branch.initial_stacks[0] = 99
+        branch.board.append(2)
+        branch.pending.clear()
+        branch.history.clear()
+        branch.awards[0] = 5
+        self.assertEqual(asdict(original), before)
+
     def test_blinds_order_and_streets(self):
         for stacks, first, postflop in (((25, 25, 25), 0, 1), ((25, 25), 0, 1)):
             h = hand(stacks)

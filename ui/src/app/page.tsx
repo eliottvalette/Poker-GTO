@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import TestTable from "@/components/TestTable";
+import PolicyOverview from "@/components/PolicyOverview";
 import PolicyAnalysis from "@/components/PolicyAnalysis";
 import { usePublishedPolicies } from "@/lib/use-published-policies";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,8 @@ export default function Page() {
       <main className="space-y-4 px-4 py-3">
         {loading && <div role="status" className="text-sm text-muted-foreground">Loading published policies…</div>}
         {error && <div role="alert" className="text-sm text-destructive">{error}</div>}
-        {mainTab !== "test" && <PolicyAnalysis mode={mainTab} policies={models} />}
+        {mainTab === "overview" && <PolicyOverview policies={models} />}
+        {mainTab === "case" && <PolicyAnalysis policies={models} />}
         <div hidden={mainTab !== "test"}><TestTable policies={models} /></div>
       </main>
     </SidebarInset>

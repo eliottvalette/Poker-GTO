@@ -1,6 +1,6 @@
 """Exact observations and lossless tabular keys; no opponent private information."""
 from __future__ import annotations
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 import json
 import math
 from actions import ACTION_IDS, legal_actions
@@ -18,7 +18,7 @@ HISTORY_WIDTH = 12
 
 
 @dataclass(frozen=True)
-class Observation:
+class ObservationFields:
     version: int
     hero: int
     objective: str
@@ -27,7 +27,6 @@ class Observation:
     numeric: tuple[float, ...]
     legal_mask: tuple[bool, ...]
     history: tuple[tuple[float, ...], ...]
-    recall: str  # Lossless perfect-recall source for tabular keys and diagnostics.
 
     def __post_init__(self) -> None:
         if (self.version != STATE_VERSION or self.objective != "hand_chip_delta"
@@ -40,6 +39,14 @@ class Observation:
                 or any(not math.isfinite(v) for v in self.numeric)
                 or any(len(e) != HISTORY_WIDTH or any(not math.isfinite(v) for v in e) for e in self.history)):
             raise ValueError(f"Invalid structured observation: version={self.version}, objective={self.objective}, cards={self.cards}")
+
+
+@dataclass(frozen=True)
+class Observation(ObservationFields):
+    recall: str  # Lossless perfect-recall source for tabular keys and diagnostics.
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
         if not isinstance(json.loads(self.recall), list):
             raise ValueError("Observation recall must encode a list of hand observations")
 
@@ -47,7 +54,7 @@ class Observation:
         return json.dumps(asdict(self), sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
-def observe(state: HandState | TournamentState) -> Observation:
+def observe_fields(state: HandState | TournamentState) -> ObservationFields:
     hand = state if isinstance(state, HandState) else state.hand
     if hand is None or hand.terminal:
         raise ValueError("Observation requires a live decision")
@@ -77,11 +84,6 @@ def observe(state: HandState | TournamentState) -> Observation:
         raise ValueError(f"Numeric schema mismatch: {len(numeric)} != {len(NUMERIC_NAMES)}")
     history: list[tuple[float, ...]] = []
     identity = seats
-    # Per-hand recall retains every public event and exact hero cards. Earlier
-    # hands are simulator records, not descendants or history of this solver game.
-    recall = [{"hand": hand_number, "button": hand.button, "initial": hand.initial_stacks,
-               "hole": hero.cards, "board": hand.board, "shown_cards": {}, "final_stacks": None,
-               "events": [asdict(event) for event in hand.history]}]
     hand_token = 1 / 25
     for player_id, amount in hand.initial_stacks.items():
         history.append((hand_token, 0, identity.index(player_id) / 2,
@@ -106,9 +108,19 @@ def observe(state: HandState | TournamentState) -> Observation:
         street = 1 if index < 3 else index - 1
         history.append((hand_token, street / 3, 0, 0, EVENTS.index("CARD") / 6,
                         0, 0, 0, 0, 0, hand.board[index] / 51, 1))
-    return Observation(STATE_VERSION, hero.player_id,
+    return ObservationFields(STATE_VERSION, hero.player_id,
                        "hand_chip_delta",
                        (*hero.cards, *hand.board, *([52] * (5 - len(hand.board)))),
                        STREETS.index(hand.street), tuple(numeric),
-                       tuple(a in actions for a in ACTION_IDS), tuple(history),
-                       json.dumps(recall, sort_keys=True, separators=(",", ":"), allow_nan=False))
+                       tuple(a in actions for a in ACTION_IDS), tuple(history))
+
+
+def observe(state: HandState | TournamentState) -> Observation:
+    """Lossless observation for tabular keys and diagnostics."""
+    raw = observe_fields(state)
+    hand = state if isinstance(state, HandState) else state.hand
+    recall = [{"hand": hand.hand_number, "button": hand.button, "initial": hand.initial_stacks,
+               "hole": hand.actor.cards, "board": hand.board, "shown_cards": {}, "final_stacks": None,
+               "events": [asdict(event) for event in hand.history]}]
+    return Observation(**{item.name: getattr(raw, item.name) for item in fields(raw)},
+                       recall=json.dumps(recall, sort_keys=True, separators=(",", ":"), allow_nan=False))

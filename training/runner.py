@@ -1,5 +1,6 @@
 """Transactional two-track training, deterministic resume, explicit artifacts and evaluation."""
 from __future__ import annotations
+from concurrent.futures import ProcessPoolExecutor
 import copy
 import json
 import hashlib
@@ -44,6 +45,7 @@ class TrainingRunner:
         self.config = validate_config(config)
         self.iteration = 0
         self.resume_checkpoint: Path | None = None
+        self.resume_budget_change: dict | None = None
         self.solvers = {}
         self.samplers = {}
         self.metrics: list[dict] = []
@@ -62,17 +64,20 @@ class TrainingRunner:
         path = Path(self.config["output_dir"])
         return path if path.is_absolute() else Path(__file__).resolve().parents[1] / path
 
-    def run_iteration(self) -> dict:
+    def run_iteration(self, *, executor: ProcessPoolExecutor | None = None) -> dict:
         # A failed worker, fit, evaluation or publication leaves both tracks and
         # root sampler RNG/coverage at the last complete iteration.
-        staged_solvers = copy.deepcopy(self.solvers)
+        staged_solvers = {name: solver.fork() for name, solver in self.solvers.items()}
         staged_samplers = copy.deepcopy(self.samplers)
-        row = {"iteration": self.iteration + 1, "tracks": {}, "checkpoint_version": CONTRACT["checkpoint"]}
+        row = {"iteration": self.iteration + 1, "tracks": {}, "checkpoint_version": CONTRACT["checkpoint"],
+               "config_hash": config_hash(self.config),
+               "traversal_budget": {key: self.config[key] for key in ("max_nodes", "max_depth")}}
         started = time.perf_counter()
         config = self.config
         rng_state = torch.get_rng_state()
         threads = torch.get_num_threads()
         try:
+            torch.set_num_threads(config["trainer_threads"])
             for name, solver in staged_solvers.items():
                 sampler = staged_samplers[name]
                 previous = self.solvers[name].average_model
@@ -88,7 +93,7 @@ class TrainingRunner:
                     max_nodes=config["max_nodes"], max_depth=config["max_depth"],
                     sample_byte_budget=config["sample_byte_budget"], generation_byte_budget=config["generation_byte_budget"],
                     traversal_mode=config["traversal_mode"], learning_rate=config["learning_rate"],
-                    trainer_threads=config["trainer_threads"],
+                    trainer_threads=config["trainer_threads"], executor=executor,
                     **({"epsilon": config["outcome_epsilon"]} if config["traversal_mode"] == "outcome_sampling" else {}))
                 sampler.policy = None
                 metric["fixed_probe_policy_drift"] = fixed_drift(previous, solver.average_model, self.probes[name])
@@ -143,10 +148,25 @@ class TrainingRunner:
         write_checkpoint(Path(path), raw)
 
     @classmethod
-    def load_checkpoint(cls, path: str | Path, config: dict | None = None) -> TrainingRunner:
+    def load_checkpoint(cls, path: str | Path, config: dict | None = None, *,
+                        allow_budget_increase: bool = False) -> TrainingRunner:
+        """Restore exact state; optionally audit monotone traversal guard increases only."""
         raw = read_checkpoint(Path(path))
-        if config_hash(raw["config"]) != raw["config_hash"] or (config is not None and config_hash(validate_config(config)) != raw["config_hash"]):
+        if config_hash(raw["config"]) != raw["config_hash"]:
             raise ValueError(f"Checkpoint configuration hash mismatch at {path}")
+        target = raw["config"] if config is None else validate_config(config)
+        budget_change = None
+        if config_hash(target) != raw["config_hash"]:
+            changed = {key for key in target if target[key] != raw["config"].get(key)}
+            if (not allow_budget_increase or not changed <= {"max_nodes", "max_depth"}
+                    or any(target[key] < raw["config"][key] for key in changed)):
+                raise ValueError(f"Checkpoint configuration hash mismatch at {path}; changed={sorted(changed)}; "
+                                 "only explicitly enabled increases to max_nodes/max_depth may resume")
+            budget_change = {"iteration": raw["iteration"], "checkpoint": str(path),
+                             "source_config_hash": raw["config_hash"], "config_hash": config_hash(target),
+                             "source_metadata": source_metadata(),
+                             "before": {key: raw["config"][key] for key in sorted(changed)},
+                             "after": {key: target[key] for key in sorted(changed)}}
         runner = cls(raw["config"])
         if set(raw["tracks"]) != set(runner.solvers) or type(raw["iteration"]) is not int or raw["iteration"] < 0 or len(raw["metrics"]) != raw["iteration"]:
             raise ValueError(f"Inconsistent checkpoint tracks/iteration at {path}")
@@ -195,6 +215,11 @@ class TrainingRunner:
         torch.set_rng_state(raw["torch_rng"])
         random.setstate(raw["python_rng"])
         runner.resume_checkpoint = Path(path)
+        if budget_change is not None:
+            runner.config = target
+            runner.metadata = copy.deepcopy(runner.metadata)
+            runner.metadata.setdefault("resume_budget_changes", []).append(budget_change)
+            runner.resume_budget_change = budget_change
         return runner
 
     def run(self, iterations: int | None = None) -> None:
@@ -203,9 +228,11 @@ class TrainingRunner:
         remaining = max(0, self.config["outer_iterations"] - self.iteration) if iterations is None else iterations
         if type(remaining) is not int or remaining < 0:
             raise ValueError(f"Explicit nonnegative additional iterations required: {remaining}")
-        for _ in range(remaining):
-            row = self.run_iteration()
-            print(f"Iteration {self.iteration}: {row['wall_seconds']:.2f}s", flush=True)
+        from scripts.parallel_cfr import traversal_workers
+        with traversal_workers(self.config["workers"]) as executor:
+            for _ in range(remaining):
+                row = self.run_iteration(executor=executor)
+                print(f"Iteration {self.iteration}: {row['wall_seconds']:.2f}s", flush=True)
         self.save_checkpoint(self.output_dir / "checkpoints" / f"iteration_{self.iteration:06d}.pt")
 
     def run_for(self, seconds: float, checkpoint_path: str | Path) -> dict:
@@ -218,16 +245,19 @@ class TrainingRunner:
         started = time.monotonic()
         initial_iteration = self.iteration
         stopped = "duration"
-        try:
-            while time.monotonic() - started < seconds:
-                row = self.run_iteration()
-                print(f"Iteration {self.iteration}: {row['wall_seconds']:.2f}s; elapsed {time.monotonic() - started:.1f}/{seconds:.1f}s", flush=True)
-        except KeyboardInterrupt:
-            stopped = "interrupted"
-            print("Interrupted; saving the last complete iteration", flush=True)
-        except BaseException:
-            self.save_checkpoint(checkpoint_path)
-            raise
+        from scripts.parallel_cfr import traversal_workers
+        with traversal_workers(self.config["workers"]) as executor:
+            try:
+                while time.monotonic() - started < seconds:
+                    row = self.run_iteration(executor=executor)
+                    print(f"Iteration {self.iteration}: {row['wall_seconds']:.2f}s; elapsed {time.monotonic() - started:.1f}/{seconds:.1f}s", flush=True)
+            except KeyboardInterrupt:
+                stopped = "interrupted"
+                print("Interrupted; saving the last complete iteration", flush=True)
+            except BaseException:
+                self.save_checkpoint(checkpoint_path)
+                print(f"Training stopped; saved last complete iteration {self.iteration} at {checkpoint_path}", flush=True)
+                raise
         self.save_checkpoint(checkpoint_path)
         return {"initial_iteration": initial_iteration, "final_iteration": self.iteration,
                 "elapsed_seconds": time.monotonic() - started, "requested_seconds": seconds,

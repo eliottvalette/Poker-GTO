@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { type LoadedAveragePolicy } from "@/lib/onnx-policy";
-import { analysisRoot, holeObservation, queryRange, withHeroCards, type RangeCell } from "@/lib/poker/policy-analysis";
+import { analysisRoot, holeObservation, withHeroCards } from "@/lib/poker/policy-analysis";
 import { HandState, STREETS, type Position, type Street } from "@/lib/poker/engine";
 import { applyAction, legalActions } from "@/lib/poker/actions";
 import { cardLabel } from "@/lib/game";
@@ -12,8 +12,8 @@ const COLORS = ["#64748b", "#22c55e", "#16a34a", "#fbbf24", "#f59e0b", "#f97316"
 import { ACTION_IDS } from "@/lib/poker/actions";
 const color = (action: string) => COLORS[ACTION_IDS.indexOf(action as typeof ACTION_IDS[number])];
 
-export default function PolicyAnalysis({ mode, policies }: {
-  mode: "overview" | "case"; policies: Record<number, LoadedAveragePolicy>;
+export default function PolicyAnalysis({ policies }: {
+  policies: Record<number, LoadedAveragePolicy>;
 }) {
   const [count, setCount] = useState(3);
   const [position, setPosition] = useState<Position>("BTN");
@@ -24,10 +24,7 @@ export default function PolicyAnalysis({ mode, policies }: {
   const [hand, setHand] = useState<HandState>(() => analysisRoot(3, "BTN", "PREFLOP", [25, 25, 25], 1, 42));
   const [hero, setHero] = useState<[number, number]>([48, 49]);
   const [boardText, setBoardText] = useState("");
-  const [cells, setCells] = useState<RangeCell[] | null>(null);
   const [probabilities, setProbabilities] = useState<Record<string, number> | null>(null);
-  const [selected, setSelected] = useState<RangeCell | null>(null);
-  const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const policy = policies[Object.keys(hand.players).length];
 
@@ -54,31 +51,30 @@ export default function PolicyAnalysis({ mode, policies }: {
         });
       }
       next.assertInvariants();
-      setHand(next); setError(null); setSelected(null);
+      setHand(next); setError(null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }
 
   useEffect(() => {
     let cancelled = false;
-    setCells(null); setProbabilities(null); setProgress(0); setSelected(null); setError(null);
+    setProbabilities(null); setError(null);
     if (!policy || hand.terminal) return;
-    const request = Promise.resolve().then(() => mode === "overview"
-      ? queryRange(hand, policy, () => cancelled, done => { if (!cancelled) setProgress(done); }).then(result => { if (!cancelled) setCells(result); })
-      : policy.query(holeObservation(hand, hero)).then(result => { if (!cancelled) setProbabilities(result); }));
+    const request = Promise.resolve().then(() => policy.query(holeObservation(hand, hero)))
+      .then(result => { if (!cancelled) setProbabilities(result); });
     void request.catch(cause => { if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause)); });
     return () => { cancelled = true; };
-  }, [mode, hand, policy, hero]);
+  }, [hand, policy, hero]);
 
   function act(action: string) {
     try {
-      const next = mode === "case" ? withHeroCards(hand, hero) : hand.clone();
-      applyAction(next, action); setHand(next); setSelected(null);
+      const next = withHeroCards(hand, hero);
+      applyAction(next, action); setHand(next);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }
   const actions = legalActions(hand);
-  const mix = mode === "overview" ? selected?.probabilities : probabilities;
+  const mix = probabilities;
   return <Card>
-    <CardHeader><CardTitle>{mode === "overview" ? "Action range · 169 hands" : "Exact hand policy"}</CardTitle></CardHeader>
+    <CardHeader><CardTitle>Exact hand policy</CardTitle></CardHeader>
     <CardContent className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <label>Players<select className="block rounded border p-2" value={count} onChange={event => {
@@ -104,26 +100,13 @@ export default function PolicyAnalysis({ mode, policies }: {
       </div>
       {!policy && <div role="status">Average policy unavailable for {Object.keys(hand.players).length} players; publish this track with migrate.py.</div>}
       {error && <div role="alert" className="text-destructive">{error}</div>}
-      {mode === "case" && <div className="flex gap-3">
+      {<div className="flex gap-3">
         {hero.map((card, i) => <label key={i}>Hero card {i + 1}<select className="block rounded border p-2" value={card} onChange={event => setHero(hero.map((value, index) => i === index ? Number(event.target.value) : value) as [number, number])}>
           {Array.from({ length: 52 }, (_, value) => <option key={value} value={value}>{cardLabel(value)}</option>)}
         </select></label>)}
       </div>}
-      {mode === "overview" && policy && !hand.terminal && !error && <>
-        {!cells && <div role="status">Querying exact combos… {progress}</div>}
-        {cells && <>
-          <div className="text-sm text-muted-foreground">{cells.reduce((n, cell) => n + cell.combos, 0)} exact combos. Each cell averages its board-compatible combos uniformly. Select a cell for the full action mixture.</div>
-          <div className="overflow-auto"><div className="grid min-w-[650px] gap-1" style={{ gridTemplateColumns: "repeat(13, minmax(0, 1fr))" }}>
-            {cells.map(cell => <button key={cell.label} onClick={() => setSelected(cell)} className="relative h-14 overflow-hidden rounded border text-xs" title={Object.entries(cell.probabilities).map(([a, p]) => `${a}: ${(p * 100).toFixed(1)}%`).join("\n")}>
-              <div className="absolute inset-0 flex">{Object.entries(cell.probabilities).map(([action, p]) => <span key={action} style={{ width: `${p * 100}%`, background: color(action) }} />)}</div>
-              <span className="relative rounded bg-black/65 px-1 text-white">{cell.label}</span>
-              {!cell.combos && <span className="relative block">—</span>}
-            </button>)}
-          </div></div>
-        </>}
-      </>}
       <div className="flex flex-wrap gap-3 text-xs">{actions.map(action => <span key={action.action_id} className="flex items-center gap-1"><span className="h-3 w-3" style={{ background: color(action.action_id) }} />{action.action_id}</span>)}</div>
-      {mix && <div className="space-y-2">{selected && <div>{selected.label} · {selected.combos} combos</div>}{actions.map(action => <div key={action.action_id} className="flex items-center gap-3 text-sm">
+      {mix && <div className="space-y-2">{actions.map(action => <div key={action.action_id} className="flex items-center gap-3 text-sm">
         <span className="w-44">{action.action_id}{action.amount_to !== null ? ` ${(action.amount_to / hand.blinds.big).toFixed(2)} BB` : ""}</span>
         <div className="h-3 w-64 rounded bg-muted"><div className="h-full rounded" style={{ width: `${(mix[action.action_id] ?? 0) * 100}%`, background: color(action.action_id) }} /></div>
         <span>{((mix[action.action_id] ?? 0) * 100).toFixed(1)}%</span>

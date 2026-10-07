@@ -3,11 +3,14 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, TYPE_CHECKING
 from actions import ACTION_IDS, legal_actions
 from infoset import Observation, observe
 from poker_game_expresso import HandState
 from tournament import TournamentState
+
+if TYPE_CHECKING:
+    from features.neural import NeuralObservation
 
 GameState = HandState | TournamentState
 Strategy = Callable[[Observation], tuple[float, ...]]
@@ -75,6 +78,7 @@ class Traversal:
     rng: random.Random
     max_nodes: int = 10000
     max_depth: int = 300
+    observer: Callable[[HandState], Observation | NeuralObservation] = field(default=observe, repr=False)
     nodes: int = field(default=0, init=False)
     settled_prunes: int = field(default=0, init=False)
     max_depth_seen: int = field(default=0, init=False)
@@ -110,7 +114,7 @@ class Traversal:
         if settled is not None:
             self.settled_prunes += int(not terminal)
             return settled
-        obs = observe(state)
+        obs = self.observer(state)
         strategy = self.strategy(obs)
         validate_strategy(strategy, obs.legal_mask)
         actions = self._children(state)
@@ -137,7 +141,7 @@ class Traversal:
         if settled_value(state, player) is not None:
             self.settled_prunes += int(not terminal)
             return
-        obs = observe(state)
+        obs = self.observer(state)
         strategy = self.strategy(obs)
         validate_strategy(strategy, obs.legal_mask)
         actions = self._children(state)

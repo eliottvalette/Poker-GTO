@@ -11,7 +11,7 @@
   "memory_byte_budget": 134217728,
   "sample_byte_budget": 67108864,
   "generation_byte_budget": 268435456,
-  "max_nodes": 5000,
+  "max_nodes": 20000,
   "max_depth": 64,
   "checkpoint_every": 5,
   "evaluation_every": 5,

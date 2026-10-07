@@ -10,11 +10,25 @@ from cfr_solver import regret_matching
 from infoset import observe
 from ml.memory import TrainingSample
 from ml.model import AdvantageNetwork, AveragePolicyNetwork
-from ml.train import evaluate_loss, fit, loss_for
+from ml.train import evaluate_loss, fit, loss_for, weight_quality, _loss_with_weights
 from test_solver import river
 
 
 class TrainingWeightTests(unittest.TestCase):
+    def test_weighted_sampling_has_the_same_expected_objective(self):
+        model = AveragePolicyNetwork().eval()
+        samples = self.samples()
+        actual = loss_for(model, samples)
+        expected = .25 * _loss_with_weights(model, [samples[0]], [1.0]) + .75 * _loss_with_weights(model, [samples[1]], [1.0])
+        self.assertAlmostEqual(float(actual.detach()), float(expected.detach()), places=6)
+
+    def test_weight_concentration_is_reported_without_clipping(self):
+        samples = self.samples()
+        result = weight_quality(samples)
+        self.assertAlmostEqual(result['weight_effective_samples'], 1.6)
+        self.assertAlmostEqual(result['largest_weight_share'], .75)
+        self.assertAlmostEqual(result['top10_weight_share'], 1.)
+
     @classmethod
     def setUpClass(cls):
         torch.set_num_threads(1)

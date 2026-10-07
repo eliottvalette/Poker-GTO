@@ -157,3 +157,6 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Keep rem-based controls readable on wide displays without browser zoom. */
+html { font-size: clamp(16px, calc(12px + 0.25vw), 20px); }

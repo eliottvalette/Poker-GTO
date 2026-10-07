@@ -1,6 +1,7 @@
 """Card structure from known cards only; categories use 0=high card .. 8=straight flush."""
 from __future__ import annotations
 from collections import Counter
+from functools import lru_cache
 
 CARD_FEATURE_NAMES = ("made_category", "flush_draw", "straight_outs", "flush_outs", "overcards",
                       "board_pair_multiplicity", "board_max_suit", "board_rank_span", "ace_suit_blockers")
@@ -47,7 +48,9 @@ def made_category(cards: tuple[int, ...]) -> int:
     return int(any(n >= 2 for n in counts))
 
 
+@lru_cache(maxsize=8192)
 def card_features(hero: tuple[int, int], board: tuple[int, ...]) -> tuple[float, ...]:
+    """Bounded reuse of pure structural features, keyed only by observable cards."""
     known = (*hero, *board)
     if len(hero) != 2 or len(board) not in (0, 3, 4, 5) or len(set(known)) != len(known) or any(c not in range(52) for c in known):
         raise ValueError(f"Invalid observable cards: hero={hero}, board={board}")

@@ -92,6 +92,47 @@ class TrainingRunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Invalid training checkpoint'):
                 TrainingRunner.load_checkpoint(path)
 
+    def test_explicit_budget_increase_preserves_trained_state_and_is_audited(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = tiny_config(directory)
+            runner = TrainingRunner(config)
+            runner.run_iteration()
+            path = Path(directory) / 'checkpoint.pt'
+            runner.save_checkpoint(path)
+            original = path.read_bytes()
+            requested = deepcopy(config)
+            requested['max_nodes'] *= 2
+            with self.assertRaisesRegex(ValueError, 'hash mismatch'):
+                TrainingRunner.load_checkpoint(path, requested)
+            restored = TrainingRunner.load_checkpoint(path, requested, allow_budget_increase=True)
+            self.assertEqual(restored.iteration, runner.iteration)
+            self.assertEqual(restored.metrics, runner.metrics)
+            self.assertEqual(restored.config, requested)
+            self.assertEqual(path.read_bytes(), original)
+            for name, solver in runner.solvers.items():
+                current = restored.solvers[name]
+                self.assertEqual(current.rng.getstate(), solver.rng.getstate())
+                self.assertEqual(current.advantage_memory.samples, solver.advantage_memory.samples)
+                self.assertEqual(current.strategy_memory.samples, solver.strategy_memory.samples)
+                self.assertEqual(current.advantage_memory.rng.getstate(), solver.advantage_memory.rng.getstate())
+                self.assertEqual(current.strategy_memory.rng.getstate(), solver.strategy_memory.rng.getstate())
+                self.assertEqual(restored.samplers[name].rng.getstate(), runner.samplers[name].rng.getstate())
+                for model in ('advantage_model', 'average_model'):
+                    for key, weight in getattr(solver, model).state_dict().items():
+                        self.assertTrue(torch.equal(weight, getattr(current, model).state_dict()[key]))
+            self.assertEqual(restored.resume_budget_change['before'], {'max_nodes': config['max_nodes']})
+            self.assertEqual(restored.resume_budget_change['after'], {'max_nodes': requested['max_nodes']})
+            destination = Path(directory) / 'raised.pt'
+            restored.save_checkpoint(destination)
+            again = TrainingRunner.load_checkpoint(destination, requested)
+            self.assertEqual(again.metadata['resume_budget_changes'], [restored.resume_budget_change])
+            self.assertIsNone(again.resume_budget_change)
+            for key, value in [('max_nodes', 1), ('max_depth', 1), ('seed', config['seed'] + 1), ('learning_rate', 0.001)]:
+                invalid = deepcopy(requested)
+                invalid[key] = value
+                with self.assertRaisesRegex(ValueError, 'hash mismatch'):
+                    TrainingRunner.load_checkpoint(path, invalid, allow_budget_increase=True)
+
     def test_worker_failure_does_not_publish_any_track_or_checkpoint(self):
         with tempfile.TemporaryDirectory() as directory:
             runner = TrainingRunner(tiny_config(directory))
@@ -104,6 +145,22 @@ class TrainingRunnerTests(unittest.TestCase):
             self.assertTrue(all(solver.strategy_memory.seen == 0 for solver in runner.solvers.values()))
             self.assertEqual(rngs, {name: sampler.rng.getstate() for name, sampler in runner.samplers.items()})
             self.assertFalse((Path(directory) / 'checkpoints').exists())
+
+    def test_session_reuses_one_executor_across_outer_iterations(self):
+        from scripts.parallel_cfr import collect_samples
+        with tempfile.TemporaryDirectory() as directory:
+            config = tiny_config(directory)
+            config['workers'] = 2
+            runner = TrainingRunner(config)
+            with patch('scripts.parallel_cfr.collect_samples', wraps=collect_samples) as collect:
+                runner.run(iterations=2)
+            executors = [call.kwargs['executor'] for call in collect.call_args_list]
+            self.assertEqual(len(executors), 4)
+            self.assertIsNotNone(executors[0])
+            self.assertTrue(all(executor is executors[0] for executor in executors))
+            self.assertEqual(runner.iteration, 2)
+            restored = TrainingRunner.load_checkpoint(Path(directory) / 'checkpoints/iteration_000002.pt')
+            self.assertEqual(restored.iteration, 2)
 
     def test_second_track_failure_rolls_back_first_track(self):
         with tempfile.TemporaryDirectory() as directory:

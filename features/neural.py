@@ -4,7 +4,9 @@ from dataclasses import dataclass
 import math
 import struct
 from actions import ACTION_IDS
-from infoset import EVENTS, HISTORY_WIDTH, NUMERIC_NAMES, POSITIONS, STATE_VERSION, Observation
+from infoset import EVENTS, HISTORY_WIDTH, NUMERIC_NAMES, POSITIONS, STATE_VERSION, ObservationFields, observe_fields
+from poker_game_expresso import HandState
+from tournament import TournamentState
 from features import FEATURE_SCHEMA_VERSION
 from features.cards import canonical_suits
 from features.deterministic import DERIVED_NAMES, derived_features
@@ -48,7 +50,7 @@ class NeuralObservation:
             raise ValueError(f"Invalid compact neural schema: state={self.version}, feature={self.feature_version}")
 
 
-def canonical_player_fields(obs: Observation) -> tuple[tuple[float, ...], tuple[tuple[float, ...], ...]]:
+def canonical_player_fields(obs: ObservationFields) -> tuple[tuple[float, ...], tuple[tuple[float, ...], ...]]:
     """Remove arbitrary ring starting seat; order hero then opponents clockwise."""
     count = round(obs.numeric[NUMERIC_NAMES.index("player_count")] * 3)
     positions = (0, 1, 2) if count == 3 else (1, 2)
@@ -79,7 +81,7 @@ def canonical_player_fields(obs: Observation) -> tuple[tuple[float, ...], tuple[
     return tuple(numeric), tuple(history)
 
 
-def neural_observation(obs: Observation | NeuralObservation) -> NeuralObservation:
+def neural_observation(obs: ObservationFields | NeuralObservation) -> NeuralObservation:
     if isinstance(obs, NeuralObservation):
         return obs
     raw_numeric, raw_history = canonical_player_fields(obs)
@@ -95,3 +97,8 @@ def neural_observation(obs: Observation | NeuralObservation) -> NeuralObservatio
     return NeuralObservation(obs.version, obs.hero, obs.objective, cards, obs.street,
                              struct.pack(f"<{len(numeric)}d", *numeric), obs.legal_mask,
                              struct.pack(f"<{len(history)}d", *history))
+
+
+def observe_neural(state: HandState | TournamentState) -> NeuralObservation:
+    """Neural inputs from observable fields; no diagnostic JSON is constructed."""
+    return neural_observation(observe_fields(state))
