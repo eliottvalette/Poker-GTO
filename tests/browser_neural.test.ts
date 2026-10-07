@@ -5,7 +5,7 @@ import { neuralObservation, NEURAL_NUMERIC_NAMES } from "../ui/src/lib/poker/neu
 import { NUMERIC_NAMES, type Observation } from "../ui/src/lib/poker/observation";
 
 const fixtures = JSON.parse(readFileSync("tests/fixtures/neural_parity.json", "utf8")) as {
-  name: string; observation: Observation; neural: ReturnType<typeof neuralObservation>
+  name: string; observation: Observation; neural: ReturnType<typeof neuralObservation>; neural_v3: ReturnType<typeof neuralObservation>
 }[];
 function almostEqual(actual: number[], expected: number[]) {
   assert.equal(actual.length, expected.length);
@@ -13,11 +13,22 @@ function almostEqual(actual: number[], expected: number[]) {
 }
 for (const fixture of fixtures) {
   test(`Python/browser neural feature parity: ${fixture.name}`, () => {
-    const actual = neuralObservation(fixture.observation);
+    const actual = neuralObservation(fixture.observation, 2);
     assert.equal(actual.numeric.length, NEURAL_NUMERIC_NAMES.length);
     assert.deepEqual(actual.cards, fixture.neural.cards);
     almostEqual(actual.numeric, fixture.neural.numeric);
     actual.history.forEach((row, i) => almostEqual(row, fixture.neural.history[i]));
+  });
+  test(`Python/browser feature-v3 parity and private-card invariance: ${fixture.name}`, () => {
+    const actual = neuralObservation(fixture.observation);
+    assert.deepEqual(actual.cards, fixture.neural_v3.cards);
+    almostEqual(actual.numeric, fixture.neural_v3.numeric);
+    actual.history.forEach((row, i) => almostEqual(row, fixture.neural_v3.history[i]));
+    const changed = structuredClone(fixture.observation);
+    const count = Math.round(changed.numeric[NUMERIC_NAMES.indexOf("player_count")] * 3);
+    [changed.cards[0], changed.cards[1]] = [changed.cards[1], changed.cards[0]];
+    [changed.history[count], changed.history[count + 1]] = [changed.history[count + 1], changed.history[count]];
+    assert.deepEqual(neuralObservation(changed), actual);
   });
 }
 test("global suit permutation preserves browser neural cards/history/features", () => {

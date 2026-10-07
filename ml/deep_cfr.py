@@ -16,14 +16,22 @@ from poker_game_expresso import HandState
 from tournament import TournamentState
 from cfr_solver import GameState, Traversal, TraversalBudgetExceeded, hand_root, regret_matching, validate_strategy
 from infoset import STATE_VERSION, Observation
-from features import FEATURE_SCHEMA_VERSION
+from features import FEATURE_SCHEMA_VERSION, SUPPORTED_FEATURE_VERSIONS
 from features.neural import NeuralObservation, observe_neural
 from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES
 from ml.memory import DEFAULT_BYTE_BUDGET, TRAVERSAL_MODES, ReservoirMemory, TrainingSample, sample_bytes
-from ml.model import MODEL_ARCHITECTURE, AdvantageNetwork, AveragePolicyNetwork, encode_batch
+from ml.model import MODEL_ARCHITECTURE, AdvantageNetwork, AveragePolicyNetwork, encode_batch, model_architecture
 from ml.train import fit
 
 _TraversalResult = TypeVar("_TraversalResult")
+
+
+def strategy_collector(player_count: int, traversal_mode: str) -> str:
+    if player_count not in (2, 3) or traversal_mode not in TRAVERSAL_MODES:
+        raise ValueError(f"Invalid collector context: players={player_count}, mode={traversal_mode}")
+    if traversal_mode == "outcome_sampling":
+        return "outcome_importance"
+    return "opponent_nodes" if player_count == 2 else "uniform_importance"
 
 
 @dataclass(frozen=True)
@@ -170,6 +178,11 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask,
         return finish(GeneratedSamples(task.task_id, snapshot.version, advantages, strategies, walk.nodes, value,
                                 task.traversal_mode, _diagnostic_metadata(walk.diagnostics), walk.max_depth_seen))
     walk = Traversal(strategy, rng, task.max_nodes, task.max_depth, observer=observe_neural)
+    if snapshot.player_count == 2:
+        value = checked_traversal("external", lambda: walk.regrets(
+            task.root, task.player, sink("advantage", advantages), strategy_sink=sink("strategy", strategies)))
+        return finish(GeneratedSamples(task.task_id, snapshot.version, advantages, strategies,
+                                       walk.nodes, value, task.traversal_mode, None, walk.max_depth_seen))
     value = checked_traversal("advantage", lambda: walk.regrets(task.root, task.player, sink("advantage", advantages)))
     nodes = walk.nodes
     max_depth_seen = walk.max_depth_seen
@@ -270,6 +283,7 @@ class DeepCFRSolver:
                     raise ValueError(f"Strategy sample perspective/player count is not in track {self.players}")
                 strategy_memory.add(sample)
         metrics = {"version": self.version + 1, "nodes": sum(r.nodes for r in results),
+                   "strategy_collector": strategy_collector(len(self.players), traversal_mode),
                    "advantage_samples": sum(len(r.advantages) for r in results),
                    "strategy_samples": sum(len(r.strategies) for r in results),
                    "values": [r.value for r in results], "traversal_mode": traversal_mode,
@@ -328,6 +342,7 @@ class DeepCFRSolver:
                     "actions": list(ACTION_IDS), "numeric_names": list(NUMERIC_NAMES),
                     "objective": self.objective, "iteration": self.version,
                     "training_metadata": {"advantage_layout": "shared_per_player_count",
+                                          "strategy_collector": strategy_collector(len(self.players), self.traversal_mode),
                                           "seat_normalization": "hero_then_clockwise_positions",
                                           "traversal_mode": self.traversal_mode,
                                           "utility_units": "initial_big_blind_chips",
@@ -343,8 +358,9 @@ class DeepCFRSolver:
 class NeuralAveragePolicy:
     def __init__(self, path: str | Path):
         raw = torch.load(path, map_location="cpu", weights_only=True)
-        if (raw.get("version") != 5 or raw.get("feature_schema_version") != FEATURE_SCHEMA_VERSION or raw.get("state_version") != STATE_VERSION
-                or raw.get("architecture") != MODEL_ARCHITECTURE or raw.get("actions") != list(ACTION_IDS)
+        feature_version = raw.get("feature_schema_version")
+        if (raw.get("version") != 5 or feature_version not in SUPPORTED_FEATURE_VERSIONS or raw.get("state_version") != STATE_VERSION
+                or raw.get("architecture") != model_architecture(feature_version) or raw.get("actions") != list(ACTION_IDS)
                 or raw.get("numeric_names") != list(NUMERIC_NAMES) or raw.get("iteration", 0) < 1
                 or raw.get("objective") != "hand_chip_delta"
                 or raw.get("training_metadata", {}).get("traversal_mode") not in TRAVERSAL_MODES
@@ -355,7 +371,7 @@ class NeuralAveragePolicy:
         self.iteration = raw["iteration"]
         self.traversal_mode = raw["training_metadata"]["traversal_mode"]
         self.supported_player_counts = tuple(raw["supported_player_counts"])
-        self.model = AveragePolicyNetwork()
+        self.model = AveragePolicyNetwork(feature_version)
         self.model.load_state_dict(raw["weights"], strict=True)
         self.model.eval()
 

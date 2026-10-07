@@ -6,6 +6,7 @@ import { cardLabel, BrowserTable, type TableView } from "@/lib/game";
 import { PolicyCoverageError, type LoadedAveragePolicy } from "@/lib/onnx-policy";
 import { observe } from "@/lib/poker/observation";
 import PokerTableFrame from "@/components/PokerTableFrame";
+import { actionColor } from "@/lib/poker/presentation";
 import styles from "./TestTable.module.css";
 
 type Seat = 0 | 1 | 2;
@@ -138,7 +139,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
             return {
               id,
               label: player ? player.active ? player.position ?? `P${id}` : "OUT" : `P${id}`,
-              stack: player ? `${player.stack_bb.toFixed(1)} BB` : "— BB",
+              stack: player ? `${player.stack_bb.toFixed(1)} BB` : "N/A BB",
               streetBet: player && !game?.hand_terminal ? player.bet_bb : null,
               smallBlind: player?.position === "SB",
               bigBlind: player?.position === "BB",
@@ -147,7 +148,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
               netStackChange: game?.hand_terminal ? game.hand_results_bb[id] : undefined,
             };
           })}
-          potLabel={game ? `${game.pot_bb.toFixed(2)} BB` : "— BB"}
+          potLabel={game ? `${game.pot_bb.toFixed(2)} BB` : "N/A BB"}
           heroSeat={heroSeat}
           board={game?.board.map(cardLabel).join(" ") ?? ""}
         />
@@ -163,7 +164,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>Hand {game?.hand_number ?? "—"}</span>
+            <span>Hand {game?.hand_number ?? "N/A"}</span>
             {game?.tournament_terminal && <span className="font-semibold text-primary">🏆 P{game.winner}</span>}
             {game && !game.players.find(p => p.player_id === heroSeat)?.active && <span>Eliminated</span>}
 
@@ -184,7 +185,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
                   className="relative h-10 w-full min-w-0 flex-col gap-0 overflow-hidden border border-border bg-white px-2 py-1 text-xs text-black hover:bg-white/90">
                   <span className="relative z-10">{actionLabel(action)}</span>
                   {probability !== undefined && <span className="relative z-10 text-xs">{(probability * 100).toFixed(0)}%</span>}
-                  {probability !== undefined && <span className="absolute inset-y-0 left-0 bg-black/10" style={{ width: `${probability * 100}%` }} />}
+                  {probability !== undefined && <span className="absolute inset-y-0 left-0 bg-black/10" style={{ width: `${probability * 100}%`, background: actionColor(action.action_id), opacity: .25 }} />}
                 </Button>
               );
             })}
@@ -192,7 +193,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
         </div>
         <div className="grid border-t border-border lg:grid-cols-[minmax(0,1fr)_200px]">
           <div className="min-w-0 bg-card/40 p-4 lg:border-r lg:border-border">
-            <div className="mb-2 text-center font-semibold">Showdown — Results</div>
+            <div className="mb-2 text-center font-semibold">Showdown results</div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {([0, 1, 2] as const).map(id => {
                 const player = game?.players.find(p => p.player_id === id);
@@ -208,12 +209,12 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
                         {player && !player.active && <span className="text-xs">Out</span>}
                       </span>
                       <span className={win ? "rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-400" : even ? "rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground" : "rounded-md bg-rose-500/15 px-2 py-0.5 text-xs font-semibold text-rose-400"}>
-                        {delta === null ? "—" : `${win ? "+" : ""}${delta.toFixed(2)} BB`}
+                        {delta === null ? "N/A" : `${win ? "+" : ""}${delta.toFixed(2)} BB`}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>Stack</span>
-                      <span className="font-mono">{player ? player.stack_bb.toFixed(2) : "—"} BB</span>
+                      <span className="font-mono">{player ? player.stack_bb.toFixed(2) : "N/A"} BB</span>
                     </div>
                   </div>
                 );
@@ -223,7 +224,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
           <div className="flex flex-col items-center justify-center gap-2 border-t border-border p-4 lg:border-t-0">
             <h2 className="font-medium">Total P&amp;L (Hero)</h2>
             <div className={sessionPnL > 0 ? "font-semibold text-emerald-400" : sessionPnL < 0 ? "font-semibold text-rose-400" : "font-semibold text-muted-foreground"}>
-              {game ? `${sessionPnL >= 0 ? "+" : ""}${sessionPnL.toFixed(2)}` : "—"} BB
+              {game ? `${sessionPnL >= 0 ? "+" : ""}${sessionPnL.toFixed(2)}` : "N/A"} BB
             </div>
             <Button disabled={busy || !game} className="h-10" variant="secondary" onClick={() => game && setPnlBaseline(game.hero_result_bb)}>Reset</Button>
           </div>
@@ -234,7 +235,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
         <CardContent>
           <div className="max-h-64 overflow-y-auto space-y-2">
             {actionHistory.length === 0 ? (
-              <div className="text-gray-500 text-center py-4">—</div>
+              <div className="text-gray-500 text-center py-4">N/A</div>
             ) : actionHistory.map((entry, index) => (
               <div key={index} className="flex flex-col p-2 bg-primary/5 rounded-lg">
                 <div className="flex flex-wrap items-center justify-between gap-2">

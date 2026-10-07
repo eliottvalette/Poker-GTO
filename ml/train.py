@@ -2,6 +2,7 @@
 from __future__ import annotations
 import random
 import math
+from collections.abc import Callable
 import torch
 from ml.memory import TrainingSample
 from ml.model import AdvantageNetwork, AveragePolicyNetwork, encode_batch
@@ -26,7 +27,7 @@ def _mean_weight(samples: list[TrainingSample]) -> float:
 def _loss_with_weights(model, samples: list[TrainingSample], normalized: list[float]) -> torch.Tensor:
     if not samples:
         raise ValueError("Loss requires nonempty samples")
-    batch = encode_batch([s.state for s in samples])
+    batch = encode_batch([s.state for s in samples], model.feature_version)
     target = torch.tensor([s.target for s in samples])
     if not torch.isfinite(target).all():
         raise ValueError("Training target cannot be represented as finite float32")
@@ -92,7 +93,12 @@ def evaluate_loss(model, samples: list[TrainingSample], batch_size: int) -> floa
 
 def fit(model, samples: list[TrainingSample], epochs: int, batch_size: int, seed: int,
         learning_rate: float = 3e-4, evaluation_fraction: float = 0.2,
-        sampling: str = "uniform_shuffle") -> dict[str, float]:
+        sampling: str = "uniform_shuffle", measurement_epochs: tuple[int, ...] = (),
+        on_measurement: Callable[[int, dict[str, float]], None] | None = None) -> dict[str, float]:
+    if (any(type(e) is not int or not 1 <= e <= epochs for e in measurement_epochs)
+            or tuple(sorted(set(measurement_epochs))) != measurement_epochs
+            or bool(measurement_epochs) != (on_measurement is not None)):
+        raise ValueError("Measurement epochs must be unique, increasing, within the fit budget, and paired with a callback")
     if sampling not in ("uniform_shuffle", "weighted_replacement"):
         raise ValueError(f"Unknown optimizer sampling mode: {sampling}")
     if len(samples) < 2 or epochs < 1 or batch_size < 1 or not 0 < evaluation_fraction < 1:
@@ -101,6 +107,8 @@ def fit(model, samples: list[TrainingSample], epochs: int, batch_size: int, seed
         raise ValueError("This training interface explicitly requires CPU; GPU compute needs a separate approved run")
     for s in samples:
         s.validate()
+        if s.state.feature_version != model.feature_version:
+            raise ValueError(f"Fit feature mismatch: sample={s.state.feature_version}, model={model.feature_version}")
         expected_kind = "advantage" if isinstance(model, AdvantageNetwork) else "strategy"
         if s.kind != expected_kind:
             raise ValueError(f"Training {expected_kind} model with {s.kind} sample")
@@ -117,7 +125,18 @@ def fit(model, samples: list[TrainingSample], epochs: int, batch_size: int, seed
     probabilities = [weight / scale for weight in weights]
     if any(p == 0 for p in probabilities):
         raise ValueError("Positive sampling weight underflowed in float64")
-    for _ in range(epochs):
+    quality = {**weight_quality(samples),
+               "training_weight_effective_samples": weight_quality(training)["weight_effective_samples"],
+               "heldout_weight_effective_samples": weight_quality(evaluation)["weight_effective_samples"]}
+
+    def measure() -> dict[str, float]:
+        model.eval()
+        return {"train_loss": evaluate_loss(model, training, batch_size),
+                "heldout_loss": evaluate_loss(model, evaluation, batch_size),
+                "training_samples": float(len(training)), "heldout_samples": float(len(evaluation)), **quality}
+
+    metrics = None
+    for epoch in range(1, epochs + 1):
         if sampling == "uniform_shuffle":
             rng.shuffle(training)
             epoch_samples = training
@@ -131,12 +150,11 @@ def fit(model, samples: list[TrainingSample], epochs: int, batch_size: int, seed
             objective = loss_for(model, batch, mean_weight) if sampling == "uniform_shuffle" else _loss_with_weights(model, batch, [1.0] * len(batch))
             objective.backward()
             optimizer.step()
+        if epoch in measurement_epochs:
+            metrics = measure()
+            on_measurement(epoch, dict(metrics))
+            model.train()
+    if epochs not in measurement_epochs:
+        metrics = measure()
     model.eval()
-    with torch.no_grad():
-        train_loss = evaluate_loss(model, training, batch_size)
-        evaluation_loss = evaluate_loss(model, evaluation, batch_size)
-    return {"train_loss": train_loss, "heldout_loss": evaluation_loss,
-            "training_samples": float(len(training)), "heldout_samples": float(len(evaluation)),
-            **weight_quality(samples),
-            "training_weight_effective_samples": weight_quality(training)["weight_effective_samples"],
-            "heldout_weight_effective_samples": weight_quality(evaluation)["weight_effective_samples"]}
+    return metrics

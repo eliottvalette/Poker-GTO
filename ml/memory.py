@@ -12,6 +12,7 @@ import tempfile
 from actions import ACTION_IDS
 from cfr_solver import validate_strategy
 from infoset import STATE_VERSION
+from features import FEATURE_SCHEMA_VERSION
 from features.neural import NeuralObservation, neural_observation
 
 MEMORY_VERSION = 6
@@ -58,7 +59,8 @@ class TrainingSample:
     traversal_mode: str = "external_sampling"
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "state", neural_observation(self.state))
+        if not isinstance(self.state, NeuralObservation):
+            object.__setattr__(self, "state", neural_observation(self.state))
 
     def validate(self) -> None:
         if self.state.objective != "hand_chip_delta":
@@ -104,6 +106,8 @@ class ReservoirMemory:
 
     def add(self, sample: TrainingSample) -> None:
         sample.validate()
+        if sample.state.feature_version != FEATURE_SCHEMA_VERSION:
+            raise ValueError(f"Replay requires feature={FEATURE_SCHEMA_VERSION}, received={sample.state.feature_version}; cannot resume old training")
         if sample.kind != self.kind or sample.state.objective != self.objective:
             raise ValueError(f"Memory expects {self.kind}/{self.objective}, received {sample.kind}/{sample.state.objective}")
         if self.traversal_mode is not None and sample.traversal_mode != self.traversal_mode:

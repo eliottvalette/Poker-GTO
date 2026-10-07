@@ -2,8 +2,8 @@
 import { ACTION_IDS } from "./actions";
 import { NUMERIC_NAMES, type Observation } from "./observation";
 
-export const FEATURE_SCHEMA_VERSION = 2;
-export const ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_features2";
+export const FEATURE_SCHEMA_VERSION = 3;
+export const ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_features3";
 const CARD_FEATURE_NAMES = ["made_category", "flush_draw", "straight_outs", "flush_outs", "overcards",
   "board_pair_multiplicity", "board_max_suit", "board_rank_span", "ace_suit_blockers"];
 export const NEURAL_NUMERIC_NAMES = [...NUMERIC_NAMES, "pot_odds", "call_pot", "hero_stack_pot", "spr_1", "spr_2",
@@ -37,7 +37,8 @@ function category(cards: number[]): number {
   return Number(sizes.some(n => n >= 2));
 }
 
-export function neuralObservation(obs: Observation): { cards: number[]; numeric: number[]; history: number[][] } {
+export function neuralObservation(obs: Observation, featureVersion: number = FEATURE_SCHEMA_VERSION): { cards: number[]; numeric: number[]; history: number[][] } {
+  if (![2, 3].includes(featureVersion)) throw new Error(`Unsupported feature schema: ${featureVersion}`);
   const count = Math.round(obs.numeric[NUMERIC_NAMES.indexOf("player_count")] * 3);
   const positions = count === 3 ? [0, 1, 2] : [1, 2];
   const stacks = obs.history.slice(0, count);
@@ -60,14 +61,24 @@ export function neuralObservation(obs: Observation): { cards: number[]; numeric:
   }
   const button = NUMERIC_NAMES.indexOf("button");
   rawNumeric[button] = mapping.get(Math.round(obs.numeric[button] * 2))! / 2;
-  const suits = new Map<number, number>();
-  const cards = obs.cards.map(card => {
-    if (card === 52) return card;
-    const suit = card % 4;
-    if (!suits.has(suit)) suits.set(suit, suits.size);
-    return Math.floor(card / 4) * 4 + suits.get(suit)!;
-  });
-  const history = obs.history.map(row => {
+  const normalize = (input: number[]) => {
+    const suits = new Map<number, number>();
+    const cards = input.map(card => {
+      if (card === 52) return card;
+      const suit = card % 4;
+      if (!suits.has(suit)) suits.set(suit, suits.size);
+      return Math.floor(card / 4) * 4 + suits.get(suit)!;
+    });
+    return { cards, suits };
+  };
+  let selected = normalize(obs.cards);
+  if (featureVersion === 3) {
+    const reversed = normalize([obs.cards[1], obs.cards[0], ...obs.cards.slice(2)]);
+    const different = selected.cards.findIndex((card, i) => card !== reversed.cards[i]);
+    if (different >= 0 && reversed.cards[different] < selected.cards[different]) selected = reversed;
+  }
+  const { cards, suits } = selected;
+  const history = obs.history.map((row, index) => {
     const event = [...row];
     const actor = mapping.get(Math.round(row[2] * 2));
     if (actor === undefined) throw new Error(`History actor outside observed seats: ${row[2]}`);
@@ -75,7 +86,10 @@ export function neuralObservation(obs: Observation): { cards: number[]; numeric:
     if (event[11] === 1) {
       const card = Math.round(event[10] * 51);
       if (!suits.has(card % 4)) throw new Error(`History contains an unobservable card: ${card}`);
-      event[10] = (Math.floor(card / 4) * 4 + suits.get(card % 4)!) / 51;
+      if (featureVersion === 3 && index >= count && index < count + 2) {
+        if (card !== obs.cards[index - count]) throw new Error("Private-card history disagrees with observable cards");
+        event[10] = cards[index - count] / 51;
+      } else event[10] = (Math.floor(card / 4) * 4 + suits.get(card % 4)!) / 51;
     }
     return event;
   });

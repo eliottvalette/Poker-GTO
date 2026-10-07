@@ -20,7 +20,7 @@ export default function Page() {
     <Sidebar variant="floating" className="p-3">
       <SidebarHeader className="border-b border-border p-4"><div className="flex items-center gap-2"><SidebarTrigger /><h1 className="text-lg font-semibold">GTO Viewer</h1></div></SidebarHeader>
       <SidebarContent className="space-y-3 p-4">
-        {([["overview", "Overview"], ["case", "Cas précis"], ["test", "Test Live"]] as const).map(([tab, label]) =>
+        {([["overview", "Overview"], ["case", "Specific spot"], ["test", "Test Live"]] as const).map(([tab, label]) =>
           <Button key={tab} variant={mainTab === tab ? "default" : "secondary"} onClick={() => setMainTab(tab)}>{label}</Button>)}
       </SidebarContent>
     </Sidebar>

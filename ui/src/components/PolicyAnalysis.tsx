@@ -8,9 +8,7 @@ import { HandState, STREETS, type Position, type Street } from "@/lib/poker/engi
 import { applyAction, legalActions } from "@/lib/poker/actions";
 import { cardLabel } from "@/lib/game";
 
-const COLORS = ["#64748b", "#22c55e", "#16a34a", "#fbbf24", "#f59e0b", "#f97316", "#ea580c", "#fb7185", "#f43f5e", "#e11d48", "#be123c", "#9f1239", "#7c3aed"];
-import { ACTION_IDS } from "@/lib/poker/actions";
-const color = (action: string) => COLORS[ACTION_IDS.indexOf(action as typeof ACTION_IDS[number])];
+import { actionColor as color } from "@/lib/poker/presentation";
 
 export default function PolicyAnalysis({ policies }: {
   policies: Record<number, LoadedAveragePolicy>;
@@ -95,7 +93,7 @@ export default function PolicyAnalysis({ policies }: {
       </div>
       <div className="text-sm text-muted-foreground">
         {hand.terminal ? "Hand settled" : `${Object.keys(hand.players).length === 2 ? "HU" : "3-max"} · ${hand.street} · ${hand.actor.position}`}
-        {` · Pot ${(hand.pot / hand.blinds.big).toFixed(2)} BB · Board ${hand.board.map(cardLabel).join(" ") || "—"}`}
+        {` · Pot ${(hand.pot / hand.blinds.big).toFixed(2)} BB · Board ${hand.board.map(cardLabel).join(" ") || "None"}`}
         {policy && ` · Model iteration ${policy.manifest.iteration}`}
       </div>
       {!policy && <div role="status">Average policy unavailable for {Object.keys(hand.players).length} players; publish this track with migrate.py.</div>}

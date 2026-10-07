@@ -28,7 +28,7 @@ class DeepCFRTests(unittest.TestCase):
         root = river()
         snapshot = ModelSnapshot(0, 'hand_chip_delta', None, True, len(root.players))
         task = TraversalTask(104, root.current_player, root, 48896305, 1, 64)
-        with self.assertRaisesRegex(TraversalBudgetExceeded, 'task=104, snapshot=0, player=.*seed=48896305, stage=advantage'):
+        with self.assertRaisesRegex(TraversalBudgetExceeded, 'task=104, snapshot=0, player=.*seed=48896305, stage=external'):
             generate_samples(snapshot, task)
 
     def test_shapes_masking_and_invalid_inputs(self):

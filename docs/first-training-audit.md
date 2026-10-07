@@ -1,5 +1,9 @@
 # First training audit
 
+Follow-up implementation and controlled HU/3-max experiments are recorded in
+[training-repair-audit.md](training-repair-audit.md). The measurements below
+describe the original feature-2 training and published policies.
+
 ## Verdict
 
 The training/checkpoint/export pipeline runs, but the first policies are not yet

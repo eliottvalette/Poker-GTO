@@ -16,6 +16,44 @@ from poker_game_expresso import HandState
 
 
 class FeatureTests(unittest.TestCase):
+    def test_private_card_order_and_suits_preserve_all_inputs(self):
+        from ml.model import AveragePolicyNetwork
+        import torch
+        torch.set_num_threads(1)
+        model = AveragePolicyNetwork().eval()
+        for count in (2, 3):
+            for seed in (0, 7):
+                hand = HandState.start({i: 25 for i in range(count)}, 0, random.Random(seed),
+                                       deck=list(range(52)) if seed == 0 else None)
+                while not hand.terminal:
+                    original = neural_observation(observe(hand))
+                    for permutation in permutations(range(4)):
+                        changed = hand.clone()
+                        convert = lambda c: c // 4 * 4 + permutation[c % 4]
+                        for player in changed.players.values():
+                            player.cards = tuple(map(convert, player.cards))
+                        changed.actor.cards = changed.actor.cards[::-1]
+                        changed.board = list(map(convert, changed.board))
+                        changed.deck = list(map(convert, changed.deck))
+                        changed.assert_invariants()
+                        actual = neural_observation(observe(changed))
+                        self.assertEqual(original, actual)
+                    with torch.no_grad():
+                        self.assertTrue(torch.equal(model(encode_batch([original])), model(encode_batch([actual]))))
+                    hand.act("CALL" if hand.to_call() else "CHECK")
+
+    def test_old_compact_features_cannot_be_silently_reencoded(self):
+        hand = HandState.start({0: 25, 1: 25}, 0, random.Random(3))
+        old = neural_observation(observe(hand), feature_version=2)
+        with self.assertRaisesRegex(ValueError, "explicit migration"):
+            encode_batch([old])
+        self.assertEqual(encode_batch([old], feature_version=2)["cards"].shape, (1, 7))
+        from ml.memory import ReservoirMemory
+        old_sample = TrainingSample(1, old.hero, old, tuple(float(m) / sum(old.legal_mask) for m in old.legal_mask),
+                                    1.0, "strategy", 0)
+        with self.assertRaisesRegex(ValueError, "cannot resume old training"):
+            ReservoirMemory(2, 0, "strategy", "hand_chip_delta").add(old_sample)
+
     def test_neural_observation_matches_diagnostic_inputs_without_json(self):
         from unittest.mock import patch
         from features.neural import observe_neural

@@ -104,14 +104,15 @@ class Traversal:
         action.apply(child)
         return child
 
-    def regrets(self, state: GameState, traverser: int, sink: SampleSink, depth: int = 0) -> float:
+    def regrets(self, state: GameState, traverser: int, sink: SampleSink, depth: int = 0,
+                strategy_sink: SampleSink | None = None) -> float:
         if depth == 0:
             state = hand_root(state)
         elif not isinstance(state, HandState):
             raise TypeError("Recursive traversal must remain inside its extracted hand")
         terminal = self._visit(state, depth)
         settled = settled_value(state, traverser)
-        if settled is not None:
+        if settled is not None and (terminal or strategy_sink is None):
             self.settled_prunes += int(not terminal)
             return settled
         obs = self.observer(state)
@@ -119,13 +120,15 @@ class Traversal:
         validate_strategy(strategy, obs.legal_mask)
         actions = self._children(state)
         if state.current_player != traverser:
+            if strategy_sink is not None:
+                strategy_sink(obs, strategy, 1.0)
             chosen = ACTION_IDS[sample_index(strategy, self.rng)]
             action = next(a for a in actions if a.action_id == chosen)
-            return self.regrets(self.child(state, action), traverser, sink, depth + 1)
+            return self.regrets(self.child(state, action), traverser, sink, depth + 1, strategy_sink)
         values = [0.0] * len(ACTION_IDS)
         for action in actions:
             index = ACTION_IDS.index(action.action_id)
-            values[index] = self.regrets(self.child(state, action), traverser, sink, depth + 1)
+            values[index] = self.regrets(self.child(state, action), traverser, sink, depth + 1, strategy_sink)
         value = sum(p * v for p, v in zip(strategy, values))
         target = tuple(v - value if m else 0.0 for v, m in zip(values, obs.legal_mask))
         sink(obs, target, 1.0)

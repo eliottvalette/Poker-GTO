@@ -20,10 +20,9 @@ from torch import nn
 
 from actions import ACTION_IDS, ACTION_SCHEMA_VERSION
 from infoset import EVENTS, HISTORY_WIDTH, POSITIONS, STATE_VERSION, Observation
-from features import FEATURE_SCHEMA_VERSION
 from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES
 from ml.deep_cfr import NeuralAveragePolicy
-from ml.model import MODEL_ARCHITECTURE, AveragePolicyNetwork, encode_batch
+from ml.model import AveragePolicyNetwork, encode_batch, model_architecture
 
 INPUT_NAMES = ("cards", "street", "position", "numeric", "history", "mask")
 EXPORT_VERSION = 4
@@ -75,7 +74,7 @@ def export_average_policy(checkpoint: str | Path, model_path: str | Path, manife
     policy = NeuralAveragePolicy(checkpoint)
     policy.query(example_observation)
     graph = SingleObservationAveragePolicy(policy.model).eval()
-    batch = encode_batch([example_observation])
+    batch = encode_batch([example_observation], policy.model.feature_version)
     payload = io.BytesIO()
     with torch.no_grad():
         torch.onnx.export(graph, tuple(batch[name] for name in INPUT_NAMES), payload,
@@ -93,14 +92,14 @@ def export_average_policy(checkpoint: str | Path, model_path: str | Path, manife
     # time dimension. The extra token is a structural inference test only.
     longer = replace(example_observation, history=(*example_observation.history, example_observation.history[-1]))
     for obs in (example_observation, longer):
-        inputs = encode_batch([obs])
+        inputs = encode_batch([obs], policy.model.feature_version)
         expected = np.asarray(policy.query(obs), dtype=np.float32)
         actual = runtime.run(["probabilities"], {name: inputs[name].numpy() for name in INPUT_NAMES})[0][0]
         if not np.isfinite(actual).all() or not np.allclose(actual, expected, rtol=1e-5, atol=1e-6):
             raise ValueError(f"ONNX average-policy parity failed: expected={expected.tolist()}, actual={actual.tolist()}")
         errors.append(float(np.abs(actual - expected).max()))
-    manifest = {"version": EXPORT_VERSION, "action_schema_version": ACTION_SCHEMA_VERSION, "feature_schema_version": FEATURE_SCHEMA_VERSION,
-                "suit_normalization": "first_observable_occurrence", "seat_normalization": "hero_then_clockwise_positions", "traversal_mode": policy.traversal_mode, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
+    manifest = {"version": EXPORT_VERSION, "action_schema_version": ACTION_SCHEMA_VERSION, "feature_schema_version": policy.model.feature_version,
+                "suit_normalization": "private_order_minimum" if policy.model.feature_version == 3 else "first_observable_occurrence", "seat_normalization": "hero_then_clockwise_positions", "traversal_mode": policy.traversal_mode, "state_version": STATE_VERSION, "architecture": model_architecture(policy.model.feature_version),
                 "model_sha256": hashlib.sha256(model_bytes).hexdigest(), "objective": policy.objective,
                 "iteration": policy.iteration, "supported_player_counts": list(policy.supported_player_counts),
                 "actions": list(ACTION_IDS), "numeric_names": list(NUMERIC_NAMES), "positions": list(POSITIONS),

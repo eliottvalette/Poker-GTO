@@ -40,7 +40,11 @@ Persistent tournament rollouts + synthetic simplex strata + coverage grid
 
 External sampling remains the primary generator. Every future traverser decision
 in an explored branch produces an advantage target; opponents are sampled.
-The existing independent average pass remains reach/importance weighted.
+HU strategy records now come from opponent nodes of the same external-sampling
+traversal, with unit collection weights and linear iteration weighting. The
+3-max independent average pass remains reach/importance weighted: direct
+opponent-node collection fails the exact three-player average-policy comparison.
+See `training-repair-audit.md` and `strategy-collector-audit.json`.
 Outcome sampling remains implemented, tested and explicitly selectable. It is
 not tuned or enabled in the supplied configurations.
 
@@ -243,8 +247,9 @@ bounded BR metrics.
 Every successful iteration logs time, root/worker/fit costs, traversals, node
 counts and per-task node distribution, depth, generated samples, reservoir
 seen/retained/bytes, losses, fixed drift and coverage. Scheduled evaluations and
-checkpoint paths are machine-readable. One reported traversal/task consists of
-one regret traversal plus the independent average-policy pass.
+checkpoint paths are machine-readable. One external task consists of a shared
+regret/strategy traversal in HU, and a regret traversal plus an independent
+average-policy pass in 3-max. Metrics explicitly identify the strategy collector.
 
 Workers use one Torch inference thread. The central trainer thread count is
 explicit. Workers neither train nor merge local regret tables. GPU is unused.

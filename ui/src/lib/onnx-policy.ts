@@ -3,14 +3,14 @@ import { EVENTS, HISTORY_WIDTH, NUMERIC_NAMES, POSITIONS, STATE_VERSION,
   validateObservation, type Observation } from "./poker/observation";
 
 const INPUTS = ["cards", "street", "position", "numeric", "history", "mask"] as const;
-import { ARCHITECTURE, FEATURE_SCHEMA_VERSION, NEURAL_NUMERIC_NAMES, neuralObservation } from "./poker/neural";
+import { NEURAL_NUMERIC_NAMES, neuralObservation } from "./poker/neural";
 
 export type PolicyManifest = {
   version: number;
   action_schema_version: number;
   feature_schema_version: number;
   seat_normalization: "hero_then_clockwise_positions";
-  suit_normalization: "first_observable_occurrence";
+  suit_normalization: "first_observable_occurrence" | "private_order_minimum";
   traversal_mode: "external_sampling" | "outcome_sampling";
   state_version: number;
   architecture: string;
@@ -62,11 +62,11 @@ export function validatePolicyManifest(raw: unknown): PolicyManifest {
     "batch_size", "inputs", "output", "validation_max_absolute_error", "amount_units", "utility_units", "history_scope", "payout_scope"];
   if (!equalArray(Object.keys(raw).sort(), fields.sort()) || manifest.version !== 4
       || manifest.action_schema_version !== 1
-      || manifest.feature_schema_version !== FEATURE_SCHEMA_VERSION
-      || manifest.suit_normalization !== "first_observable_occurrence"
+      || ![2, 3].includes(manifest.feature_schema_version)
+      || manifest.suit_normalization !== (manifest.feature_schema_version === 3 ? "private_order_minimum" : "first_observable_occurrence")
       || manifest.seat_normalization !== "hero_then_clockwise_positions"
       || !["external_sampling", "outcome_sampling"].includes(manifest.traversal_mode) || manifest.state_version !== STATE_VERSION
-      || manifest.architecture !== ARCHITECTURE || typeof manifest.model_sha256 !== "string"
+      || manifest.architecture !== `cards8_numeric32_historyGRU32_head64_features${manifest.feature_schema_version}` || typeof manifest.model_sha256 !== "string"
       || !/^[a-f0-9]{64}$/.test(manifest.model_sha256) || manifest.objective !== "hand_chip_delta"
       || !Number.isInteger(manifest.iteration) || manifest.iteration < 1 || !Array.isArray(manifest.supported_player_counts)
       || !manifest.supported_player_counts.length || manifest.supported_player_counts.some(count => count !== 2 && count !== 3)
@@ -114,7 +114,7 @@ export async function loadAveragePolicy(model: ArrayBuffer, rawManifest: unknown
       }
       const integers = (values: number[]) => new BigInt64Array(values.map(value => BigInt(value)));
       const position = Math.round(observation.numeric[NUMERIC_NAMES.indexOf("hero_position")] * 2);
-      const neural = neuralObservation(observation);
+      const neural = neuralObservation(observation, manifest.feature_schema_version);
       const feeds = {
         cards: new ort.Tensor("int64", integers(neural.cards), [1, 7]),
         street: new ort.Tensor("int64", integers([observation.street]), [1]),

@@ -17,8 +17,8 @@
   "evaluation_every": 5,
   "traversal_mode": "external_sampling",
   "root_sampler_version": 1,
-  "feature_schema_version": 2,
-  "model_schema_version": "cards8_numeric32_historyGRU32_head64_features2",
+  "feature_schema_version": 3,
+  "model_schema_version": "cards8_numeric32_historyGRU32_head64_features3",
   "output_dir": "runs/deep_cfr_shared_pilot",
   "evaluation_max_nodes": 20000,
   "3max": {

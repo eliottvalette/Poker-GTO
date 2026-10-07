@@ -15,6 +15,21 @@ from test_solver import river
 
 
 class TrainingWeightTests(unittest.TestCase):
+    def test_measurements_preserve_optimizer_trajectory(self):
+        import copy
+        samples = self.samples() * 8
+        torch.manual_seed(9)
+        uninterrupted = AveragePolicyNetwork()
+        measured = copy.deepcopy(uninterrupted)
+        milestones = {}
+        expected = fit(uninterrupted, samples, 5, 4, 12)
+        actual = fit(measured, samples, 5, 4, 12, measurement_epochs=(2, 5),
+                     on_measurement=lambda epoch, metrics: milestones.update({epoch: metrics}))
+        self.assertEqual(expected, actual)
+        self.assertEqual(tuple(milestones), (2, 5))
+        for a, b in zip(uninterrupted.parameters(), measured.parameters()):
+            self.assertTrue(torch.equal(a, b))
+
     def test_weighted_sampling_has_the_same_expected_objective(self):
         model = AveragePolicyNetwork().eval()
         samples = self.samples()

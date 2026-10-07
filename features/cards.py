@@ -21,6 +21,18 @@ def canonical_suits(cards: tuple[int, ...]) -> tuple[tuple[int, ...], dict[int, 
     return tuple(result), mapping
 
 
+def canonical_private_cards(cards: tuple[int, ...]) -> tuple[tuple[int, ...], dict[int, int]]:
+    """Minimize both private-card orders after first-occurrence suit renaming.
+
+    The board order breaks equal-rank suit ties. The returned mapping must also
+    encode public history, so every input uses the same suit labels.
+    """
+    if len(cards) != 7:
+        raise ValueError(f"Expected two private and five board slots: {cards}")
+    candidates = (canonical_suits(cards), canonical_suits((cards[1], cards[0], *cards[2:])))
+    return min(candidates, key=lambda candidate: candidate[0])
+
+
 def has_straight(ranks: set[int]) -> bool:
     ranks = ranks | ({1} if 14 in ranks else set())
     return any(set(range(low, low + 5)) <= ranks for low in range(1, 11))

@@ -5,15 +5,23 @@ from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
 from actions import ACTION_IDS
 from infoset import HISTORY_WIDTH, STATE_VERSION, Observation
+from features import FEATURE_SCHEMA_VERSION, SUPPORTED_FEATURE_VERSIONS
 from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES, NeuralObservation, neural_observation
 
-MODEL_ARCHITECTURE = "cards8_numeric32_historyGRU32_head64_features2"
+def model_architecture(feature_version: int) -> str:
+    if feature_version not in SUPPORTED_FEATURE_VERSIONS:
+        raise ValueError(f"Unsupported model feature schema: {feature_version}")
+    return f"cards8_numeric32_historyGRU32_head64_features{feature_version}"
 
 
-def encode_batch(observations: list[Observation | NeuralObservation]) -> dict[str, torch.Tensor]:
+MODEL_ARCHITECTURE = model_architecture(FEATURE_SCHEMA_VERSION)
+
+
+def encode_batch(observations: list[Observation | NeuralObservation],
+                 feature_version: int = FEATURE_SCHEMA_VERSION) -> dict[str, torch.Tensor]:
     if not observations:
         raise ValueError("Cannot encode an empty observation batch")
-    observations = [neural_observation(o) for o in observations]
+    observations = [neural_observation(o, feature_version) for o in observations]
     # Compact replay stores packed bytes: decode each numeric/history vector once.
     numerics = [o.numeric for o in observations]
     histories = [o.history for o in observations]
@@ -54,8 +62,10 @@ class StateEncoder(nn.Module):
 
 
 class AdvantageNetwork(nn.Module):
-    def __init__(self):
+    def __init__(self, feature_version: int = FEATURE_SCHEMA_VERSION):
         super().__init__()
+        model_architecture(feature_version)
+        self.feature_version = feature_version
         self.encoder = StateEncoder()
         self.head = nn.Sequential(nn.Linear(128, 64), nn.ReLU(), nn.Linear(64, len(ACTION_IDS)))
 
@@ -67,8 +77,10 @@ class AdvantageNetwork(nn.Module):
 
 
 class AveragePolicyNetwork(nn.Module):
-    def __init__(self):
+    def __init__(self, feature_version: int = FEATURE_SCHEMA_VERSION):
         super().__init__()
+        model_architecture(feature_version)
+        self.feature_version = feature_version
         self.encoder = StateEncoder()
         self.head = nn.Sequential(nn.Linear(128, 64), nn.ReLU(), nn.Linear(64, len(ACTION_IDS)))
 
@@ -86,7 +98,7 @@ class AveragePolicyNetwork(nn.Module):
         """
         from cfr_solver import validate_strategy
         with torch.no_grad():
-            values = tuple(self(encode_batch([observation]))[0].tolist())
+            values = tuple(self(encode_batch([observation], self.feature_version))[0].tolist())
         total = sum(values)
         if abs(total - 1.0) > 1e-6:
             raise ValueError(f"Average-policy softmax mass outside float32 tolerance: {total}")
