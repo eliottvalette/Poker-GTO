@@ -58,13 +58,14 @@ and retains the 3-max-to-HU survivor-root setup.
 
 ```text
 1  Activate checkpoint as the reference policy
-2  Export both checkpoint policies to ONNX for UI
-3  Activate both policies and export ONNX
+2  Export and activate 3-max policy for UI
+3  Export and activate HU policy for UI
 0  Exit
 ```
 
-Activation can select 3-max, HU or both. Export and combined publication require
-both dedicated candidate checkpoints. Missing or untrained candidates fail with
+Reference activation can select 3-max, HU or both. UI options 2 and 3 publish
+only the selected track, require only its candidate checkpoint, and preserve the
+other published UI entry. They do not replace the active reference policy. Missing or untrained candidates fail with
 their exact path; no neighboring artifact or old policy is guessed.
 
 The selected checkpoint files are first copied to stable temporary snapshots,
@@ -77,8 +78,8 @@ prepared temporary files and leaves the active catalog unchanged.
 Active releases are immutable content-addressed bundles under
 `policy/releases/<track>/<checkpoint_sha256>/`, containing the full checkpoint,
 `average_<track>.pt` and a checksummed `bundle.json`. UI releases live under
-`ui/public/policy/releases/<bundle_sha256>/` and contain both ONNX files, manifests
-and a bundle checksum record. Historical releases are retained, not overwritten
+`ui/public/policy/releases/<bundle_sha256>/` and contain the selected tracks'
+ONNX files, manifests and a bundle checksum record. Historical releases are retained, not overwritten
 as backups or selected through a latest-file search.
 
 `ui/public/policy/index.json` is the single authoritative catalog for active
@@ -90,11 +91,18 @@ unreferenced immutable bundles after an I/O interruption do not become active.
 
 ## Test Live and programmatic core
 
-After exporting, click **Load exported policies** in Test Live. It loads the
-catalog-selected 3-max and HU models and chooses by the current hand's seated
-player count. Existing manual model/manifest import remains available. With a
-static production export, rebuild the UI after new publication so the new public
-assets are included; development serves the files directly.
+All UI views automatically load the catalog-selected available exports and route
+by seated player count. The catalog is checked every 15 seconds and on window
+focus, so a newly published HU export also loads without manual intervention.
+A track that has not been exported remains explicitly unavailable. Training
+checkpoints are not browser models: publishing via `migrate.py` is still required.
+The development server serves public files directly; the bundled production
+server serves `/policy/` from `ui/public/policy` so new exports require no rebuild.
+Other static hosting must deploy the newly published policy assets.
+
+Overview averages exact-combo policy queries into 169 classes for a fixed public
+state; Cas précis queries selected hero cards in that state. Neither view reads
+the legacy policy or claims historical visit statistics.
 
 Core functions remain importable:
 

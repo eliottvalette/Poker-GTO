@@ -86,7 +86,7 @@ export function validatePolicyManifest(raw: unknown): PolicyManifest {
   return structuredClone(manifest);
 }
 
-/** User-selected average-policy artifact; no model is loaded or invented implicitly. */
+/** Validated average-policy artifact selected by the published catalog. */
 export async function loadAveragePolicy(model: ArrayBuffer, rawManifest: unknown): Promise<LoadedAveragePolicy> {
   const manifest = validatePolicyManifest(rawManifest);
   if (!model.byteLength) throw new Error("Average-policy ONNX model is empty");
@@ -151,20 +151,25 @@ export async function loadAveragePolicy(model: ArrayBuffer, rawManifest: unknown
 }
 
 /** Load the immutable ONNX bundles selected by migrate.py's atomic catalog. */
-export async function loadPublishedPolicies(): Promise<Record<number, LoadedAveragePolicy>> {
-  const response = await fetch("/policy/index.json", { cache: "no-store" });
-  if (!response.ok) throw new Error(`Published policy catalog unavailable: HTTP ${response.status}; export policies with migrate.py`);
-  const catalog = await response.json();
-  if (!catalog || catalog.version !== 1 || !catalog.exports || typeof catalog.exports !== "object") {
+export async function loadPublishedPolicies(publishedCatalog?: unknown): Promise<Record<number, LoadedAveragePolicy>> {
+  let catalog = publishedCatalog as { version: number; exports: Record<string, { bundle_id: string; iteration: number }> };
+  if (publishedCatalog === undefined) {
+    const response = await fetch("/policy/index.json", { cache: "no-store" });
+    if (!response.ok) throw new Error(`Published policy catalog unavailable: HTTP ${response.status}; export policies with migrate.py`);
+    catalog = await response.json();
+  }
+  if (!catalog || catalog.version !== 1 || !catalog.exports || typeof catalog.exports !== "object" || Array.isArray(catalog.exports)
+      || Object.keys(catalog.exports).some(track => track !== "3max" && track !== "hu")) {
     throw new Error("Invalid published policy catalog");
   }
   const loaded: Record<number, LoadedAveragePolicy> = {};
   try {
     for (const [track, count] of [["3max", 3], ["hu", 2]] as const) {
       const entry = catalog.exports[track];
+      if (!(track in catalog.exports)) continue;
       if (!entry || typeof entry.bundle_id !== "string" || !/^[a-f0-9]{64}$/.test(entry.bundle_id)
           || !Number.isInteger(entry.iteration) || entry.iteration < 1) {
-        throw new Error(`Published ${track} policy is missing or invalid; export both policies with migrate.py`);
+        throw new Error(`Published ${track} policy is invalid; export this track again with migrate.py`);
       }
       const base = `/policy/releases/${entry.bundle_id}/average_${track}`;
       const [weights, manifest] = await Promise.all([fetch(`${base}.onnx`), fetch(`${base}.json`)]);
@@ -174,6 +179,7 @@ export async function loadPublishedPolicies(): Promise<Record<number, LoadedAver
         throw new Error(`Published ${track} policy does not match its catalog entry`);
       }
     }
+    if (!Object.keys(loaded).length) throw new Error("No UI policies published; export a track with migrate.py");
     return loaded;
   } catch (cause) {
     await Promise.all(Object.values(loaded).map(policy => policy.release()));

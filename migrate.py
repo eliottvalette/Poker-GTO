@@ -7,8 +7,8 @@ def main() -> None:
     print("+-----------------------------------------------------+")
     print("| Poker policies                                      |")
     print("| 1  Activate checkpoint as the reference policy      |")
-    print("| 2  Export both checkpoint policies to ONNX for UI   |")
-    print("| 3  Activate both policies and export ONNX           |")
+    print("| 2  Export and activate 3-max policy for UI           |")
+    print("| 3  Export and activate HU policy for UI              |")
     print("| 0  Exit                                             |")
     print("+-----------------------------------------------------+")
     for track in ("3max", "hu"):
@@ -17,10 +17,10 @@ def main() -> None:
     choice = input("Selection: ").strip()
     if choice == "0":
         return
-    actions = {"1": "activate", "2": "export", "3": "both"}
+    actions = {"1": "activate", "2": "export", "3": "export"}
     if choice not in actions:
         raise ValueError(f"Invalid menu selection: {choice!r}")
-    tracks = ("3max", "hu")
+    tracks = ("3max",) if choice == "2" else ("hu",)
     if choice == "1":
         selected = input("Activate [3] 3-max, [H] HU, [B] both: ").strip().upper()
         options = {"3": ("3max",), "H": ("hu",), "B": ("3max", "hu")}

@@ -96,5 +96,6 @@ export class BrowserTable {
 
 export function cardLabel(card: number): string {
   if (!Number.isInteger(card) || card < 0 || card > 51) throw new Error(`Invalid card ID ${card}`);
-  return "23456789TJQKA"[Math.floor(card / 4)] + ["♠", "♥", "♦", "♣"][card % 4];
+  return ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"][Math.floor(card / 4)]
+    + ["♠", "♥", "♦", "♣"][card % 4];
 }

@@ -22,7 +22,8 @@ payout is an environment result, not its training utility.
 For ordinary use, run `python train-3.py` or `python train-hu.py`. Each resumes its
 checkpoint automatically, trains for one hour (editable in `training/settings.py`)
 and saves complete state. `python migrate.py` offers an ASCII menu to activate
-checkpoint policies, export both ONNX models for Test Live, or do both.
+checkpoint reference policies, or independently export and activate the 3-max
+or HU ONNX model for Test Live.
 See [the timed-script workflow](docs/training-scripts.md) for paths, safe stopping
 and publication. There are no argument-parser flags.
 
@@ -82,16 +83,23 @@ from production `.next` output.
 Test Live opens by default and runs the parity-tested TypeScript tournament
 engine entirely in the browser. Stacks persist, positions rotate, eliminated
 players leave, play transitions to heads-up, and chip totals remain conserved.
-Scripted opponents are smoke-test opponents. Overview and Cas précis retain
-the original analysis surfaces, explicitly labeled as the former 50 BB
-single-hand policy; that data does not drive tournament play.
+Scripted opponents are smoke-test opponents. All three views automatically load
+catalog-selected ONNX exports from `/policy/index.json`, routing by seated player
+count. The catalog is checked every 15 seconds and when the window regains focus;
+a newly published HU or 3-max export is loaded without a button or file selection.
+Missing tracks and loading failures are explicit.
 
-Policy information is unavailable until a compatible average-policy `.onnx`
-file and its `.json` manifest are explicitly selected. The browser validates the
-full schema, objective, player-count coverage, model SHA256, current-hand scope, explicit amount/utility units, legal mask, and
-output distribution. ONNX inference uses locally served CPU WebAssembly assets.
-Loaded probabilities are experimental with uncalibrated confidence. Old saved
-policies and `ml/trained_policy_model.pth` are never used for current play.
+Overview queries all board-compatible exact hole-card combos and averages their
+action mixtures uniformly into a 169-hand matrix. Cas précis queries a selected
+exact hand in the same public state. Both support 3-max/HU, positions, stacks,
+blinds, streets, explicit boards and legal betting continuations with full public
+history. They do not read the old packed policy or historical visit counts.
+
+The browser validates schema, objective, model SHA256, player-count coverage,
+current-hand scope, units, legal masks and output probabilities. ONNX inference
+uses local CPU WebAssembly assets. A loaded policy is a neural approximation;
+its equilibrium quality has not been certified. Legacy policies and
+`ml/trained_policy_model.pth` are unused by these views.
 
 Python is needed only for offline training, canonical fixture generation, and
 model export. The importable exporter

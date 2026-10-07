@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cardLabel, BrowserTable, type TableView } from "@/lib/game";
-import { loadPublishedPolicies, loadAveragePolicy, PolicyCoverageError, type LoadedAveragePolicy } from "@/lib/onnx-policy";
+import { PolicyCoverageError, type LoadedAveragePolicy } from "@/lib/onnx-policy";
 import { observe } from "@/lib/poker/observation";
 import PokerTableFrame from "@/components/PokerTableFrame";
 import styles from "./TestTable.module.css";
@@ -17,7 +17,7 @@ function actionLabel(action: TableView["legal_actions"][number]): string {
   return action.action_id.replaceAll("_", " ");
 }
 
-export default function TestTable() {
+export default function TestTable({ policies }: { policies: Record<number, LoadedAveragePolicy> }) {
   const [heroSeat, setHeroSeat] = useState<Seat>(2);
   const [game, setGame] = useState<TableView | null>(null);
   const [busy, setBusy] = useState(true);
@@ -27,13 +27,13 @@ export default function TestTable() {
   const started = useRef(false);
   const table = useRef<BrowserTable | null>(null);
   const models = useRef<Record<number, LoadedAveragePolicy>>({});
-  const modelFiles = useRef<HTMLInputElement | null>(null);
+  models.current = policies;
 
-  async function viewWithPolicy(candidate: BrowserTable, selected?: LoadedAveragePolicy): Promise<TableView> {
+  async function viewWithPolicy(candidate: BrowserTable): Promise<TableView> {
     const view = candidate.view();
     const count = Object.keys(candidate.tournament.hand?.players ?? {}).length;
-    const policy = selected?.manifest.supported_player_counts.includes(count) ? selected : models.current[count];
-    if (!policy) view.policy.reason = `Average policy unavailable for ${count} players; load its model and manifest`;
+    const policy = models.current[count];
+    if (!policy) view.policy.reason = `Average policy unavailable for ${count} players; publish this track with migrate.py`;
     if (policy && !view.hand_terminal && view.actor === candidate.hero) {
       try {
         view.policy = { status: "experimental", reason: "Loaded average policy; equilibrium quality has not been certified",
@@ -95,60 +95,26 @@ export default function TestTable() {
     }
   }
 
-  async function importPolicy(files: FileList | null) {
-    if (!files?.length || locked.current) return;
-    locked.current = true;
-    setBusy(true);
-    setError(null);
-    let loaded: LoadedAveragePolicy | null = null;
-    try {
-      const selected = Array.from(files);
-      const weights = selected.filter(file => file.name.endsWith(".onnx"));
-      const manifests = selected.filter(file => file.name.endsWith(".json"));
-      if (selected.length !== 2 || weights.length !== 1 || manifests.length !== 1) {
-        throw new Error("Select exactly one .onnx average policy and its .json manifest together");
+  useEffect(() => {
+    let cancelled = false;
+    async function refreshView() {
+      while (locked.current && !cancelled) await new Promise(resolve => setTimeout(resolve, 100));
+      if (cancelled || !table.current) return;
+      locked.current = true;
+      setBusy(true);
+      try {
+        const next = await viewWithPolicy(table.current);
+        if (!cancelled) setGame(next);
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        locked.current = false;
+        if (!cancelled) setBusy(false);
       }
-      loaded = await loadAveragePolicy(await weights[0].arrayBuffer(), JSON.parse(await manifests[0].text()));
-      const next = table.current ? await viewWithPolicy(table.current, loaded) : null;
-      const previous = new Set(loaded.manifest.supported_player_counts.map(count => models.current[count]).filter(Boolean));
-      for (const count of loaded.manifest.supported_player_counts) models.current[count] = loaded;
-      loaded = null;
-      if (next) setGame(next);
-      for (const policy of previous) {
-        if (!Object.values(models.current).includes(policy)) await policy.release();
-      }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      if (loaded) await loaded.release();
-      if (modelFiles.current) modelFiles.current.value = "";
-      locked.current = false;
-      setBusy(false);
     }
-  }
-
-  async function importPublishedPolicies() {
-    if (locked.current) return;
-    locked.current = true;
-    setBusy(true);
-    setError(null);
-    let loaded: Record<number, LoadedAveragePolicy> | null = null;
-    try {
-      loaded = await loadPublishedPolicies();
-      const next = table.current ? await viewWithPolicy(table.current, loaded[Object.keys(table.current.tournament.hand?.players ?? {}).length]) : null;
-      const previous = new Set(Object.values(models.current));
-      models.current = loaded;
-      loaded = null;
-      if (next) setGame(next);
-      await Promise.all([...previous].map(policy => policy.release()));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      if (loaded) await Promise.all(Object.values(loaded).map(policy => policy.release()));
-      locked.current = false;
-      setBusy(false);
-    }
-  }
+    void refreshView();
+    return () => { cancelled = true; };
+  }, [policies]);
 
   const sessionPnL = (game?.hero_result_bb ?? 0) - pnlBaseline;
   const actionHistory = game?.history ?? [];
@@ -185,6 +151,7 @@ export default function TestTable() {
           heroSeat={heroSeat}
           board={game?.board.map(cardLabel).join(" ") ?? ""}
         />
+        {game && !game.hand_terminal && game.actor === heroSeat && !policy?.probabilities && <div className="px-4 py-2 text-sm text-muted-foreground">{policy?.reason}</div>}
         {error && <div role="alert" className="px-4 py-2 text-sm text-destructive">{error}</div>}
         <div className={styles.toolbar} aria-label="Table controls">
           <div className="flex items-center gap-2">
@@ -199,15 +166,7 @@ export default function TestTable() {
             <span>Hand {game?.hand_number ?? "—"}</span>
             {game?.tournament_terminal && <span className="font-semibold text-primary">🏆 P{game.winner}</span>}
             {game && !game.players.find(p => p.player_id === heroSeat)?.active && <span>Eliminated</span>}
-            <button type="button" disabled={busy} className="rounded border border-border px-2 py-1 disabled:opacity-50"
-              onClick={() => void importPublishedPolicies()}>Load exported policies</button>
-            <input ref={modelFiles} type="file" accept=".onnx,.json" multiple hidden
-              aria-label="Average policy files" onChange={event => void importPolicy(event.target.files)} />
-            <button type="button" disabled={busy} className="rounded border border-border px-2 py-1 disabled:opacity-50"
-              title={`${policy?.reason ?? ""}. Load an average policy (.onnx + .json)`}
-              onClick={() => modelFiles.current?.click()}>
-              {!game ? "Policy —" : policy?.status === "experimental" ? "Experimental policy" : "Policy unavailable"}
-            </button>
+
           </div>
           <div className={styles.management}>
             <Button disabled={busy} variant="secondary" onClick={() => void newTournament(heroSeat)} className="h-10 w-full px-2 text-sm">New game</Button>

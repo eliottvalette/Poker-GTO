@@ -7,11 +7,11 @@ import { spawnSync } from "node:child_process";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const output = mkdtempSync(join(tmpdir(), "poker-browser-tests-"));
-const tests = ["tests/browser_engine.test.ts", "tests/browser_table.test.ts", "tests/browser_neural.test.ts"];
+const tests = ["tests/browser_engine.test.ts", "tests/browser_table.test.ts", "tests/browser_neural.test.ts", "tests/browser_analysis.test.ts"];
 try {
   const compilation = spawnSync(process.execPath, [
     join(root, "ui/node_modules/typescript/bin/tsc"), ...tests,
-    "--target", "ES2022", "--module", "commonjs", "--moduleResolution", "node",
+    "--target", "ES2022", "--module", "Node16", "--moduleResolution", "Node16",
     "--lib", "ES2023,DOM", "--strict", "--esModuleInterop", "--skipLibCheck",
     "--types", "node", "--typeRoots", join(root, "ui/node_modules/@types"),
     "--rootDir", root, "--outDir", output,

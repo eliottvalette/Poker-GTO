@@ -11,7 +11,7 @@ type Seat = {
   smallBlind?: boolean;
   bigBlind?: boolean;
   active?: boolean;
-  cards?: string[];      // ["A♥","8♣","T♠","XX"]
+  cards?: string[];      // ["A♥","8♣","10♠","XX"]
   netStackChange?: number;
 };
 

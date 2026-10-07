@@ -1,18 +1,11 @@
 /** Static UI/ONNX smoke test. Start Chrome with remote debugging and the UI separately. */
 import assert from "node:assert/strict";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const cdpOrigin = process.env.POKER_CDP_ORIGIN ?? "http://127.0.0.1:9223";
 const uiOrigin = process.env.POKER_UI_ORIGIN ?? "http://127.0.0.1:3000";
 const screenshotDirectory = process.env.POKER_SCREENSHOT_DIR;
-const modelPath = process.env.POKER_ONNX_MODEL;
-const manifestPath = process.env.POKER_ONNX_MANIFEST;
-if (!modelPath || !manifestPath) {
-  throw new Error("Set POKER_ONNX_MODEL and POKER_ONNX_MANIFEST to the exported ONNX model and JSON manifest paths");
-}
-const files = [resolve(modelPath), resolve(manifestPath)];
-for (const path of files) await access(path);
 if (screenshotDirectory) await mkdir(resolve(screenshotDirectory), { recursive: true });
 
 async function cdpEndpoint(path, method = "GET") {
@@ -113,12 +106,9 @@ try {
   await wait("!!document.querySelector('[aria-label=\"Poker actions\"] button:not(:disabled)')");
   await screenshot("ready");
 
-  const document = await call("DOM.getDocument");
-  const { nodeId } = await call("DOM.querySelector", { nodeId: document.root.nodeId, selector: "input[type=file]" });
-  assert.ok(nodeId, "Policy file input must exist");
-  await call("DOM.setFileInputFiles", { nodeId, files });
-  await wait("document.body.innerText.includes('Experimental policy') || !!document.querySelector('[role=alert]')");
-  assert.equal(await evaluate("document.querySelector('[role=alert]')?.textContent??null"), null);
+  await wait("document.querySelector('[aria-label=\"Poker actions\"]').innerText.includes('%') || !!document.querySelector('[role=alert]')");
+  assert.equal(await evaluate("document.querySelector('[role=alert]')?.textContent ?? null"), null, "Automatic policy loading must succeed");
+  assert.equal(await evaluate("!!document.querySelector('input[type=file]')"), false);
   assert.ok(await evaluate("document.querySelector('[aria-label=\"Poker actions\"]').innerText.includes('%')"), "Loaded policy must display action probabilities");
   await screenshot("onnx-policy");
 

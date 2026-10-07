@@ -175,8 +175,6 @@ class PreparedMigration:
 def prepare_migration(action: str, tracks: tuple[str, ...]) -> PreparedMigration:
     if action not in ("activate", "export", "both") or not tracks or len(set(tracks)) != len(tracks) or set(tracks) - set(TRACKS):
         raise ValueError(f"Invalid migration request: action={action}, tracks={tracks}")
-    if action in ("export", "both") and set(tracks) != set(TRACKS):
-        raise ValueError("UI export requires both 3max and HU candidate checkpoints")
     catalog, previous = catalog_snapshot()
     prepared = PreparedMigration(action, tracks, [], catalog, previous, [])
     snapshots: dict[str, Path] = {}
