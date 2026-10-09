@@ -14,6 +14,7 @@ export type RangeDisplay = {
   composition: Record<number,Record<string,number>>;
   reactions: Record<number,Record<string,ReactionMix>>;
   actor: number | null;
+  equities?: Record<number, import("./range-equity").RangeEquity>;
 };
 
 function category(cards:number[]): number {

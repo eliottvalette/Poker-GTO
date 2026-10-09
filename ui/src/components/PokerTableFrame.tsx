@@ -12,6 +12,7 @@ type Seat = {
   smallBlind?: boolean;
   bigBlind?: boolean;
   active?: boolean;
+  folded?: boolean;
   cards?: string[];      // ["A♥","8♣","10♠","XX"]
   netStackChange?: number;
   inspection?: React.ReactNode;
@@ -69,7 +70,7 @@ export default function PokerTableFrame({
         <InspectableSeat seat={opponent} />
         <StreetBet seat={opponent} className={styles.opponentBet} />
         {opponent.cards?.length ? <div className="mt-2 flex gap-1">
-          {opponent.cards.map((t,i) => <PlayingCard key={i} text={t} active={opponent.active} phase={phase} />)}
+          {opponent.cards.map((t,i) => <PlayingCard key={i} text={t} active={opponent.active} folded={opponent.folded} phase={phase} />)}
         </div> : null}
       </div> : <>
       <div className={`${styles.leftSeat} absolute left-[8%] top-[12%] flex flex-col items-center`}>
@@ -77,7 +78,7 @@ export default function PokerTableFrame({
         <StreetBet seat={left} className={styles.leftBet} />
         {left.cards?.length ? (
           <div className="mt-2 flex gap-1">
-            {left.cards.map((t, i) => <PlayingCard key={i} text={t} active={left.active} phase={phase} />)}
+            {left.cards.map((t, i) => <PlayingCard key={i} text={t} active={left.active} folded={left.folded} phase={phase} />)}
           </div>
         ) : null}
       </div>
@@ -87,7 +88,7 @@ export default function PokerTableFrame({
         <StreetBet seat={right} className={styles.rightBet} />
         {right.cards?.length ? (
           <div className="mt-2 flex gap-1">
-            {right.cards.map((t, i) => <PlayingCard key={i} text={t} active={right.active} phase={phase} />)}
+            {right.cards.map((t, i) => <PlayingCard key={i} text={t} active={right.active} folded={right.folded} phase={phase} />)}
           </div>
         ) : null}
       </div>
@@ -99,7 +100,7 @@ export default function PokerTableFrame({
         <StreetBet seat={hero} className={styles.heroBet} />
         {hero.cards?.length ? (
           <div className="mt-2 flex gap-2">
-            {hero.cards.map((t, i) => <PlayingCard key={i} text={t} active={hero.active} phase={phase} />)}
+            {hero.cards.map((t, i) => <PlayingCard key={i} text={t} active={hero.active} folded={hero.folded} phase={phase} />)}
           </div>
         ) : null}
       </div>
@@ -112,6 +113,17 @@ function InspectableSeat({seat}:{seat:Seat}) {
 }
 
 function StreetBet({ seat, className }: { seat: Seat; className: string }) {
+  if (seat.netStackChange !== undefined) {
+    const net = seat.netStackChange;
+    if (!Number.isFinite(net)) throw new Error(`Invalid settled result for player ${seat.id}: ${net}`);
+    const amount = `${net > 0 ? "+" : net < 0 ? "−" : ""}${Math.abs(net).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+    const tone = net > 0 ? styles.resultWin : net < 0 ? styles.resultLoss : styles.resultEven;
+    return <div className={`${styles.streetBet} ${className} ${tone}`} role="status"
+      aria-label={`Player ${seat.id} hand result ${amount} BB`} data-player-result={seat.id}>
+      <span className={styles.chip} aria-hidden="true" />
+      <span>{amount} BB</span>
+    </div>;
+  }
   if (seat.streetBet === null || seat.streetBet === 0) return null;
   if (!Number.isFinite(seat.streetBet) || seat.streetBet < 0) {
     throw new Error(`Invalid current-street bet for player ${seat.id}: ${seat.streetBet}`);
@@ -129,7 +141,6 @@ function StreetBet({ seat, className }: { seat: Seat; className: string }) {
 function SeatChip({
   label,
   stack,
-  netStackChange,
   active = true,
 }: {
   label: string;
@@ -137,17 +148,10 @@ function SeatChip({
   netStackChange?: number;
   active?: boolean;
 }) {
-  const getBackgroundColor = () => {
-    if (netStackChange === undefined || netStackChange === 0) {
-      return "bg-card/80";
-    }
-    return netStackChange > 0 ? "bg-emerald-500/65" : "bg-rose-500/65";
-  };
-
   return (
     <div>
       <div
-        className={`${styles.seatChip} rounded-2xl px-3 py-1.5 shadow-lg backdrop-blur border border-border w-40 h-10 flex items-center ${getBackgroundColor()}`}
+        className={`${styles.seatChip} rounded-2xl px-3 py-1.5 shadow-lg backdrop-blur border border-border w-40 h-10 flex items-center bg-card/80`}
       >
         <div className="flex items-center justify-between w-full">
           <div
@@ -171,13 +175,12 @@ function SeatChip({
 
 
 /* Casino card styling */
-function PlayingCard({ text, active, phase }: { text: string, active?: boolean, phase?: string }) {
-  if (active === false && phase !== "SHOWDOWN") {
-    return 
-  }
-  if (text === "XX") {
+function PlayingCard({ text, active, folded = false, phase }: { text: string, active?: boolean, folded?: boolean, phase?: string }) {
+  const faceDown = folded || (active === false && phase !== "SHOWDOWN");
+  if (text === "XX" || faceDown) {
     return (
-      <div className={`${styles.playingCard} w-16 h-23 rounded-sm border border-neutral-700 shadow-lg bg-neutral-950 grid place-items-center`}>
+      <div aria-label={faceDown ? "Folded card, face down" : "Face-down card"}
+        className={`${styles.playingCard} w-16 h-23 rounded-sm border border-neutral-700 shadow-lg bg-neutral-950 grid place-items-center ${faceDown ? "opacity-40 grayscale" : ""}`}>
         <div className="w-[80%] h-[80%] rounded-sm border border-border bg-neutral-800 grid place-items-center">
           <div className="w-[85%] h-[85%] rounded-sm border border-border bg-neutral-950 grid place-items-center">
             <span className="text-neutral-300">♠</span>

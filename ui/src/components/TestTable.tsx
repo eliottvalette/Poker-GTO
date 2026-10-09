@@ -1,5 +1,6 @@
 "use client";
-import { ChevronDown } from "lucide-react";
+import { NativeSelect } from "./ui/native-select";
+import TableFormat from "./TableFormat";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -168,24 +169,17 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
       <label className="flex items-center gap-2 text-sm">Opponents
-        <span className="relative inline-flex items-center">
-        <select aria-label="Opponent strategy" disabled={busy} value={opponentProfile} className="appearance-none rounded border bg-card py-2 pl-3 pr-9"
+        <NativeSelect aria-label="Opponent strategy" disabled={busy} value={opponentProfile}
           onChange={event=>void newTournament(heroSeat,event.target.value,playerCount)}>
           <option value="conservative">Computed conservative</option>
           {Object.keys(PROFILES).filter(p=>p!=="conservative").map(p=><option key={p} value={p}>{p.replaceAll("_"," ")}</option>)}
           <option value="published" disabled={!policies[2]||(playerCount===3&&!policies[3])}>Trained policy{!policies[2]||(playerCount===3&&!policies[3])?" — export HU + 3-max first":""}</option>
           <option value="uniform">Random baseline</option>
-        </select>
-        <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 h-4 w-4 text-muted-foreground" />
-        </span>
+        </NativeSelect>
       </label>
-      <span className="relative inline-flex shrink-0 items-center">
-        <select aria-label="Table format" disabled={busy} value={playerCount} className="appearance-none rounded border bg-card py-2 pl-3 pr-9 text-sm"
-          onChange={event => { const count = Number(event.target.value) as 2 | 3; void newTournament(count === 2 && heroSeat === 1 ? 2 : heroSeat, opponentProfile, count); }}>
-          <option value={3}>3-Max</option><option value={2}>HU</option>
-        </select>
-        <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 h-4 w-4 text-muted-foreground" />
-      </span>
+      <TableFormat value={playerCount} disabled={busy} onChange={count => {
+        if (playerCount !== count) void newTournament(count === 2 && heroSeat === 1 ? 2 : heroSeat, opponentProfile, count);
+      }} />
       </div>
       <Card>
         <PokerTableFrame
@@ -197,13 +191,14 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
               inspection: id !== heroSeat && table.current?.tournament.hand?.players[id] ? <RangeInspection seat={id} hand={table.current.tournament.hand} snapshot={
                 !busy && rangeSnapshot?.sessionId === analysisSession && rangeSnapshot.stateKey === rangeStateKey(table.current.tournament.hand,heroSeat) ? rangeSnapshot : null
               }/> : undefined,
-              label: player ? player.active ? player.position ?? `P${id}` : "OUT" : `P${id}`,
+              label: player ? player.position ?? (player.active ? `P${id}` : "OUT") : `P${id}`,
               stack: player ? `${player.stack_bb.toFixed(1)} BB` : "N/A BB",
               streetBet: player && !game?.hand_terminal ? player.bet_bb : null,
               smallBlind: player?.position === "SB",
               bigBlind: player?.position === "BB",
               active: player ? player.active && !player.folded : true,
-              cards: player ? player.cards.length ? player.cards.map(cardLabel) : player.active ? ["XX", "XX"] : [] : ["XX", "XX"],
+              folded: player?.folded,
+              cards: player ? player.cards.length ? player.cards.map(cardLabel) : player.active || player.position !== null ? ["XX", "XX"] : [] : ["XX", "XX"],
               netStackChange: game?.hand_terminal ? game.hand_results_bb[id] : undefined,
             };
           })}

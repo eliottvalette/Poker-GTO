@@ -1,4 +1,5 @@
 "use client";
+import { NativeSelect } from "./ui/native-select";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "./ui/button";
 import { PROFILES } from "@/lib/poker/behavior";
@@ -98,22 +99,22 @@ export default function HybridAnalysis({ hand, hero, baseline, sessionId, recons
   if (rangesOnly) return null;
   return <section className="space-y-3 border-t pt-4" aria-label="Hybrid analysis">
     <h3 className="font-semibold">Analysis</h3>
-    <label>Calculation <select value={budget} onChange={event => setBudget(event.target.value)} className="rounded border p-2">
+    <label>Calculation <NativeSelect value={budget} onChange={event => setBudget(event.target.value)}>
       {Object.keys(HYBRID_BUDGETS).map(name => <option key={name} value={name}>{{FAST:"Quick",NORMAL:"Standard",DEEP:"Detailed"}[name]}</option>)}
-    </select></label>
+    </NativeSelect></label>
     <p data-testid="belief-session" data-actions={trace.current.length} data-status={posterior ? "current" : "unavailable"} className="text-xs text-muted-foreground">{posterior ? "Ranges ready" : "Ranges updating"}</p>
     <details className="rounded border p-3"><summary className="cursor-pointer text-sm text-muted-foreground">Advanced settings</summary>
       <div className="mt-3 space-y-3">
-    <label>Strategy <select aria-label="Decision mode" value={mode} onChange={event => { setMode(event.target.value); setResult(null); }}>
-      <option value="reference">Reference</option><option value="exploitative">Adapt to profiles</option></select></label>
+    <label>Strategy <NativeSelect aria-label="Decision mode" value={mode} onChange={event => { setMode(event.target.value); setResult(null); }}>
+      <option value="reference">Reference</option><option value="exploitative">Adapt to profiles</option></NativeSelect></label>
     <div className="flex flex-wrap gap-3">{Object.keys(hand.players).map(seat => <label key={seat}>P{seat} profile
-      <select aria-label={`P${seat} behavior profile`} disabled={!!opponentProfile && Number(seat)!==observerSeat} value={selectedProfiles[Number(seat)]} onChange={event => setProfiles({ ...profiles, [seat]: event.target.value })}>
-        {[...Object.keys(PROFILES), "uniform", ...(opponentProfile === "published" ? ["published"] : [])].map(name => <option key={name}>{name}</option>)}</select></label>)}</div>
+      <NativeSelect aria-label={`P${seat} behavior profile`} disabled={!!opponentProfile && Number(seat)!==observerSeat} value={selectedProfiles[Number(seat)]} onChange={event => setProfiles({ ...profiles, [seat]: event.target.value })}>
+        {[...Object.keys(PROFILES), "uniform", ...(opponentProfile === "published" ? ["published"] : [])].map(name => <option key={name}>{name}</option>)}</NativeSelect></label>)}</div>
     <label className="block text-sm"><input type="checkbox" checked={interpolate} onChange={event => setInterpolate(event.target.checked)} /> Estimate reactions to custom bet sizes</label>
     {posterior && <details><summary>Range data</summary>{Object.entries(posterior).map(([seat, rows]) => <details key={seat}><summary>P{seat}: {rows.length} exact combinations</summary><details><summary>169 hand classes</summary><pre className="max-h-48 overflow-auto text-xs">{JSON.stringify(handClassMasses(rows), null, 2)}</pre></details><pre className="max-h-48 overflow-auto text-xs">{JSON.stringify(rows, null, 2)}</pre></details>)}</details>}
-    <label className="ml-3">Search <select value={searchMode} onChange={event => setSearchMode(event.target.value as "behavior" | "public_cfr")} className="rounded border p-2">
+    <label className="ml-3">Search <NativeSelect value={searchMode} onChange={event => setSearchMode(event.target.value as "behavior" | "public_cfr")}>
       <option value="behavior">Simulated responses</option><option value="public_cfr">CFR (small ranges)</option>
-    </select></label>
+    </NativeSelect></label>
     <p className="text-xs">Up to {HYBRID_BUDGETS[budget].maxNodes.toLocaleString()} nodes · {HYBRID_BUDGETS[budget].iterations} CFR iterations · {HYBRID_BUDGETS[budget].samples} simulations · depth {HYBRID_BUDGETS[budget].maxDepth}</p>
     <details><summary>Custom starting ranges</summary>
       <p className="text-sm">Leave empty for uniform ranges excluding the board. These are priors at the start of this session; observed actions and revealed boards update them automatically. Include Hero’s public range as well as each opponent. Cards use IDs 0–51; the same card cannot appear twice in a dealt world.</p>

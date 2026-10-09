@@ -1,3 +1,4 @@
+import { rangeEquities } from "./range-equity";
 import { rangeDisplay } from "./range-display";
 import { analyzeHybrid, restoreHand, type HandTransport, type HybridBudget, type Ranges } from "./hybrid";
 import { updateRanges, observerMarginals, type BeliefTransition } from "./beliefs";
@@ -46,6 +47,7 @@ self.onmessage = async (event: MessageEvent<{ requestId?: number; state: HandTra
     const reactionPredictions=marginals && !stateForDisplay.terminal && stateForDisplay.current_player!==data.observerSeat
       && likelihoodProfiles[stateForDisplay.current_player!]==="published" ? await predictionsFor(stateForDisplay,marginals[stateForDisplay.current_player!]) : undefined;
     const display = marginals && data.observerSeat !== undefined ? rangeDisplay(restoreHand(data.state), marginals, data.observerSeat, likelihoodProfiles, reactionPredictions) : undefined;
+    if (display && data.observerSeat !== undefined) display.equities = rangeEquities(stateForDisplay, ranges, data.observerSeat);
     if (data.updateOnly || data.state.terminal) self.postMessage({ requestId: data.requestId, ranges, marginals, display, workerMilliseconds: performance.now()-started });
     else {
       if(Object.values(profiles).includes("published")) throw new Error("Published policies support opponent play and range tracking; choose Reference analysis for continuation search.");
