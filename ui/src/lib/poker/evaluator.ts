@@ -40,3 +40,31 @@ export function rank7(cards: readonly number[]): number {
       for (let e = d + 1; e < 7; e++) best = Math.max(best, rank5([cards[a], cards[b], cards[c], cards[d], cards[e]]));
   return best;
 }
+
+export type BestFive = { cards: number[]; score: number; category: number; ranks: number[] };
+
+/** Input order breaks equivalent-subset ties; put board cards first to prefer playing the board. */
+export function bestFive(cards: readonly number[]): BestFive {
+  validate(cards,7);
+  let best: number[] = [], value = -Infinity;
+  for(let a=0;a<3;a++) for(let b=a+1;b<4;b++) for(let c=b+1;c<5;c++)
+    for(let d=c+1;d<6;d++) for(let e=d+1;e<7;e++) {
+      const subset=[cards[a],cards[b],cards[c],cards[d],cards[e]], rank=rank5(subset);
+      if(rank>value) {best=subset;value=rank;}
+    }
+  return {cards:best,score:value,category:Math.floor(value/15**5),
+    ranks:Array.from({length:5},(_,i)=>Math.floor(value/15**(4-i))%15)};
+}
+
+/** Made-hand ranks plus the first rank that beats the strongest lower same-category hand. */
+export function decisiveCards(best: BestFive, opponents: BestFive[]): number[] {
+  if([4,5,6,8].includes(best.category)) return best.cards;
+  const structural = best.category===2 ? best.ranks.slice(0,2) : [best.ranks[0]];
+  const rival=opponents.filter(other=>other.category===best.category && other.score<best.score)
+    .sort((a,b)=>b.score-a.score)[0];
+  if(rival) {
+    const index=best.ranks.findIndex((rank,i)=>rank!==rival.ranks[i]);
+    if(index>=0) structural.push(best.ranks[index]);
+  }
+  return best.cards.filter(card=>structural.includes(Math.floor(card/4)+2));
+}

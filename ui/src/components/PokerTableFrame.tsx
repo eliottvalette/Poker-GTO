@@ -1,6 +1,6 @@
 // ui/src/components/PokerTableFrame.tsx
 "use client";
-import React from "react";
+import React, { useState } from "react";
 import SeatInspection from "./SeatInspection";
 import styles from "./PokerTableFrame.module.css";
 
@@ -14,6 +14,8 @@ type Seat = {
   active?: boolean;
   folded?: boolean;
   cards?: string[];      // ["A♥","8♣","10♠","XX"]
+  revealedCards?: string[];
+  showdown?: { best: string[]; decisive: string[]; name: string; score: number };
   netStackChange?: number;
   inspection?: React.ReactNode;
 };
@@ -32,6 +34,13 @@ export default function PokerTableFrame({
   className?: string;
   phase?: string;
 }) {
+  const [focusedWinner, setFocusedWinner] = useState<number | null>(null);
+  const winners = seats.filter(s=>s.showdown && !s.folded && s.cards?.every(c=>c!=="XX"));
+  const winner = winners.find(s=>s.id===focusedWinner) ?? [...winners].sort((a,b)=>b.showdown!.score-a.showdown!.score)[0];
+  const mark = (text:string, seat=winner): "decisive" | "best" | "unused" | undefined => {
+    if(phase!=="SHOWDOWN" || !seat?.showdown) return undefined;
+    return seat.showdown.decisive.includes(text) ? "decisive" : seat.showdown.best.includes(text) ? "best" : "unused";
+  };
   const headsUp = seats.length === 2;
   const opponent = headsUp ? seats.find(s => s.id !== heroSeat)! : null;
   const order = [heroSeat, (heroSeat + 1) % 3, (heroSeat + 2) % 3];
@@ -56,12 +65,13 @@ export default function PokerTableFrame({
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[36%] text-center">
         <div className="text-muted-foreground/80 text-xs">Pot</div>
         <div className="mt-0.5 text-foreground text-lg font-semibold drop-shadow">{potLabel}</div>
+        {phase === "SHOWDOWN" && winner && <div className="mt-1 text-xs text-amber-300">P{winner.id} · {winner.showdown!.name}</div>}
       </div>
 
       {/* Board */}
       <div aria-label="Board" className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[125%] flex gap-1">
         {board
-          ? board.split(" ").map((t, i) => <PlayingCard key={i} text={t} />)
+          ? board.split(" ").map((t, i) => <PlayingCard key={i} text={t} highlight={mark(t)} />)
           : null}
       </div>
 
@@ -69,28 +79,18 @@ export default function PokerTableFrame({
       {headsUp && opponent ? <div className="absolute left-1/2 top-8 -translate-x-1/2 flex flex-col items-center">
         <InspectableSeat seat={opponent} />
         <StreetBet seat={opponent} className={styles.opponentBet} />
-        {opponent.cards?.length ? <div className="mt-2 flex gap-1">
-          {opponent.cards.map((t,i) => <PlayingCard key={i} text={t} active={opponent.active} folded={opponent.folded} phase={phase} />)}
-        </div> : null}
+        <HoleCards seat={opponent} phase={phase} onInspect={() => setFocusedWinner(opponent.showdown ? opponent.id : null)} />
       </div> : <>
       <div className={`${styles.leftSeat} absolute left-[8%] top-[12%] flex flex-col items-center`}>
         <InspectableSeat seat={left} />
         <StreetBet seat={left} className={styles.leftBet} />
-        {left.cards?.length ? (
-          <div className="mt-2 flex gap-1">
-            {left.cards.map((t, i) => <PlayingCard key={i} text={t} active={left.active} folded={left.folded} phase={phase} />)}
-          </div>
-        ) : null}
+        <HoleCards seat={left} phase={phase} onInspect={() => setFocusedWinner(left.showdown ? left.id : null)} />
       </div>
 
       <div className={`${styles.rightSeat} absolute right-[8%] top-[12%] flex flex-col items-center`}>
         <InspectableSeat seat={right} />
         <StreetBet seat={right} className={styles.rightBet} />
-        {right.cards?.length ? (
-          <div className="mt-2 flex gap-1">
-            {right.cards.map((t, i) => <PlayingCard key={i} text={t} active={right.active} folded={right.folded} phase={phase} />)}
-          </div>
-        ) : null}
+        <HoleCards seat={right} phase={phase} onInspect={() => setFocusedWinner(right.showdown ? right.id : null)} />
       </div>
 
       </>}
@@ -98,14 +98,27 @@ export default function PokerTableFrame({
       <div className="absolute left-1/2 -translate-x-1/2 bottom-[14%] flex flex-col items-center">
         <SeatChip {...hero} />
         <StreetBet seat={hero} className={styles.heroBet} />
-        {hero.cards?.length ? (
-          <div className="mt-2 flex gap-2">
-            {hero.cards.map((t, i) => <PlayingCard key={i} text={t} active={hero.active} folded={hero.folded} phase={phase} />)}
-          </div>
-        ) : null}
+        <HoleCards seat={hero} isHero phase={phase} onInspect={() => setFocusedWinner(hero.showdown ? hero.id : null)} />
       </div>
     </div>
   );
+}
+
+function HoleCards({ seat, phase, onInspect, isHero = false }: { seat: Seat; phase?: string; onInspect: () => void; isHero?: boolean }) {
+  const [hovered, setHovered] = useState(false);
+  const canReveal = phase === "SHOWDOWN" && !!seat.revealedCards?.length;
+  const revealing = canReveal && hovered;
+  const cards = revealing ? seat.revealedCards : seat.cards;
+  if (!cards?.length) return null;
+  return <div className="mt-2 flex gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-primary"
+    tabIndex={canReveal ? 0 : undefined} aria-label={`Player ${seat.id} hole cards`}
+    onMouseEnter={() => {setHovered(true); onInspect();}} onMouseLeave={() => setHovered(false)}
+    onFocus={() => {setHovered(true); onInspect();}} onBlur={() => setHovered(false)}>
+    {cards.map((text, i) => <PlayingCard key={i} text={text} active={seat.active}
+      folded={revealing ? false : seat.folded} keepFaceUp={isHero} phase={phase}
+      highlight={phase === "SHOWDOWN" && seat.showdown && !seat.folded
+        ? seat.showdown.decisive.includes(text) ? "decisive" : seat.showdown.best.includes(text) ? "best" : "unused" : undefined} />)}
+  </div>;
 }
 
 function InspectableSeat({seat}:{seat:Seat}) {
@@ -175,8 +188,8 @@ function SeatChip({
 
 
 /* Casino card styling */
-function PlayingCard({ text, active, folded = false, phase }: { text: string, active?: boolean, folded?: boolean, phase?: string }) {
-  const faceDown = folded || (active === false && phase !== "SHOWDOWN");
+function PlayingCard({ text, active, folded = false, keepFaceUp = false, phase, highlight }: { text: string, active?: boolean, folded?: boolean, keepFaceUp?: boolean, phase?: string; highlight?: "decisive" | "best" | "unused" }) {
+  const faceDown = !keepFaceUp && (folded || (active === false && phase !== "SHOWDOWN"));
   if (text === "XX" || faceDown) {
     return (
       <div aria-label={faceDown ? "Folded card, face down" : "Face-down card"}
@@ -194,7 +207,7 @@ function PlayingCard({ text, active, folded = false, phase }: { text: string, ac
   const s = text.slice(-1);
   const isRed = s === "♥" || s === "♦";
   return (
-    <div className={`${styles.playingCard} relative w-16 h-23 rounded-sm border shadow-lg bg-[var(--card-bg)] border-[var(--card-border)]`}>
+    <div data-showdown-card={highlight} className={`${styles.playingCard} ${highlight ? styles[highlight] : ""} ${folded ? "opacity-40 grayscale" : ""} relative w-16 h-23 rounded-sm border shadow-lg bg-[var(--card-bg)] border-[var(--card-border)]`}>
       <div
         className={
           `${styles.cardCorner} absolute top-0.5 left-1 text-md font-bold ` +

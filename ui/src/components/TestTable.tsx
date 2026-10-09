@@ -13,6 +13,7 @@ import PokerTableFrame from "@/components/PokerTableFrame";
 import { actionColor } from "@/lib/poker/presentation";
 import styles from "./TestTable.module.css";
 import HybridAnalysis from "./HybridAnalysis";
+import { showdownHighlights } from "@/lib/poker/showdown-display";
 import RangeInspection from "./RangeInspection";
 import { rangeStateKey, type RangeSnapshot } from "@/lib/poker/beliefs";
 
@@ -153,6 +154,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
     return () => { cancelled = true; };
   }, [policies]);
 
+  const showdown = table.current?.tournament.hand ? showdownHighlights(table.current.tournament.hand) : {};
   const sessionPnL = (game?.hero_result_bb ?? 0) - pnlBaseline;
   const actionHistory = game?.history ?? [];
   const policy = game?.policy;
@@ -199,6 +201,9 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
               active: player ? player.active && !player.folded : true,
               folded: player?.folded,
               cards: player ? player.cards.length ? player.cards.map(cardLabel) : player.active || player.position !== null ? ["XX", "XX"] : [] : ["XX", "XX"],
+              revealedCards: game?.hand_terminal && id !== heroSeat
+                ? table.current?.tournament.hand?.players[id]?.cards.map(cardLabel) : undefined,
+              showdown: showdown[id] ? { ...showdown[id], best: showdown[id].best.map(cardLabel), decisive: showdown[id].decisive.map(cardLabel) } : undefined,
               netStackChange: game?.hand_terminal ? game.hand_results_bb[id] : undefined,
             };
           })}

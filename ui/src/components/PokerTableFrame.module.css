@@ -76,3 +76,21 @@
   background: var(--result-chip-fill);
   box-shadow: inset 0 0 0 2px var(--result-chip-shadow), 0 2px 0 var(--result-chip-shadow);
 }
+
+.decisive { box-shadow: 0 0 14px rgb(251 191 36 / 38%), 0 0 5px rgb(251 191 36 / 25%); }
+.best { box-shadow: 0 0 12px rgb(96 165 250 / 30%), 0 0 4px rgb(96 165 250 / 20%); }
+.decisive::after,
+.best::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.decisive::after {
+  background: linear-gradient(135deg, rgb(251 191 36 / 40%), rgb(255 241 181 / 24%) 30%, rgb(251 191 36 / 8%) 58%, rgb(251 191 36 / 22%));
+}
+.best::after {
+  background: linear-gradient(135deg, rgb(96 165 250 / 34%), rgb(191 219 254 / 20%) 30%, rgb(96 165 250 / 6%) 58%, rgb(96 165 250 / 18%));
+}
+.unused { filter: grayscale(1); opacity: .4; }
