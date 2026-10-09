@@ -29,6 +29,7 @@
 }
 .leftBet { left: calc(100% + 24px); top: 72px; transform: none; }
 .rightBet { left: auto; right: calc(100% + 24px); top: 72px; transform: none; }
+.opponentBet { left: calc(100% + 12px); top: 12px; transform: none; }
 .heroBet { bottom: calc(100% + 8px); }
 @media (max-width: 1100px) {
   .table { min-height: 680px; }

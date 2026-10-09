@@ -1,5 +1,6 @@
 """Review and publish trained checkpoint policies through a plain ASCII menu."""
 import sys
+import time
 from training.workflow import candidate_checkpoint, prepare_migration
 
 
@@ -27,7 +28,7 @@ def main() -> None:
         if selected not in options:
             raise ValueError(f"Invalid track selection: {selected!r}")
         tracks = options[selected]
-    prepared = prepare_migration(actions[choice], tracks)
+    prepared = prepare_migration(actions[choice], tracks, progress=lambda message: print(message, flush=True))
     try:
         print("\nPrepared and validated:")
         for row in prepared.summary:
@@ -35,11 +36,10 @@ def main() -> None:
             print(f"    checkpoint SHA256: {row['checkpoint_sha256']}")
         print(f"  Action: {prepared.action}")
         print("  Publication switches the active catalog atomically.")
-        if input("Type APPLY to publish, anything else to cancel: ").strip() != "APPLY":
-            print("Cancelled.")
-            return
+        print("Validating and publishing bundles...", flush=True)
+        started = time.perf_counter()
         prepared.publish()
-        print("Publication complete.")
+        print(f"Publication complete in {time.perf_counter() - started:.2f}s.", flush=True)
     finally:
         prepared.close()
 

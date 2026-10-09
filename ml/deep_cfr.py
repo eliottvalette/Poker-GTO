@@ -408,22 +408,33 @@ class DeepCFRSolver:
     def export_average(self, path: str | Path) -> None:
         if self.average_model is None:
             raise ValueError("Average-policy network is unavailable before successful training")
-        torch.save({"version": 5, "feature_schema_version": FEATURE_SCHEMA_VERSION, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
+        torch.save(average_policy_payload(
+            weights=self.average_model.state_dict(), iteration=self.version,
+            objective=self.objective, player_count=len(self.players),
+            traversal_mode=self.traversal_mode, metrics=self.metrics,
+            supported_player_counts=sorted({round(s.state.numeric[NUMERIC_NAMES.index("player_count")] * 3)
+                                            for s in self.strategy_memory.samples})), path)
+
+
+def average_policy_payload(*, weights: dict, iteration: int, objective: str,
+                           player_count: int, traversal_mode: str, metrics: list,
+                           supported_player_counts: list[int]) -> dict:
+    """Shared inference artifact contract for live solvers and checkpoint extraction."""
+    return {"version": 5, "feature_schema_version": FEATURE_SCHEMA_VERSION, "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
                     "actions": list(ACTION_IDS), "numeric_names": list(NUMERIC_NAMES),
-                    "objective": self.objective, "iteration": self.version,
+                    "objective": objective, "iteration": iteration,
                     "training_metadata": {"advantage_layout": "shared_per_player_count",
-                                          "average_model_iteration": self.metrics[-1].get('average_model_iteration', self.version),
-                                          "strategy_collector": strategy_collector(len(self.players), self.traversal_mode),
+                                          "average_model_iteration": metrics[-1].get('average_model_iteration', iteration),
+                                          "strategy_collector": strategy_collector(player_count, traversal_mode),
                                           "seat_normalization": "hero_then_clockwise_positions",
-                                          "traversal_mode": self.traversal_mode,
+                                          "traversal_mode": traversal_mode,
                                           "utility_units": "initial_big_blind_chips",
                                           "history_scope": "current_hand", "payout_scope": "winner_take_all",
-                                          "epsilon_by_iteration": [metric["epsilon"] for metric in self.metrics],
+                                          "epsilon_by_iteration": [metric["epsilon"] for metric in metrics],
                                           "regret_iteration_weighting": "linear",
                                           "average_policy_iteration_weighting": "linear"},
-                    "supported_player_counts": sorted({round(s.state.numeric[NUMERIC_NAMES.index("player_count")] * 3)
-                                                        for s in self.strategy_memory.samples}),
-                    "weights": self.average_model.state_dict(), "metrics": self.metrics}, path)
+                    "supported_player_counts": supported_player_counts,
+                    "weights": weights}
 
 
 class NeuralAveragePolicy:

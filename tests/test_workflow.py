@@ -36,6 +36,43 @@ class WorkflowTests(unittest.TestCase):
     def train(self, track):
         return workflow.train_track(track, .001)
 
+    def test_migration_extracts_identical_policy_without_restoring_runner(self):
+        from ml.deep_cfr import NeuralAveragePolicy
+        from infoset import observe
+        from training.evaluation import fixed_roots
+        from training.checkpoint import read_checkpoint, write_checkpoint
+        for track in ('hu', '3max'):
+            self.train(track)
+            source = workflow.candidate_checkpoint(track)
+            runner = TrainingRunner.load_checkpoint(source)
+            expected = self.root / f'expected_{track}.pt'
+            runner.solvers[track].export_average(expected)
+            messages = []
+            with patch.object(TrainingRunner, 'load_checkpoint', side_effect=AssertionError('Replay restore forbidden')):
+                prepared = workflow.prepare_migration('export', (track,), progress=messages.append)
+            self.addCleanup(prepared.close)
+            actual = prepared.bundles[0][0] / f'average_{track}.pt'
+            left = torch.load(expected, weights_only=True)
+            right = torch.load(actual, weights_only=True)
+            self.assertNotIn('metrics', right)
+            self.assertEqual(right['training_metadata']['average_model_iteration'],
+                             runner.solvers[track].metrics[-1]['average_model_iteration'])
+            for key in left:
+                if key == 'weights':
+                    self.assertEqual(set(left[key]), set(right[key]))
+                    for name in left[key]:
+                        self.assertTrue(torch.equal(left[key][name], right[key][name]))
+                else:
+                    self.assertEqual(left[key], right[key])
+            obs = observe(fixed_roots(workflow.TRACKS[track])[0][1])
+            self.assertEqual(NeuralAveragePolicy(expected).query(obs), NeuralAveragePolicy(actual).query(obs))
+            self.assertTrue(messages)
+            raw = read_checkpoint(source)
+            raw['tracks'][track]['version'] += 1
+            write_checkpoint(source, raw)
+            with self.assertRaisesRegex(ValueError, 'Inconsistent policy'):
+                workflow.prepare_migration('activate', (track,))
+
     def test_timed_training_resumes_without_resetting_iteration(self):
         first = self.train('3max')
         self.assertEqual(first['final_iteration'], 1)
@@ -56,6 +93,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertIsNotNone(active)
         self.assertEqual(workflow.read_catalog()['active']['hu']['iteration'], 1)
         self.assertEqual(workflow.read_catalog()['exports'], {})
+        with patch('training.workflow.export_checkpoint_average', side_effect=AssertionError('Already published')):
+            repeated = workflow.prepare_migration('activate', ('hu',))
+            repeated.publish()
         workflow.candidate_checkpoint('hu').unlink()
         continued = workflow.train_track('hu', .001, resume_active=True)
         self.assertEqual(continued['initial_iteration'], 1)

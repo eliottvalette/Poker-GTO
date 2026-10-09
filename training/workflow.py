@@ -9,14 +9,15 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
-from typing import Iterator
+import time
+from typing import Callable, Iterator
 
 from infoset import observe
-from ml.deep_cfr import NeuralAveragePolicy
 from ml.export_onnx import export_average_policy
-from training.checkpoint import atomic_bytes
+from training.checkpoint import atomic_bytes, export_checkpoint_average
 from training.config import load_config
 from training.runner import TrainingRunner
+from training.evaluation import fixed_roots
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 TRACKS = {"3max": 3, "hu": 2}
@@ -181,7 +182,23 @@ class PreparedMigration:
         self.close()
 
 
-def prepare_migration(action: str, tracks: tuple[str, ...]) -> PreparedMigration:
+@contextmanager
+def migration_step(progress: Callable[[str], None] | None, label: str) -> Iterator[None]:
+    started = time.perf_counter()
+    if progress:
+        progress(f"{label}...")
+    try:
+        yield
+    except BaseException:
+        if progress:
+            progress(f"{label}: failed after {time.perf_counter() - started:.2f}s")
+        raise
+    if progress:
+        progress(f"{label}: done in {time.perf_counter() - started:.2f}s")
+
+
+def prepare_migration(action: str, tracks: tuple[str, ...], *,
+                      progress: Callable[[str], None] | None = None) -> PreparedMigration:
     if action not in ("activate", "export", "both") or not tracks or len(set(tracks)) != len(tracks) or set(tracks) - set(TRACKS):
         raise ValueError(f"Invalid migration request: action={action}, tracks={tracks}")
     catalog, previous = catalog_snapshot()
@@ -195,27 +212,35 @@ def prepare_migration(action: str, tracks: tuple[str, ...]) -> PreparedMigration
             parent = POLICY_ROOT / "releases" / track
             parent.mkdir(parents=True, exist_ok=True)
             temporary = Path(tempfile.mkdtemp(prefix=".prepared-", dir=parent))
-            # Pin the checkpoint inode before reading models or computing hashes.
-            shutil.copyfile(source, temporary / "checkpoint.pt")
-            checkpoint_id = digest(temporary / "checkpoint.pt")
+            # Register temporary ownership before any fallible copy or validation.
+            prepared.bundles.append((temporary, parent / "pending"))
+            with migration_step(progress, f"[{track}] Copy and checksum checkpoint ({source.stat().st_size / 1024**2:.1f} MiB)"):
+                shutil.copyfile(source, temporary / "checkpoint.pt")
+                checkpoint_id = digest(temporary / "checkpoint.pt")
             destination = parent / checkpoint_id
-            prepared.bundles.append((temporary, destination))
-            runner = TrainingRunner.load_checkpoint(temporary / "checkpoint.pt", config_for(track), allow_budget_increase=True,
-                                                   allow_execution_changes=True)
-            if set(runner.solvers) != {track} or runner.iteration < 1:
-                raise ValueError(f"No trained dedicated {track} policy in {source}")
+            prepared.bundles[-1] = (temporary, destination)
             average = temporary / f"average_{track}.pt"
-            runner.solvers[track].export_average(average)
-            policy = NeuralAveragePolicy(average)
-            if policy.supported_player_counts != (TRACKS[track],):
-                raise ValueError(f"Policy player-count mismatch: {average}")
-            seal_bundle(temporary, {"kind": "active_policy", "track": track, "iteration": runner.iteration,
-                                    "checkpoint_sha256": checkpoint_id})
+            if destination.exists():
+                with migration_step(progress, f"[{track}] Verify and reuse identical published policy"):
+                    manifest = validate_bundle(destination)
+                    iteration = manifest.get("iteration")
+                    if (manifest.get("kind") != "active_policy" or manifest.get("track") != track
+                            or manifest.get("checkpoint_sha256") != checkpoint_id
+                            or manifest["files"].get("checkpoint.pt") != checkpoint_id
+                            or type(iteration) is not int or iteration < 1):
+                        raise ValueError(f"Published policy/checkpoint mismatch at {destination}")
+                    shutil.copyfile(destination / average.name, average)
+            else:
+                with migration_step(progress, f"[{track}] Read checkpoint and extract average policy"):
+                    iteration = export_checkpoint_average(temporary / "checkpoint.pt", average, track)
+            with migration_step(progress, f"[{track}] Validate policy bundle"):
+                seal_bundle(temporary, {"kind": "active_policy", "track": track, "iteration": iteration,
+                                        "checkpoint_sha256": checkpoint_id})
             snapshots[track] = temporary
-            prepared.summary.append({"track": track, "iteration": runner.iteration, "source": str(source),
+            prepared.summary.append({"track": track, "iteration": iteration, "source": str(source),
                                      "checkpoint_sha256": checkpoint_id, "release": str(destination)})
             if action in ("activate", "both"):
-                catalog["active"][track] = {"release_id": checkpoint_id, "iteration": runner.iteration}
+                catalog["active"][track] = {"release_id": checkpoint_id, "iteration": iteration}
         if action in ("export", "both"):
             sources = {row["track"]: row["checkpoint_sha256"] for row in prepared.summary}
             bundle_id = hashlib.sha256(json.dumps(sources, sort_keys=True).encode()).hexdigest()
@@ -225,12 +250,11 @@ def prepare_migration(action: str, tracks: tuple[str, ...]) -> PreparedMigration
             destination = parent / bundle_id
             prepared.bundles.append((temporary, destination))
             for track, snapshot in snapshots.items():
-                runner = TrainingRunner.load_checkpoint(snapshot / "checkpoint.pt", config_for(track), allow_budget_increase=True,
-                                                       allow_execution_changes=True)
-                export_average_policy(snapshot / f"average_{track}.pt", temporary / f"average_{track}.onnx",
-                                      temporary / f"average_{track}.json", observe(runner.probes[track][0][1]))
+                with migration_step(progress, f"[{track}] Export ONNX and verify CPU parity"):
+                    export_average_policy(snapshot / f"average_{track}.pt", temporary / f"average_{track}.onnx",
+                                          temporary / f"average_{track}.json", observe(fixed_roots(TRACKS[track])[0][1]))
                 catalog["exports"][track] = {"bundle_id": bundle_id, "checkpoint_sha256": sources[track],
-                                             "iteration": runner.iteration}
+                                             "iteration": next(row["iteration"] for row in prepared.summary if row["track"] == track)}
             seal_bundle(temporary, {"kind": "onnx_export", "sources": sources})
         return prepared
     except BaseException:

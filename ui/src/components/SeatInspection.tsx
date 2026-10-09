@@ -29,7 +29,6 @@ export default function SeatInspection({ children, content, seat }: { children: 
       onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget) && event.relatedTarget!==anchor.current) closeSoon();}}
       className="fixed z-50 max-h-[78vh] overflow-auto rounded-lg border border-border bg-card p-3 text-foreground shadow-xl"
       style={{...position,width:"min(480px, calc(100vw - 24px))"}}>
-      <button className="float-right ml-2 text-xs underline" aria-label="Close range inspector" onClick={()=>setPosition(null)}>Close</button>
       {content}
     </div>,document.body)}
   </>;

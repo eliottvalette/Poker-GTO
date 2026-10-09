@@ -68,9 +68,10 @@ export function rangeDisplay(hand:HandState, marginals:Ranges, observer:number, 
   return result;
 }
 
-/** Fixed log-ratio scale: 1/4x orange, 1x neutral, 4x cyan. */
-export function rangeColor(ratio:number):string {
-  const t=Math.min(1,Math.abs(Math.log2(Math.max(ratio,1e-12)))/2);
-  const neutral=[37,50,68], target=ratio<1?[154,65,12]:[14,116,144];
-  return `rgb(${neutral.map((c,i)=>Math.round(c+(target[i]-c)*t)).join(",")})`;
+/** Posterior mass: rounded-zero cells are gray; blue increases toward the displayed maximum. */
+export function rangeColor(probability:number, maximum:number):string {
+  if (Number((probability * 100).toFixed(1)) === 0) return "rgb(39,39,42)";
+  const t=Math.min(1,Math.max(0,probability/maximum));
+  const low=[35,45,62], high=[37,99,235];
+  return `rgb(${low.map((c,i)=>Math.round(c+(high[i]-c)*t)).join(",")})`;
 }

@@ -26,18 +26,21 @@ export class BrowserTable {
     if (!tournament.original_players.includes(hero)) throw new Error(`Hero ${hero} is not seated`);
   }
 
-  private static initialize(seed: number, hero: number, profile: string): BrowserTable {
-    const tournament = new TournamentState({ 0: 25, 1: 25, 2: 25 }, 0, new SeededRNG(seed));
+  private static initialize(seed: number, hero: number, profile: string, playerCount: 2 | 3): BrowserTable {
+    if (playerCount !== 2 && playerCount !== 3) throw new Error(`Unsupported table size: ${playerCount}`);
+    const stacks: Record<number, number> = playerCount === 2 ? { 0: 25, 2: 25 } : { 0: 25, 1: 25, 2: 25 };
+    if (!(hero in stacks)) throw new Error(`Hero ${hero} is not seated in this format`);
+    const tournament = new TournamentState(stacks, 0, new SeededRNG(seed));
     tournament.startHand();
     return new BrowserTable(tournament, hero, new SeededRNG(seed + 1), profile);
   }
 
-  static create(seed: number, hero = 2, profile = "uniform"): BrowserTable {
-    const table = this.initialize(seed, hero, profile); table.advanceBots(); return table;
+  static create(seed: number, hero = 2, profile = "uniform", playerCount: 2 | 3 = 3): BrowserTable {
+    const table = this.initialize(seed, hero, profile, playerCount); table.advanceBots(); return table;
   }
 
-  static async createWithPolicy(seed: number, hero: number, profile: string, policy: OpponentPolicy): Promise<BrowserTable> {
-    const table = this.initialize(seed,hero,profile); await table.advanceWithPolicy(policy); return table;
+  static async createWithPolicy(seed: number, hero: number, profile: string, policy: OpponentPolicy, playerCount: 2 | 3 = 3): Promise<BrowserTable> {
+    const table = this.initialize(seed,hero,profile,playerCount); await table.advanceWithPolicy(policy); return table;
   }
 
   async actWithPolicy(action: string, policy: OpponentPolicy): Promise<void> {

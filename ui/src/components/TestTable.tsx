@@ -1,4 +1,5 @@
 "use client";
+import { ChevronDown } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,9 @@ function actionLabel(action: TableView["legal_actions"][number]): string {
 }
 
 export default function TestTable({ policies }: { policies: Record<number, LoadedAveragePolicy> }) {
-  const [opponentProfile, setOpponentProfile] = useState("conservative");
+  const [opponentProfile, setOpponentProfile] = useState("published");
+  const [playerCount, setPlayerCount] = useState<2 | 3>(3);
+  const seatIds: Seat[] = playerCount === 2 ? [0, 2] : [0, 1, 2];
   const [heroSeat, setHeroSeat] = useState<Seat>(2);
   const [rangeSnapshot, setRangeSnapshot] = useState<RangeSnapshot | null>(null);
   const [analysisSession, setAnalysisSession] = useState(0);
@@ -67,19 +70,24 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
     };
   }
 
-  const newTournament = useCallback(async (hero: Seat, profile = "conservative") => {
+  const newTournament = useCallback(async (hero: Seat, profile = "published", count: 2 | 3 = 3) => {
     if (locked.current) return;
     locked.current = true;
     setBusy(true);
     setError(null);
     try {
-      const candidate = await BrowserTable.createWithPolicy(Date.now(), hero, profile, opponentPolicy(profile));
+      if (profile === "published" && (!models.current[2] || (count === 3 && !models.current[3]))) {
+        throw new Error("Trained policy unavailable: export both HU and 3-max with migrate.py");
+      }
+      const candidate = await BrowserTable.createWithPolicy(Date.now(), hero, profile, opponentPolicy(profile), count);
       const next = await viewWithPolicy(candidate);
       table.current = candidate;
+      started.current = true;
       setGame(next);
       setAnalysisSession(value => value + 1);
       setHeroSeat(hero);
       setOpponentProfile(profile);
+      setPlayerCount(count);
       setPnlBaseline(0);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -91,9 +99,13 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
 
   useEffect(() => {
     if (started.current) return;
-    started.current = true;
+    if (!policies[2] || !policies[3]) {
+      setBusy(false);
+      setError("Trained policy unavailable: export both HU and 3-max with migrate.py");
+      return;
+    }
     void newTournament(2);
-  }, [newTournament]);
+  }, [newTournament, policies]);
 
   async function command(operation: "action" | "next", action?: string) {
     if (!table.current || locked.current) return;
@@ -154,24 +166,35 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
       <label className="flex items-center gap-2 text-sm">Opponents
-        <select aria-label="Opponent strategy" disabled={busy} value={opponentProfile} className="rounded border bg-card p-2"
-          onChange={event=>void newTournament(heroSeat,event.target.value)}>
+        <span className="relative inline-flex items-center">
+        <select aria-label="Opponent strategy" disabled={busy} value={opponentProfile} className="appearance-none rounded border bg-card py-2 pl-3 pr-9"
+          onChange={event=>void newTournament(heroSeat,event.target.value,playerCount)}>
           <option value="conservative">Computed conservative</option>
           {Object.keys(PROFILES).filter(p=>p!=="conservative").map(p=><option key={p} value={p}>{p.replaceAll("_"," ")}</option>)}
-          <option value="published" disabled={!policies[2]||!policies[3]}>Trained policy{!policies[2]||!policies[3]?" — export HU + 3-max first":""}</option>
+          <option value="published" disabled={!policies[2]||(playerCount===3&&!policies[3])}>Trained policy{!policies[2]||(playerCount===3&&!policies[3])?" — export HU + 3-max first":""}</option>
           <option value="uniform">Random baseline</option>
         </select>
-        <span className="text-xs text-muted-foreground">Changing opponents starts a new game.</span>
+        <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 h-4 w-4 text-muted-foreground" />
+        </span>
       </label>
+      <span className="relative inline-flex shrink-0 items-center">
+        <select aria-label="Table format" disabled={busy} value={playerCount} className="appearance-none rounded border bg-card py-2 pl-3 pr-9 text-sm"
+          onChange={event => { const count = Number(event.target.value) as 2 | 3; void newTournament(count === 2 && heroSeat === 1 ? 2 : heroSeat, opponentProfile, count); }}>
+          <option value={3}>3-Max</option><option value={2}>HU</option>
+        </select>
+        <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 h-4 w-4 text-muted-foreground" />
+      </span>
+      </div>
       <Card>
         <PokerTableFrame
           phase={game?.hand_terminal ? "SHOWDOWN" : game?.street}
-          seats={([0, 1, 2] as const).map(id => {
+          seats={seatIds.map(id => {
             const player = game?.players.find(p => p.player_id === id);
             return {
               id,
-              inspection: id !== heroSeat && table.current?.tournament.hand?.players[id] ? <RangeInspection seat={id} snapshot={
+              inspection: id !== heroSeat && table.current?.tournament.hand?.players[id] ? <RangeInspection seat={id} hand={table.current.tournament.hand} snapshot={
                 !busy && rangeSnapshot?.sessionId === analysisSession && rangeSnapshot.stateKey === rangeStateKey(table.current.tournament.hand,heroSeat) ? rangeSnapshot : null
               }/> : undefined,
               label: player ? player.active ? player.position ?? `P${id}` : "OUT" : `P${id}`,
@@ -193,10 +216,10 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
         <div className={styles.toolbar} aria-label="Table controls">
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Hero</span>
-            {([0, 1, 2] as const).map(seat => (
+            {seatIds.map(seat => (
               <Button key={seat} disabled={busy || !game} aria-pressed={heroSeat === seat}
                 variant={heroSeat === seat ? "default" : "secondary"} className="h-10 w-10 p-0"
-                onClick={() => void newTournament(seat,opponentProfile)}>P{seat}</Button>
+                onClick={() => void newTournament(seat,opponentProfile,playerCount)}>P{seat}</Button>
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -206,7 +229,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
 
           </div>
           <div className={styles.management}>
-            <Button disabled={busy} variant="secondary" onClick={() => void newTournament(heroSeat,opponentProfile)} className="h-10 w-full px-2 text-sm">New game</Button>
+            <Button disabled={busy} variant="secondary" onClick={() => void newTournament(heroSeat,opponentProfile,playerCount)} className="h-10 w-full px-2 text-sm">New game</Button>
             <Button disabled={busy || !game?.hand_terminal || game.tournament_terminal}
               className="h-10 w-full px-2 text-sm" onClick={() => void command("next")}>Next hand</Button>
           </div>
@@ -231,7 +254,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
           <div className="min-w-0 bg-card/40 p-4 lg:border-r lg:border-border">
             <div className="mb-2 text-center font-semibold">Showdown results</div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {([0, 1, 2] as const).map(id => {
+              {seatIds.map(id => {
                 const player = game?.players.find(p => p.player_id === id);
                 const delta = game?.hand_terminal ? game.hand_results_bb[id] : null;
                 const win = delta !== null && delta > 0;
@@ -266,12 +289,12 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
           </div>
         </div>
       </Card>
-      {table.current?.tournament.hand?.players[heroSeat] && <Card><CardContent>
-        <HybridAnalysis hand={table.current.tournament.hand} hero={table.current.tournament.hand.players[heroSeat].cards}
+      {table.current?.tournament.hand?.players[heroSeat] &&
+        <HybridAnalysis rangesOnly hand={table.current.tournament.hand} hero={table.current.tournament.hand.players[heroSeat].cards}
           observerSeat={heroSeat} opponentProfile={opponentProfile} onRangeUpdate={setRangeSnapshot}
           baseline={policy?.probabilities ?? null} sessionId={analysisSession} reconstructHistory transitioning={busy}
           initialProfiles={Object.fromEntries(Object.keys(table.current.tournament.hand.players).map(p => [p, Number(p) === heroSeat ? "conservative" : opponentProfile]))} />
-      </CardContent></Card>}
+      }
       <Card>
         <CardHeader><CardTitle className="text-lg">Action history</CardTitle></CardHeader>
         <CardContent>

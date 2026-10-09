@@ -31,6 +31,8 @@ export default function PokerTableFrame({
   className?: string;
   phase?: string;
 }) {
+  const headsUp = seats.length === 2;
+  const opponent = headsUp ? seats.find(s => s.id !== heroSeat)! : null;
   const order = [heroSeat, (heroSeat + 1) % 3, (heroSeat + 2) % 3];
   const hero = seats.find(s => s.id === order[0])!;
   const left = seats.find(s => s.id === order[1])!;
@@ -47,9 +49,9 @@ export default function PokerTableFrame({
       <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[64%] w-[92%] h-[74%] rounded-full border border-primary/30 shadow-[inset_0_0_2rem_rgba(34,211,238,.15)]" />
 
       {/* Logo and pot */}
-      <div className="absolute top-8 left-1/2 -translate-x-1/2 text-muted-foreground/50 tracking-widest text-sm select-none">
+      {!headsUp && <div className="absolute top-8 left-1/2 -translate-x-1/2 text-muted-foreground/50 tracking-widest text-sm select-none">
         EXPRESSO
-      </div>
+      </div>}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[36%] text-center">
         <div className="text-muted-foreground/80 text-xs">Pot</div>
         <div className="mt-0.5 text-foreground text-lg font-semibold drop-shadow">{potLabel}</div>
@@ -63,6 +65,13 @@ export default function PokerTableFrame({
       </div>
 
       {/* Seats and hole cards */}
+      {headsUp && opponent ? <div className="absolute left-1/2 top-8 -translate-x-1/2 flex flex-col items-center">
+        <InspectableSeat seat={opponent} />
+        <StreetBet seat={opponent} className={styles.opponentBet} />
+        {opponent.cards?.length ? <div className="mt-2 flex gap-1">
+          {opponent.cards.map((t,i) => <PlayingCard key={i} text={t} active={opponent.active} phase={phase} />)}
+        </div> : null}
+      </div> : <>
       <div className={`${styles.leftSeat} absolute left-[8%] top-[12%] flex flex-col items-center`}>
         <InspectableSeat seat={left} />
         <StreetBet seat={left} className={styles.leftBet} />
@@ -82,6 +91,8 @@ export default function PokerTableFrame({
           </div>
         ) : null}
       </div>
+
+      </>}
 
       <div className="absolute left-1/2 -translate-x-1/2 bottom-[14%] flex flex-col items-center">
         <SeatChip {...hero} />

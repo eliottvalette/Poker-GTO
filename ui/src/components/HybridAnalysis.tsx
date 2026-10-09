@@ -7,9 +7,9 @@ import { HandState } from "@/lib/poker/engine";
 import { withHeroCards } from "@/lib/poker/policy-analysis";
 import { HYBRID_BUDGETS, transportHand, uniformRanges, type HybridAnalysis as Result, type Ranges } from "@/lib/poker/hybrid";
 
-export default function HybridAnalysis({ hand, hero, baseline, sessionId, reconstructHistory = false, initialProfiles = {}, transitioning = false, observerSeat, onRangeUpdate, opponentProfile }: {
+export default function HybridAnalysis({ hand, hero, baseline, sessionId, reconstructHistory = false, initialProfiles = {}, transitioning = false, observerSeat, onRangeUpdate, opponentProfile, rangesOnly = false }: {
   hand: HandState; hero: [number, number]; baseline: Record<string, number> | null; sessionId: number;
-  reconstructHistory?: boolean; initialProfiles?: Record<number,string>; transitioning?: boolean; observerSeat?: number; opponentProfile?: string; onRangeUpdate?: (snapshot: RangeSnapshot) => void;
+  rangesOnly?: boolean; reconstructHistory?: boolean; initialProfiles?: Record<number,string>; transitioning?: boolean; observerSeat?: number; opponentProfile?: string; onRangeUpdate?: (snapshot: RangeSnapshot) => void;
 }) {
   const [budget, setBudget] = useState("FAST");
   const [mode, setMode] = useState("reference");
@@ -95,6 +95,7 @@ export default function HybridAnalysis({ hand, hero, baseline, sessionId, recons
         likelihoodProfiles: selectedProfiles, transitions: trace.current, interpolate, updateOnly });
     } catch (cause) { const message = cause instanceof Error ? cause.message : String(cause); setError(message); publishRanges("error", undefined, message); setBusy(false); }
   }
+  if (rangesOnly) return null;
   return <section className="space-y-3 border-t pt-4" aria-label="Hybrid analysis">
     <h3 className="font-semibold">Analysis</h3>
     <label>Calculation <select value={budget} onChange={event => setBudget(event.target.value)} className="rounded border p-2">

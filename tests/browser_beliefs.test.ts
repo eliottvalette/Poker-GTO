@@ -99,8 +99,8 @@ test("Range display separates combo multiplicity, blocked classes and modeled re
   const actor=state.current_player!;
   const masses=handClassMasses(marginals[actor]);
   for(const [label,mass] of Object.entries(masses)) assert.ok(Math.abs(mass/display.uniformMass[label]-1)<1e-10);
-  assert.equal(rangeColor(1),"rgb(37,50,68)");
-  assert.notEqual(rangeColor(.25),rangeColor(4));
+  assert.equal(rangeColor(0, .03), rangeColor(.0001, .03));
+  assert.notEqual(rangeColor(0, .03), rangeColor(.03, .03));
   for(const mix of Object.values(display.reactions[actor])) assert.ok(Math.abs(mix.fold+mix.passive+mix.aggressive-1)<1e-12);
   assert.equal(Object.keys(display.reactions).length,1);
   const alternate=state.clone();

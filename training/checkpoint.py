@@ -136,3 +136,75 @@ def unpack_tournament(raw: dict | None) -> TournamentState | None:
         tournament.hand.assert_invariants()
     tournament.assert_invariants()
     return tournament
+
+
+def _checkpoint_average_payload(source: Path, track_name: str) -> dict:
+    """Extract inference state without reconstructing replay, samplers or a runner.
+
+    The current envelope still requires full primitive deserialization. Replay
+    player counts are checked directly; training-resume validation remains owned
+    by TrainingRunner.load_checkpoint.
+    """
+    import struct
+    from training.config import config_hash, validate_config
+    from ml.deep_cfr import average_policy_payload
+    from features.neural import NEURAL_NUMERIC_NAMES
+
+    counts = {"hu": 2, "3max": 3}
+    if track_name not in counts:
+        raise ValueError(f"Unknown policy track: {track_name}")
+    raw = read_checkpoint(source)
+    config = validate_config(raw["config"])
+    if config_hash(config) != raw["config_hash"]:
+        raise ValueError(f"Checkpoint configuration hash mismatch at {source}")
+    iteration = raw["iteration"]
+    if (set(raw["tracks"]) != {track_name} or type(iteration) is not int or iteration < 1
+            or len(raw["metrics"]) != iteration
+            or {name for name in counts if config[name]["enabled"]} != {track_name}):
+        raise ValueError(f"No trained dedicated {track_name} policy in {source}")
+    track = raw["tracks"][track_name]
+    count = counts[track_name]
+    if (track["version"] != iteration or len(track["metrics"]) != iteration
+            or track["seed"] != config["seed"] + count
+            or track["traversal_mode"] != config["traversal_mode"]
+            or track["average_weights"] is None):
+        raise ValueError(f"Inconsistent policy version/metrics/mode/weights at {source}")
+    memory = track["strategy_memory"]
+    if "allocation" in memory:
+        if memory["allocation"] != "opening-protected-v1" or set(memory["strata"]) != {"opening", "other"}:
+            raise ValueError(f"Invalid strategy allocation at {source}")
+        memories = list(memory["strata"].values())
+    else:
+        memories = [memory]
+    samples = 0
+    offset = NEURAL_NUMERIC_NAMES.index("player_count") * 8
+    for memory in memories:
+        if (memory["kind"] != "strategy" or memory["objective"] != "hand_chip_delta"
+                or memory["traversal_mode"] != track["traversal_mode"]
+                or len(memory["samples"]) != min(memory["seen"], memory["capacity"])):
+            raise ValueError(f"Invalid strategy replay metadata at {source}")
+        for row in memory["samples"]:
+            state = row["state"]
+            if (state["version"] != STATE_VERSION or state["feature_version"] != FEATURE_SCHEMA_VERSION
+                    or state["objective"] != "hand_chip_delta"
+                    or len(state["numeric_data"]) != 8 * len(NEURAL_NUMERIC_NAMES)
+                    or round(struct.unpack_from("<d", state["numeric_data"], offset)[0] * 3) != count
+                    or row["player"] not in range(count) or not 1 <= row["iteration"] <= iteration):
+                raise ValueError(f"Foreign/future strategy sample at {source}")
+            samples += 1
+    if not samples:
+        raise ValueError(f"No strategy coverage at {source}")
+    payload = average_policy_payload(weights=track["average_weights"], iteration=iteration,
+        objective="hand_chip_delta", player_count=count, traversal_mode=track["traversal_mode"],
+        metrics=track["metrics"], supported_player_counts=[count])
+    return payload
+
+
+def export_checkpoint_average(source: Path, destination: Path, track_name: str) -> int:
+    """Release the deserialized replay before saving and validating inference state."""
+    from ml.deep_cfr import NeuralAveragePolicy
+    payload = _checkpoint_average_payload(source, track_name)
+    torch.save(payload, destination)
+    with torch.random.fork_rng(devices=[]):
+        NeuralAveragePolicy(destination)
+    return payload["iteration"]

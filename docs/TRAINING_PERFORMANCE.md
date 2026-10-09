@@ -128,3 +128,41 @@ Artifacts: `runs/performance/summary.json` indexes selected settings, whole-iter
 Workload limits: one recent HU and one recent three-player checkpoint, small frozen probes plus repeated full next iterations; full-iteration comparisons here do not include a B-fit batch. B fits were measured independently. Final weighted-loss evaluation still scans the replay. Coverage reconstruction and serialization remain measurable costs; they were not removed to inflate throughput. The native trace excludes cache construction so it complements, rather than replaces, cProfile.
 
 Two repetitions per whole-iteration setting are insufficient for tight latency confidence intervals; background applications and heterogeneous-core scheduling remain variable. Results select conservative settings on this machine, not a global optimum across all poker states/hardware. MPS, GPU porting, altered neural architectures, learning-rate/batch changes and weaker poker abstractions were not promoted as performance shortcuts. Playing-strength conclusions are unchanged.
+
+
+## Migration extraction and ONNX preparation
+
+Migration options 1, 2 and 3 no longer restore a TrainingRunner, replay reservoirs,
+RNGs or tournaments. Exports share the average-policy artifact builder with the
+solver and use the original deterministic ONNX probe without rereading the full
+checkpoint. Published identical releases can be reused after checksum validation.
+Preparation and publication display elapsed times. No production catalog was
+changed by these diagnostics.
+
+The first extraction-only experiment was rejected as a performance result:
+HU took 39.42 s and three-player 39.95 s, versus 27.84/30.38 s for full runner
+restore plus export (the latter excluded inference-artifact validation). Profiling
+identified a second cost: inference artifacts duplicated the complete diagnostic
+metrics history. The instrumented HU extraction spent 21.47 s reloading that
+artifact alone. New inference artifacts exclude this history; complete metrics
+remain in the training checkpoint. Model weights and inference provenance are
+unchanged. Existing immutable releases remain untouched.
+
+Final uninstrumented measurements, one trial per current production checkpoint:
+
+| Track | Iteration | Checkpoint bytes | Extract and validate | Inference bytes | Inference reload |
+|---|---:|---:|---:|---:|---:|
+| HU | 109 | 1,347,202,093 | 21.19 s | 77,922 | 1.31 ms |
+| Three-player | 117 | 1,279,870,957 | 22.22 s | 77,922 | 1.36 ms |
+
+These timings exclude checkpoint copying, bundle hashes and ONNX conversion.
+The existing envelope still deserializes all primitives; this change does not
+promise instantaneous first extraction. Raw evidence is in
+`runs/performance/migration-extraction.json`, `migration-extraction.prof`,
+`migration-extraction-profile.txt`, and `migration-final.json`.
+
+Validation: 22 workflow/Deep CFR/ONNX tests passed, followed by the focused updated
+artifact-contract test. Tests cover both tracks, exact weights and metadata parity,
+identical predictions, ONNX parity, rejection of inconsistent versions, no runner
+restoration during export, reuse of published releases, publication conflicts and
+failure cleanup. Full training-resume validation remains unchanged.

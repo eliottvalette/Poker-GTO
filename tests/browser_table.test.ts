@@ -221,3 +221,34 @@ test("explicit asynchronous opponent policies drive actions and survive cloning"
   assert.ok(table.tournament.hand!.history.filter(e=>e.action!=='BLIND').every(e=>e.action==='FOLD'||e.action==='CHECK'));
   await assert.rejects(()=>BrowserTable.createWithPolicy(12,2,'published',async ()=>Array(13).fill(0)),/Invalid opponent/);
 });
+
+
+test("HU format deals exactly two players and routes two-player observations through settlement", async () => {
+  const { ACTION_IDS } = await import("../ui/src/lib/poker/actions");
+  const counts: number[] = [];
+  const passive = async (obs: ReturnType<typeof observe>) => {
+    counts.push(Math.round(obs.numeric[NUMERIC_NAMES.indexOf("player_count")]*3));
+    const action = obs.legal_mask[ACTION_IDS.indexOf("CHECK")] ? "CHECK" : "CALL";
+    return ACTION_IDS.map(id => Number(id === action));
+  };
+  for (const hero of [0,2]) {
+    const table = await BrowserTable.createWithPolicy(741,hero,"published",passive,2);
+    assert.deepEqual(table.tournament.original_players,[0,2]);
+    assert.equal(table.view().total_chips_bb,50);
+    for(let i=0; i<12 && !table.view().hand_terminal; i++) {
+      const action=table.view().legal_actions.find(a=>a.action_id==="CHECK"||a.action_id==="CALL")!;
+      assert.ok(action);
+      await table.actWithPolicy(action.action_id,passive);
+    }
+    assert.ok(table.view().hand_terminal);
+    assert.equal(table.view().players.length,2);
+    assert.equal(table.clone().view().players.length,2);
+    if(!table.view().tournament_terminal) {
+      await table.nextHandWithPolicy(passive);
+      assert.equal(table.view().players.length,2);
+    }
+  }
+  assert.ok(counts.length>0);
+  assert.ok(counts.every(count=>count===2));
+  assert.throws(()=>BrowserTable.create(1,1,"uniform",2),/not seated/);
+});
