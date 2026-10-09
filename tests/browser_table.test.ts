@@ -202,3 +202,22 @@ test("browser blind schedule rejects invalid stages instead of repairing them", 
   assert.throws(() => BlindSchedule.fixed().forHand(0));
   assert.throws(() => new TournamentState({ 0: 25, 1: 25 }, 0, new SeededRNG(0), BlindSchedule.fixed(), "split"));
 });
+
+test("explicit asynchronous opponent policies drive actions and survive cloning", async () => {
+  const { ACTION_IDS } = await import("../ui/src/lib/poker/actions.js");
+  const seen:number[]=[];
+  const policy=async (observation:ReturnType<typeof observe>) => {
+    seen.push(observation.hero);
+    assert.equal('deck' in observation,false);
+    const selected=observation.legal_mask[ACTION_IDS.indexOf('FOLD')] ? ACTION_IDS.indexOf('FOLD') : ACTION_IDS.indexOf('CHECK');
+    assert.ok(observation.legal_mask[selected]);
+    return ACTION_IDS.map((_,i)=>Number(i===selected));
+  };
+  const table=await BrowserTable.createWithPolicy(12,2,'published',policy);
+  assert.ok(seen.length>0);
+  assert.ok(seen.every(p=>p!==2));
+  assert.equal(table.opponentProfile,'published');
+  assert.equal(table.clone().opponentProfile,'published');
+  assert.ok(table.tournament.hand!.history.filter(e=>e.action!=='BLIND').every(e=>e.action==='FOLD'||e.action==='CHECK'));
+  await assert.rejects(()=>BrowserTable.createWithPolicy(12,2,'published',async ()=>Array(13).fill(0)),/Invalid opponent/);
+});

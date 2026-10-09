@@ -27,6 +27,21 @@ def sample_bytes(sample: object) -> int:
     budgets. Deduplicate containers within one entry; entries remain independent.
     Excludes allocator overhead, tensors and process RSS.
     """
+    if type(sample) is TrainingSample and type(sample.state) is NeuralObservation:
+        state = sample.state
+        containers = (state.cards, state.legal_mask, sample.target)
+        if all(type(v) in (tuple, list) and all(type(x) in (int, float, bool) for x in v) for v in containers):
+            # Same occurrence-based accounting as the generic walk, including aliased tuples.
+            total = sum(map(sys.getsizeof, (sample, state, sample.iteration, sample.player,
+                sample.weight, sample.kind, sample.model_version, sample.traversal_mode,
+                state.version, state.hero, state.objective, state.street, state.numeric_data,
+                state.history_data, state.feature_version)))
+            visited = set()
+            for value in containers:
+                if id(value) not in visited:
+                    visited.add(id(value))
+                    total += sys.getsizeof(value) + sum(map(sys.getsizeof, value))
+            return total
     visited: set[int] = set()
 
     def size(value: object) -> int:
@@ -61,6 +76,20 @@ class TrainingSample:
     def __post_init__(self) -> None:
         if not isinstance(self.state, NeuralObservation):
             object.__setattr__(self, "state", neural_observation(self.state))
+
+    def __deepcopy__(self, memo: dict) -> TrainingSample:
+        import copy
+        state = copy.deepcopy(self.state, memo)
+        if (state is self.state and type(self.target) is tuple
+                and all(type(v) in (int, float, bool) for v in self.target)
+                and all(type(v) in (int, float, str) for v in
+                        (self.iteration, self.player, self.weight, self.kind, self.model_version, self.traversal_mode))):
+            memo[id(self)] = self
+            return self
+        result = type(self)(self.iteration, self.player, state, copy.deepcopy(self.target, memo),
+                            self.weight, self.kind, self.model_version, self.traversal_mode)
+        memo[id(self)] = result
+        return result
 
     def validate(self) -> None:
         if self.state.objective != "hand_chip_delta":

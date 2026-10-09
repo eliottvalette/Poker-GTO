@@ -24,10 +24,12 @@ def _mean_weight(samples: list[TrainingSample]) -> float:
     return scale * (math.fsum(weight / scale for weight in weights) / len(weights))
 
 
-def _loss_with_weights(model, samples: list[TrainingSample], normalized: list[float]) -> torch.Tensor:
+def _loss_with_weights(model, samples: list[TrainingSample], normalized: list[float],
+                       batch: dict[str, torch.Tensor] | None = None) -> torch.Tensor:
     if not samples:
         raise ValueError("Loss requires nonempty samples")
-    batch = encode_batch([s.state for s in samples], model.feature_version)
+    if batch is None:
+        batch = encode_batch([s.state for s in samples], model.feature_version)
     target = torch.tensor([s.target for s in samples])
     if not torch.isfinite(target).all():
         raise ValueError("Training target cannot be represented as finite float32")
@@ -91,10 +93,37 @@ def evaluate_loss(model, samples: list[TrainingSample], batch_size: int) -> floa
     return math.fsum(batch_losses) / len(samples)
 
 
+class EncodedReplay:
+    """Fit-local immutable tensors; no cache persists across replay updates."""
+
+    def __init__(self, samples: list[TrainingSample], feature_version: int,
+                 byte_budget: int = 256 * 1024 * 1024) -> None:
+        from infoset import HISTORY_WIDTH
+        from features.neural import numeric_names
+        longest = max(len(s.state.history_data) // (8 * HISTORY_WIDTH) for s in samples)
+        estimate = len(samples) * (longest * HISTORY_WIDTH * 4
+                                  + len(numeric_names(feature_version)) * 4 + 7 * 8 + 3 * 8 + len(samples[0].target))
+        if estimate > byte_budget:
+            raise MemoryError(f"Encoded replay requires {estimate} bytes; budget={byte_budget}")
+        self.batch = encode_batch([s.state for s in samples], feature_version)
+        self.indices = {id(s): i for i, s in enumerate(samples)}
+
+    def select(self, samples: list[TrainingSample]) -> dict[str, torch.Tensor]:
+        indices = torch.tensor([self.indices[id(s)] for s in samples], dtype=torch.long)
+        lengths = self.batch['lengths'].index_select(0, indices)
+        return {key: (value[:, :int(lengths.max())] if key == 'history' else value).index_select(0, indices)
+                for key, value in self.batch.items()}
+
+
 def fit(model, samples: list[TrainingSample], epochs: int, batch_size: int, seed: int,
         learning_rate: float = 3e-4, evaluation_fraction: float = 0.2,
         sampling: str = "uniform_shuffle", measurement_epochs: tuple[int, ...] = (),
-        on_measurement: Callable[[int, dict[str, float]], None] | None = None) -> dict[str, float]:
+        on_measurement: Callable[[int, dict[str, float]], None] | None = None,
+        max_updates: int | None = None, cache_encoding: bool = False) -> dict[str, float]:
+    if max_updates is not None and (type(max_updates) is not int or max_updates < 1):
+        raise ValueError("max_updates must be a positive integer or None")
+    if max_updates is not None and measurement_epochs:
+        raise ValueError("Epoch sweeps and update-capped fitting require separate experiments")
     if (any(type(e) is not int or not 1 <= e <= epochs for e in measurement_epochs)
             or tuple(sorted(set(measurement_epochs))) != measurement_epochs
             or bool(measurement_epochs) != (on_measurement is not None)):
@@ -117,6 +146,9 @@ def fit(model, samples: list[TrainingSample], epochs: int, batch_size: int, seed
     rng.shuffle(ordered)
     cut = max(1, min(len(ordered) - 1, round(len(ordered) * evaluation_fraction)))
     evaluation, training = ordered[:cut], ordered[cut:]
+    encoded = EncodedReplay(samples, model.feature_version) if cache_encoding else None
+    updates = 0
+    completed_epochs = 0
     mean_weight = _mean_weight(training)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     model.train()
@@ -131,8 +163,18 @@ def fit(model, samples: list[TrainingSample], epochs: int, batch_size: int, seed
 
     def measure() -> dict[str, float]:
         model.eval()
-        return {"train_loss": evaluate_loss(model, training, batch_size),
-                "heldout_loss": evaluate_loss(model, evaluation, batch_size),
+        def loss(rows: list[TrainingSample]) -> float:
+            if encoded is None:
+                return evaluate_loss(model, rows, batch_size)
+            mean = _mean_weight(rows)
+            with torch.no_grad():
+                return math.fsum(float(_loss_with_weights(model, part, [_sample_weight(s) / mean for s in part],
+                                                         encoded.select(part))) * len(part)
+                                 for offset in range(0, len(rows), batch_size)
+                                 for part in [rows[offset:offset + batch_size]]) / len(rows)
+        return {"train_loss": loss(training),
+                "heldout_loss": loss(evaluation), "updates_completed": updates,
+                "epochs_completed": completed_epochs,
                 "training_samples": float(len(training)), "heldout_samples": float(len(evaluation)), **quality}
 
     metrics = None
@@ -147,13 +189,21 @@ def fit(model, samples: list[TrainingSample], epochs: int, batch_size: int, seed
         for offset in range(0, len(epoch_samples), batch_size):
             optimizer.zero_grad()
             batch = epoch_samples[offset:offset + batch_size]
-            objective = loss_for(model, batch, mean_weight) if sampling == "uniform_shuffle" else _loss_with_weights(model, batch, [1.0] * len(batch))
+            normalized = [_sample_weight(s) / mean_weight for s in batch] if sampling == 'uniform_shuffle' else [1.0] * len(batch)
+            objective = _loss_with_weights(model, batch, normalized, encoded.select(batch) if encoded else None)
             objective.backward()
             optimizer.step()
+            updates += 1
+            if max_updates is not None and updates >= max_updates:
+                break
+        if offset + len(batch) == len(epoch_samples):
+            completed_epochs += 1
         if epoch in measurement_epochs:
             metrics = measure()
             on_measurement(epoch, dict(metrics))
             model.train()
+        if max_updates is not None and updates >= max_updates:
+            break
     if epochs not in measurement_epochs:
         metrics = measure()
     model.eval()

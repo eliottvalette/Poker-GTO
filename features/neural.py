@@ -33,6 +33,18 @@ class NeuralObservation:
     history_data: bytes
     feature_version: int = FEATURE_SCHEMA_VERSION
 
+    def __deepcopy__(self, memo: dict) -> NeuralObservation:
+        import copy
+        from dataclasses import fields
+        values = [getattr(self, field.name) for field in fields(self)]
+        if all(type(v) in (int, str, bytes) or
+               (type(v) is tuple and all(type(x) in (int, bool) for x in v)) for v in values):
+            memo[id(self)] = self
+            return self
+        result = type(self)(*(copy.deepcopy(v, memo) for v in values))
+        memo[id(self)] = result
+        return result
+
     @property
     def numeric(self) -> tuple[float, ...]:
         return struct.unpack(f"<{len(self.numeric_data) // 8}d", self.numeric_data)

@@ -9,7 +9,7 @@ import random
 import subprocess
 import time
 import torch
-from ml.deep_cfr import DeepCFRSolver
+from ml.deep_cfr import DeepCFRSolver, FrozenStrategy
 from infoset import NUMERIC_NAMES
 from ml.model import AdvantageNetwork, AveragePolicyNetwork
 from training.checkpoint import (CONTRACT, atomic_bytes, pack_memory, unpack_memory, pack_tournament,
@@ -46,16 +46,20 @@ class TrainingRunner:
         self.iteration = 0
         self.resume_checkpoint: Path | None = None
         self.resume_budget_change: dict | None = None
+        self.resume_execution_change: dict | None = None
         self.solvers = {}
         self.samplers = {}
         self.metrics: list[dict] = []
         self.metadata = {**source_metadata(), "network_fit": "fresh_from_reservoir_each_iteration",
                          "device": "cpu", "utility_units": "initial_big_blind_chips"}
+        if 'fit_schedule' in self.config:
+            self.metadata['network_fit'] = dict(self.config['fit_schedule'])
         for name, count in (("3max", 3), ("hu", 2)):
             if config[name]["enabled"]:
                 self.solvers[name] = DeepCFRSolver(tuple(range(count)), seed=config["seed"] + count,
                     advantage_capacity=config[name]["advantage_capacity"], strategy_capacity=config["strategy_capacity"],
-                    memory_byte_budget=config["memory_byte_budget"], advantage_byte_budget=config[name]["advantage_byte_budget"])
+                    memory_byte_budget=config["memory_byte_budget"], advantage_byte_budget=config[name]["advantage_byte_budget"],
+                    replay_opening_fraction=config.get("replay_opening_fraction"))
                 self.samplers[name] = RootSampler(count, config["seed"] + count * 1000, config[name]["root_sampling"])
         self.probes = {name: fixed_roots(len(solver.players)) for name, solver in self.solvers.items()}
 
@@ -78,12 +82,18 @@ class TrainingRunner:
         threads = torch.get_num_threads()
         try:
             torch.set_num_threads(config["trainer_threads"])
+            root_strategies = ({name: FrozenStrategy(s.snapshot()) for name,s in self.solvers.items()}
+                               if config.get('root_policy') == 'current_advantage' else {})
             for name, solver in staged_solvers.items():
                 sampler = staged_samplers[name]
                 previous = self.solvers[name].average_model
                 def rollout_policy(obs):
                     count = round(obs.numeric[NUMERIC_NAMES.index("player_count")] * 3)
                     track_name = "3max" if count == 3 else "hu"
+                    if root_strategies:
+                        if track_name not in root_strategies:
+                            raise KeyError(f"Current-strategy roots require the {count}-player track")
+                        return root_strategies[track_name](obs)
                     if track_name not in self.solvers or self.solvers[track_name].average_model is None:
                         raise KeyError(f"On-policy tournament requires the {count}-player average policy at iteration {self.iteration}")
                     return model_policy(self.solvers[track_name].average_model, obs)
@@ -96,9 +106,12 @@ class TrainingRunner:
                     sample_byte_budget=config["sample_byte_budget"], generation_byte_budget=config["generation_byte_budget"],
                     traversal_mode=config["traversal_mode"], learning_rate=config["learning_rate"],
                     trainer_threads=config["trainer_threads"], executor=executor,
+                    fit_schedule=config.get('fit_schedule'), generation_batch_size=config.get('generation_batch_size'),
                     **({"epsilon": config["outcome_epsilon"]} if config["traversal_mode"] == "outcome_sampling" else {}))
                 sampler.policy = None
-                metric["fixed_probe_policy_drift"] = fixed_drift(previous, solver.average_model, self.probes[name])
+                metric["fixed_probe_policy_drift"] = (None if metric['average_policy'].get('skipped') else
+                                                      fixed_drift(previous, solver.average_model, self.probes[name]))
+                metric['root_policy'] = config.get('root_policy', 'average')
                 metric["root_coverage"] = sampler.coverage.as_dict()
                 metric["hole_card_coverage"] = {key: dict(values) for key, values in sampler.hole_coverage.items()}
                 if row["iteration"] % config["evaluation_every"] == 0:
@@ -153,24 +166,32 @@ class TrainingRunner:
 
     @classmethod
     def load_checkpoint(cls, path: str | Path, config: dict | None = None, *,
-                        allow_budget_increase: bool = False) -> TrainingRunner:
-        """Restore exact state; optionally audit monotone traversal guard increases only."""
+                        allow_budget_increase: bool = False,
+                        allow_execution_changes: bool = False) -> TrainingRunner:
+        """Restore state; explicitly audit guard increases or execution-only changes."""
         raw = read_checkpoint(Path(path))
         if config_hash(raw["config"]) != raw["config_hash"]:
             raise ValueError(f"Checkpoint configuration hash mismatch at {path}")
         target = raw["config"] if config is None else validate_config(config)
         budget_change = None
+        execution_change = None
         if config_hash(target) != raw["config_hash"]:
-            changed = {key for key in target if target[key] != raw["config"].get(key)}
-            if (not allow_budget_increase or not changed <= {"max_nodes", "max_depth"}
-                    or any(target[key] < raw["config"][key] for key in changed)):
+            changed = {key for key in set(target) | set(raw['config']) if target.get(key) != raw['config'].get(key)}
+            execution_keys = {'workers', 'trainer_threads', 'generation_batch_size'}
+            execution = changed & execution_keys
+            guards = changed - execution
+            if ((execution and not allow_execution_changes)
+                    or (guards and (not allow_budget_increase or not guards <= {'max_nodes','max_depth'}
+                                    or any(target[key] < raw['config'][key] for key in guards)))):
                 raise ValueError(f"Checkpoint configuration hash mismatch at {path}; changed={sorted(changed)}; "
-                                 "only explicitly enabled increases to max_nodes/max_depth may resume")
-            budget_change = {"iteration": raw["iteration"], "checkpoint": str(path),
+                                 "only explicitly enabled traversal-guard increases or execution settings may resume")
+            change = {"iteration": raw["iteration"], "checkpoint": str(path),
                              "source_config_hash": raw["config_hash"], "config_hash": config_hash(target),
                              "source_metadata": source_metadata(),
-                             "before": {key: raw["config"][key] for key in sorted(changed)},
-                             "after": {key: target[key] for key in sorted(changed)}}
+                             "before": {key: raw["config"].get(key) for key in sorted(changed)},
+                             "after": {key: target.get(key) for key in sorted(changed)}}
+            budget_change = change if guards else None
+            execution_change = change if execution else None
         runner = cls(raw["config"])
         if set(raw["tracks"]) != set(runner.solvers) or type(raw["iteration"]) is not int or raw["iteration"] < 0 or len(raw["metrics"]) != raw["iteration"]:
             raise ValueError(f"Inconsistent checkpoint tracks/iteration at {path}")
@@ -195,6 +216,14 @@ class TrainingRunner:
                 for memory in (solver.advantage_memory, solver.strategy_memory):
                     capacity = runner.config[name]["advantage_capacity"] if memory.kind == "advantage" else runner.config["strategy_capacity"]
                     budget = runner.config[name]["advantage_byte_budget"] if memory.kind == "advantage" else runner.config["memory_byte_budget"]
+                    from ml.stratified_memory import ProtectedReplay
+                    fraction = runner.config.get("replay_opening_fraction")
+                    if isinstance(memory, ProtectedReplay) != (fraction is not None):
+                        raise ValueError(f"Checkpoint replay allocation/config mismatch: {name}")
+                    if fraction is not None:
+                        expected_opening = max(1, min(capacity - 1, int(capacity * fraction)))
+                        if memory.memories["opening"].capacity != expected_opening:
+                            raise ValueError(f"Checkpoint opening allocation mismatch: {name}")
                     if memory.capacity != capacity or memory.byte_budget != budget:
                         raise ValueError(f"Checkpoint replay/config capacity mismatch: {name}")
                     if any(s.player not in solver.players or s.iteration > runner.iteration
@@ -220,11 +249,15 @@ class TrainingRunner:
         torch.set_rng_state(raw["torch_rng"])
         random.setstate(raw["python_rng"])
         runner.resume_checkpoint = Path(path)
-        if budget_change is not None:
+        if budget_change is not None or execution_change is not None:
             runner.config = target
             runner.metadata = copy.deepcopy(runner.metadata)
+        if budget_change is not None:
             runner.metadata.setdefault("resume_budget_changes", []).append(budget_change)
             runner.resume_budget_change = budget_change
+        if execution_change is not None:
+            runner.metadata.setdefault('resume_execution_changes', []).append(execution_change)
+            runner.resume_execution_change = execution_change
         return runner
 
     def run(self, iterations: int | None = None) -> None:
@@ -255,7 +288,12 @@ class TrainingRunner:
             try:
                 while time.monotonic() - started < seconds:
                     row = self.run_iteration(executor=executor)
-                    print(f"Iteration {self.iteration}: {row['wall_seconds']:.2f}s; elapsed {time.monotonic() - started:.1f}/{seconds:.1f}s", flush=True)
+                    detail = '; '.join(f"{name}: {m['traversals']} traversals, {m['nodes']} nodes, "
+                        f"generation={m['generation_seconds']:.2f}s, fit={m['fit_seconds']:.2f}s, "
+                        f"A updates={m['advantage'].get('updates_completed', '?')}, "
+                        f"B updates={m['average_policy'].get('updates_completed', 0)}"
+                        for name, m in row['tracks'].items())
+                    print(f"Iteration {self.iteration}: {row['wall_seconds']:.2f}s; {detail}; elapsed {time.monotonic() - started:.1f}/{seconds:.1f}s", flush=True)
             except KeyboardInterrupt:
                 stopped = "interrupted"
                 print("Interrupted; saving the last complete iteration", flush=True)

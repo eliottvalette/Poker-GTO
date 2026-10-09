@@ -15,6 +15,37 @@ from test_solver import river
 
 
 class TrainingWeightTests(unittest.TestCase):
+    def test_cached_fitting_preserves_updates_and_weighted_loss(self):
+        import copy
+        for sampling in ('uniform_shuffle', 'weighted_replacement'):
+            samples = self.samples() * 8
+            torch.manual_seed(10)
+            uncached = AveragePolicyNetwork()
+            cached = copy.deepcopy(uncached)
+            expected = fit(uncached, samples, 5, 4, 3, sampling=sampling, max_updates=7)
+            actual = fit(cached, samples, 5, 4, 3, sampling=sampling, max_updates=7, cache_encoding=True)
+            self.assertEqual(actual['updates_completed'], 7)
+            self.assertEqual(expected, actual)
+            for a,b in zip(uncached.parameters(), cached.parameters()):
+                self.assertTrue(torch.equal(a,b))
+
+    def test_cached_variable_history_and_masks_preserve_fit(self):
+        import copy
+        from training.evaluation import fixed_roots
+        samples = []
+        for iteration, (_, root) in enumerate(fixed_roots(2), 1):
+            obs = observe(root)
+            target = regret_matching([0.] * len(ACTION_IDS), obs.legal_mask)
+            samples.append(TrainingSample(iteration, obs.hero, obs, target, 1., 'strategy', iteration-1))
+        samples *= 4
+        torch.manual_seed(8)
+        a = AveragePolicyNetwork(); b = copy.deepcopy(a)
+        first = fit(a,samples,2,3,9)
+        second = fit(b,samples,2,3,9,cache_encoding=True)
+        self.assertEqual(first,second)
+        for x,y in zip(a.parameters(),b.parameters()):
+            self.assertTrue(torch.equal(x,y))
+
     def test_measurements_preserve_optimizer_trajectory(self):
         import copy
         samples = self.samples() * 8

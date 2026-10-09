@@ -7,23 +7,27 @@ import { analysisRoot, holeObservation, withHeroCards } from "@/lib/poker/policy
 import { HandState, STREETS, type Position, type Street } from "@/lib/poker/engine";
 import { applyAction, legalActions } from "@/lib/poker/actions";
 import { cardLabel } from "@/lib/game";
+import HybridAnalysis from "./HybridAnalysis";
 
 import { actionColor as color } from "@/lib/poker/presentation";
 
 export default function PolicyAnalysis({ policies }: {
   policies: Record<number, LoadedAveragePolicy>;
 }) {
+  const [sessionId, setSessionId] = useState(0);
+  const [cardsLocked, setCardsLocked] = useState(false);
   const [count, setCount] = useState(3);
   const [position, setPosition] = useState<Position>("BTN");
   const [street, setStreet] = useState<Street>("PREFLOP");
   const [stacks, setStacks] = useState([25, 25, 25]);
   const [big, setBig] = useState(1);
   const [seed, setSeed] = useState(42);
-  const [hand, setHand] = useState<HandState>(() => analysisRoot(3, "BTN", "PREFLOP", [25, 25, 25], 1, 42));
+  const [hand, setHand] = useState<HandState>(() => withHeroCards(analysisRoot(3, "BTN", "PREFLOP", [25, 25, 25], 1, 42), [48, 49]));
   const [hero, setHero] = useState<[number, number]>([48, 49]);
   const [boardText, setBoardText] = useState("");
   const [probabilities, setProbabilities] = useState<Record<string, number> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [customRaise, setCustomRaise] = useState(2.25);
   const policy = policies[Object.keys(hand.players).length];
 
   function build() {
@@ -49,7 +53,7 @@ export default function PolicyAnalysis({ policies }: {
         });
       }
       next.assertInvariants();
-      setHand(next); setError(null);
+      setHand(withHeroCards(next, hero)); setSessionId(value => value + 1); setCardsLocked(false); setError(null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }
 
@@ -66,7 +70,7 @@ export default function PolicyAnalysis({ policies }: {
   function act(action: string) {
     try {
       const next = withHeroCards(hand, hero);
-      applyAction(next, action); setHand(next);
+      applyAction(next, action); setHand(next); setCardsLocked(true); if (!next.terminal) setHero([...next.actor.cards]);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }
   const actions = legalActions(hand);
@@ -99,7 +103,12 @@ export default function PolicyAnalysis({ policies }: {
       {!policy && <div role="status">Average policy unavailable for {Object.keys(hand.players).length} players; publish this track with migrate.py.</div>}
       {error && <div role="alert" className="text-destructive">{error}</div>}
       {<div className="flex gap-3">
-        {hero.map((card, i) => <label key={i}>Hero card {i + 1}<select className="block rounded border p-2" value={card} onChange={event => setHero(hero.map((value, index) => i === index ? Number(event.target.value) : value) as [number, number])}>
+        {hero.map((card, i) => <label key={i}>Acting player&apos;s card {i + 1}<select className="block rounded border p-2" value={card} disabled={cardsLocked} onChange={event => {
+          try {
+            const cards = hero.map((value, index) => i === index ? Number(event.target.value) : value) as [number, number];
+            setHand(withHeroCards(hand, cards)); setHero(cards); setSessionId(value => value + 1); setError(null);
+          } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+        }}>
           {Array.from({ length: 52 }, (_, value) => <option key={value} value={value}>{cardLabel(value)}</option>)}
         </select></label>)}
       </div>}
@@ -110,7 +119,15 @@ export default function PolicyAnalysis({ policies }: {
         <span>{((mix[action.action_id] ?? 0) * 100).toFixed(1)}%</span>
       </div>)}</div>}
       <div className="flex flex-wrap gap-2">{actions.map(action => <Button variant="secondary" key={action.action_id} onClick={() => act(action.action_id)}>{action.action_id}{action.amount_to !== null ? ` ${(action.amount_to / hand.blinds.big).toFixed(2)} BB` : ""}</Button>)}</div>
+      {!hand.terminal && hand.canRaise() && <div className="flex items-end gap-2">
+        <label>Observed raise to (current BB)<input type="number" className="block w-32 rounded border p-2" step="0.25" value={customRaise} onChange={event => setCustomRaise(Number(event.target.value))} /></label>
+        <Button variant="secondary" onClick={() => {
+          try { const next = withHeroCards(hand, hero); next.act("RAISE", customRaise * hand.blinds.big); setHand(next); setCardsLocked(true); if (!next.terminal) setHero([...next.actor.cards]); setError(null); }
+          catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+        }}>Apply actual raise</Button>
+      </div>}
       <details><summary>Public action history ({hand.history.length})</summary><ol className="space-y-1 text-sm">{hand.history.map((event, i) => <li key={i}>{event.street} · {event.position} · {event.action} {(event.amount_to / hand.blinds.big).toFixed(2)} BB · pot {(event.pot_after / hand.blinds.big).toFixed(2)} BB</li>)}</ol></details>
+      <HybridAnalysis sessionId={sessionId} hand={hand} hero={hero} baseline={probabilities} />
     </CardContent>
   </Card>;
 }

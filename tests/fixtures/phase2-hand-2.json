@@ -1,0 +1,5463 @@
+{
+  "player_count": 2,
+  "initial": {
+    "players": {
+      "0": {
+        "player_id": 0,
+        "stack": 4.5,
+        "position": "SB",
+        "cards": [
+          20,
+          31
+        ],
+        "street_bet": 0.5,
+        "contribution": 0.5,
+        "folded": false,
+        "acted_at": null
+      },
+      "1": {
+        "player_id": 1,
+        "stack": 5.0,
+        "position": "BB",
+        "cards": [
+          42,
+          46
+        ],
+        "street_bet": 1.0,
+        "contribution": 1.0,
+        "folded": false,
+        "acted_at": null
+      }
+    },
+    "button": 0,
+    "blinds": {
+      "small": 0.5,
+      "big": 1.0
+    },
+    "deck": [
+      17,
+      43,
+      44,
+      11,
+      45,
+      19,
+      21,
+      30,
+      50,
+      13,
+      41,
+      2,
+      1,
+      35,
+      7,
+      5,
+      16,
+      47,
+      18,
+      51,
+      25,
+      8,
+      27,
+      37,
+      6,
+      48,
+      24,
+      3,
+      34,
+      10,
+      33,
+      36,
+      40,
+      4,
+      12,
+      14,
+      29,
+      39,
+      28,
+      9,
+      49,
+      22,
+      0,
+      26,
+      15,
+      23,
+      38,
+      32
+    ],
+    "total_chips": 11.0,
+    "initial_stacks": {
+      "0": 5.0,
+      "1": 6.0
+    },
+    "board": [],
+    "street": "PREFLOP",
+    "pot": 1.5,
+    "highest": 1.0,
+    "last_full_raise": 1.0,
+    "pending": [
+      0,
+      1
+    ],
+    "current_player": 0,
+    "history": [
+      {
+        "street": "PREFLOP",
+        "player_id": 0,
+        "position": "SB",
+        "action": "BLIND",
+        "amount_to": 0.5,
+        "amount_added": 0.5,
+        "pot_before": 0.0,
+        "pot_after": 0.5,
+        "highest_before": 0.0
+      },
+      {
+        "street": "PREFLOP",
+        "player_id": 1,
+        "position": "BB",
+        "action": "BLIND",
+        "amount_to": 1.0,
+        "amount_added": 1.0,
+        "pot_before": 0.5,
+        "pot_after": 1.5,
+        "highest_before": 0.0
+      }
+    ],
+    "terminal": false,
+    "showdown": false,
+    "awards": {},
+    "hand_number": 1,
+    "blind_level_index": 0
+  },
+  "ranges": {
+    "0": [
+      {
+        "cards": [
+          20,
+          31
+        ],
+        "probability": 0.3333333333333333
+      },
+      {
+        "cards": [
+          4,
+          18
+        ],
+        "probability": 0.16666666666666666
+      },
+      {
+        "cards": [
+          13,
+          48
+        ],
+        "probability": 0.16666666666666666
+      },
+      {
+        "cards": [
+          29,
+          44
+        ],
+        "probability": 0.16666666666666666
+      },
+      {
+        "cards": [
+          14,
+          31
+        ],
+        "probability": 0.16666666666666666
+      }
+    ],
+    "1": [
+      {
+        "cards": [
+          42,
+          46
+        ],
+        "probability": 0.3333333333333333
+      },
+      {
+        "cards": [
+          26,
+          30
+        ],
+        "probability": 0.16666666666666666
+      },
+      {
+        "cards": [
+          6,
+          36
+        ],
+        "probability": 0.16666666666666666
+      },
+      {
+        "cards": [
+          22,
+          47
+        ],
+        "probability": 0.16666666666666666
+      },
+      {
+        "cards": [
+          45,
+          47
+        ],
+        "probability": 0.16666666666666666
+      }
+    ]
+  },
+  "profiles": {
+    "0": "loose_passive",
+    "1": "loose_passive"
+  },
+  "steps": [
+    {
+      "before": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 4.5,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.5,
+            "contribution": 0.5,
+            "folded": false,
+            "acted_at": null
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 5.0,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 1.0,
+            "contribution": 1.0,
+            "folded": false,
+            "acted_at": null
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0,
+          26,
+          15,
+          23,
+          38,
+          32
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [],
+        "street": "PREFLOP",
+        "pot": 1.5,
+        "highest": 1.0,
+        "last_full_raise": 1.0,
+        "pending": [
+          0,
+          1
+        ],
+        "current_player": 0,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "after": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 2.25,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": 2.25
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 5.0,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 1.0,
+            "contribution": 1.0,
+            "folded": false,
+            "acted_at": null
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0,
+          26,
+          15,
+          23,
+          38,
+          32
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [],
+        "street": "PREFLOP",
+        "pot": 3.25,
+        "highest": 2.25,
+        "last_full_raise": 1.25,
+        "pending": [
+          1
+        ],
+        "current_player": 1,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "action": {
+        "action_id": "actual",
+        "category": "RAISE",
+        "amount_to": 2.25
+      },
+      "likelihoods": [
+        0.03782451244874875,
+        0.0,
+        0.8340477903277989,
+        0.03266456016793987,
+        0.02831618531464716,
+        0.025439185037474592,
+        0.02189570947550737,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.019812057227883578
+      ],
+      "posterior": {
+        "0": [
+          {
+            "cards": [
+              20,
+              31
+            ],
+            "probability": 0.35058843422278213
+          },
+          {
+            "cards": [
+              4,
+              18
+            ],
+            "probability": 0.06370292550374018
+          },
+          {
+            "cards": [
+              13,
+              48
+            ],
+            "probability": 0.15471076806098913
+          },
+          {
+            "cards": [
+              29,
+              44
+            ],
+            "probability": 0.23361450514107235
+          },
+          {
+            "cards": [
+              14,
+              31
+            ],
+            "probability": 0.19738336707141624
+          }
+        ],
+        "1": [
+          {
+            "cards": [
+              42,
+              46
+            ],
+            "probability": 0.3333333333333333
+          },
+          {
+            "cards": [
+              26,
+              30
+            ],
+            "probability": 0.16666666666666666
+          },
+          {
+            "cards": [
+              6,
+              36
+            ],
+            "probability": 0.16666666666666666
+          },
+          {
+            "cards": [
+              22,
+              47
+            ],
+            "probability": 0.16666666666666666
+          },
+          {
+            "cards": [
+              45,
+              47
+            ],
+            "probability": 0.16666666666666666
+          }
+        ]
+      },
+      "analysis": {
+        "legal_actions": [
+          {
+            "action_id": "FOLD",
+            "category": "FOLD",
+            "amount_to": null
+          },
+          {
+            "action_id": "CALL",
+            "category": "CALL",
+            "amount_to": null
+          },
+          {
+            "action_id": "RAISE_2.0X",
+            "category": "RAISE",
+            "amount_to": 2.0
+          },
+          {
+            "action_id": "RAISE_2.5X",
+            "category": "RAISE",
+            "amount_to": 2.5
+          },
+          {
+            "action_id": "RAISE_3.0X",
+            "category": "RAISE",
+            "amount_to": 3.0
+          },
+          {
+            "action_id": "RAISE_4.0X",
+            "category": "RAISE",
+            "amount_to": 4.0
+          },
+          {
+            "action_id": "ALL_IN",
+            "category": "RAISE",
+            "amount_to": 5.0
+          }
+        ],
+        "action_probabilities": {
+          "FOLD": 1.0,
+          "CALL": 0.0,
+          "RAISE_2.0X": 0.0,
+          "RAISE_2.5X": 0.0,
+          "RAISE_3.0X": 0.0,
+          "RAISE_4.0X": 0.0,
+          "ALL_IN": 0.0
+        },
+        "estimated_ev_by_action": {
+          "FOLD": -0.5,
+          "CALL": -1.5,
+          "RAISE_2.0X": -2.0,
+          "RAISE_2.5X": -2.08125,
+          "RAISE_3.0X": -2.375,
+          "RAISE_4.0X": -2.75,
+          "ALL_IN": -3.125
+        },
+        "ev_units": "physical_chips/hand_delta",
+        "opponent_ranges": {
+          "1": [
+            {
+              "cards": [
+                42,
+                46
+              ],
+              "probability": 0.3333333333333333
+            },
+            {
+              "cards": [
+                26,
+                30
+              ],
+              "probability": 0.16666666666666666
+            },
+            {
+              "cards": [
+                6,
+                36
+              ],
+              "probability": 0.16666666666666666
+            },
+            {
+              "cards": [
+                22,
+                47
+              ],
+              "probability": 0.16666666666666666
+            },
+            {
+              "cards": [
+                45,
+                47
+              ],
+              "probability": 0.16666666666666666
+            }
+          ]
+        },
+        "own_public_range": [
+          {
+            "cards": [
+              20,
+              31
+            ],
+            "probability": 0.3333333333333333
+          },
+          {
+            "cards": [
+              4,
+              18
+            ],
+            "probability": 0.16666666666666666
+          },
+          {
+            "cards": [
+              13,
+              48
+            ],
+            "probability": 0.16666666666666666
+          },
+          {
+            "cards": [
+              29,
+              44
+            ],
+            "probability": 0.16666666666666666
+          },
+          {
+            "cards": [
+              14,
+              31
+            ],
+            "probability": 0.16666666666666666
+          }
+        ],
+        "calculation_method_by_action": {
+          "FOLD": "sampled-chance/depth-limited-policy-rollout",
+          "CALL": "sampled-chance/depth-limited-policy-rollout",
+          "RAISE_2.0X": "sampled-chance/depth-limited-policy-rollout",
+          "RAISE_2.5X": "sampled-chance/depth-limited-policy-rollout",
+          "RAISE_3.0X": "sampled-chance/depth-limited-policy-rollout",
+          "RAISE_4.0X": "sampled-chance/depth-limited-policy-rollout",
+          "ALL_IN": "sampled-chance/depth-limited-policy-rollout"
+        },
+        "search_nodes": 275,
+        "samples_used": 8,
+        "iterations_completed": 0,
+        "uncertainty_estimates": {
+          "behavior_ev_range": {
+            "FOLD": [
+              -0.5,
+              -0.5
+            ],
+            "CALL": [
+              -1.5,
+              -1.5
+            ],
+            "RAISE_2.0X": [
+              -2.0,
+              -2.0
+            ],
+            "RAISE_2.5X": [
+              -2.08125,
+              -2.08125
+            ],
+            "RAISE_3.0X": [
+              -2.375,
+              -2.375
+            ],
+            "RAISE_4.0X": [
+              -2.75,
+              -2.75
+            ],
+            "ALL_IN": [
+              -3.125,
+              -3.125
+            ]
+          },
+          "conditional_sampling": {
+            "loose-passive": {
+              "sampling_standard_error": {
+                "FOLD": 0.0,
+                "CALL": 1.1338934190276817,
+                "RAISE_2.0X": 1.1952286093343936,
+                "RAISE_2.5X": 1.1674123361092257,
+                "RAISE_3.0X": 1.2091540726592998,
+                "RAISE_4.0X": 1.25,
+                "ALL_IN": 1.3152607020228781
+              },
+              "paired_difference_standard_error": {
+                "FOLD": 0.0,
+                "CALL": 1.1338934190276817,
+                "RAISE_2.0X": 1.1952286093343936,
+                "RAISE_2.5X": 1.1674123361092257,
+                "RAISE_3.0X": 1.2091540726592998,
+                "RAISE_4.0X": 1.25,
+                "ALL_IN": 1.3152607020228781
+              },
+              "paired_reference_action": "FOLD",
+              "opponent_model_uncertainty": "not quantified"
+            }
+          },
+          "behavior_posterior": {
+            "loose-passive": 1.0
+          },
+          "private_hands": "compatible posterior integrated within each behavior hypothesis",
+          "continuation_error": "not bounded; supplied behavior governs unresolved continuations"
+        },
+        "model_versions_used": {
+          "loose-passive": {
+            "0": "observable-equity-profile-v1/loose_passive/24-deals",
+            "1": "observable-equity-profile-v1/loose_passive/24-deals"
+          }
+        },
+        "assumptions": [
+          "Displayed ranges are factors; joint card compatibility is enforced during evaluation.",
+          "Values include earlier contributions in this hand.",
+          "explicit prior",
+          "Exploitative mode: latent behavior mixture preserved jointly with hand ranges.",
+          "Behavior mixture is privately conditioned on the acting hand for EV only; public hypotheses are unchanged.",
+          "loose-passive: 1"
+        ],
+        "warnings": [
+          "Action EV assumes the supplied continuation behavior; this is not an equilibrium solve.",
+          "Sampling errors exclude uncertainty about opponent ranges and behavior.",
+          "Displayed range factors belong to the first hypothesis; the complete mixture is available on session.hypotheses."
+        ],
+        "baseline_probabilities": {
+          "FOLD": 0.03782451244874875,
+          "CALL": 0.8340477903277989,
+          "RAISE_2.0X": 0.03266456016793987,
+          "RAISE_2.5X": 0.02831618531464716,
+          "RAISE_3.0X": 0.025439185037474592,
+          "RAISE_4.0X": 0.02189570947550737,
+          "ALL_IN": 0.019812057227883578
+        },
+        "current_big_blind": 1.0,
+        "strategy_by_hand": null,
+        "computation_breakdown": {
+          "terminal_leaf_evaluations": 56,
+          "rollout_leaves": 48,
+          "learned_leaves": 0
+        }
+      }
+    },
+    {
+      "before": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 2.25,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": 2.25
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 5.0,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 1.0,
+            "contribution": 1.0,
+            "folded": false,
+            "acted_at": null
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0,
+          26,
+          15,
+          23,
+          38,
+          32
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [],
+        "street": "PREFLOP",
+        "pot": 3.25,
+        "highest": 2.25,
+        "last_full_raise": 1.25,
+        "pending": [
+          1
+        ],
+        "current_player": 1,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "after": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 3.75,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0,
+          26,
+          15
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [
+          32,
+          38,
+          23
+        ],
+        "street": "FLOP",
+        "pot": 4.5,
+        "highest": 0.0,
+        "last_full_raise": 1.0,
+        "pending": [
+          0,
+          1
+        ],
+        "current_player": 1,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CALL",
+            "amount_to": 2.25,
+            "amount_added": 1.25,
+            "pot_before": 3.25,
+            "pot_after": 4.5,
+            "highest_before": 2.25
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "action": {
+        "action_id": "CALL",
+        "category": "CALL",
+        "amount_to": null
+      },
+      "likelihoods": [
+        0.0020959365600260937,
+        0.0,
+        0.7433088291314865,
+        0.09391667061053223,
+        0.08184619118755576,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0788323725103995
+      ],
+      "posterior": {
+        "0": [
+          {
+            "cards": [
+              20,
+              31
+            ],
+            "probability": 0.35058843422278213
+          },
+          {
+            "cards": [
+              4,
+              18
+            ],
+            "probability": 0.06370292550374018
+          },
+          {
+            "cards": [
+              13,
+              48
+            ],
+            "probability": 0.15471076806098913
+          },
+          {
+            "cards": [
+              29,
+              44
+            ],
+            "probability": 0.23361450514107235
+          },
+          {
+            "cards": [
+              14,
+              31
+            ],
+            "probability": 0.19738336707141624
+          }
+        ],
+        "1": [
+          {
+            "cards": [
+              42,
+              46
+            ],
+            "probability": 0.30981812210895887
+          },
+          {
+            "cards": [
+              26,
+              30
+            ],
+            "probability": 0.1783549849334207
+          },
+          {
+            "cards": [
+              6,
+              36
+            ],
+            "probability": 0.1783549849334207
+          },
+          {
+            "cards": [
+              22,
+              47
+            ],
+            "probability": 0.17392209329442743
+          },
+          {
+            "cards": [
+              45,
+              47
+            ],
+            "probability": 0.15954981472977228
+          }
+        ]
+      },
+      "analysis": {
+        "legal_actions": [
+          {
+            "action_id": "FOLD",
+            "category": "FOLD",
+            "amount_to": null
+          },
+          {
+            "action_id": "CALL",
+            "category": "CALL",
+            "amount_to": null
+          },
+          {
+            "action_id": "RAISE_2.0X",
+            "category": "RAISE",
+            "amount_to": 4.5
+          },
+          {
+            "action_id": "RAISE_2.5X",
+            "category": "RAISE",
+            "amount_to": 5.625
+          },
+          {
+            "action_id": "ALL_IN",
+            "category": "RAISE",
+            "amount_to": 6.0
+          }
+        ],
+        "action_probabilities": {
+          "FOLD": 0.0,
+          "CALL": 0.0,
+          "RAISE_2.0X": 1.0,
+          "RAISE_2.5X": 0.0,
+          "ALL_IN": 0.0
+        },
+        "estimated_ev_by_action": {
+          "FOLD": -1.0,
+          "CALL": 2.5625,
+          "RAISE_2.0X": 3.1875,
+          "RAISE_2.5X": 3.125,
+          "ALL_IN": 3.125
+        },
+        "ev_units": "physical_chips/hand_delta",
+        "opponent_ranges": {
+          "0": [
+            {
+              "cards": [
+                20,
+                31
+              ],
+              "probability": 0.35058843422278213
+            },
+            {
+              "cards": [
+                4,
+                18
+              ],
+              "probability": 0.06370292550374018
+            },
+            {
+              "cards": [
+                13,
+                48
+              ],
+              "probability": 0.15471076806098913
+            },
+            {
+              "cards": [
+                29,
+                44
+              ],
+              "probability": 0.23361450514107235
+            },
+            {
+              "cards": [
+                14,
+                31
+              ],
+              "probability": 0.19738336707141624
+            }
+          ]
+        },
+        "own_public_range": [
+          {
+            "cards": [
+              42,
+              46
+            ],
+            "probability": 0.3333333333333333
+          },
+          {
+            "cards": [
+              26,
+              30
+            ],
+            "probability": 0.16666666666666666
+          },
+          {
+            "cards": [
+              6,
+              36
+            ],
+            "probability": 0.16666666666666666
+          },
+          {
+            "cards": [
+              22,
+              47
+            ],
+            "probability": 0.16666666666666666
+          },
+          {
+            "cards": [
+              45,
+              47
+            ],
+            "probability": 0.16666666666666666
+          }
+        ],
+        "calculation_method_by_action": {
+          "FOLD": "sampled-chance/depth-limited-policy-rollout",
+          "CALL": "sampled-chance/depth-limited-policy-rollout",
+          "RAISE_2.0X": "sampled-chance/depth-limited-policy-rollout",
+          "RAISE_2.5X": "sampled-chance/depth-limited-policy-rollout",
+          "ALL_IN": "sampled-chance/depth-limited-policy-rollout"
+        },
+        "search_nodes": 135,
+        "samples_used": 8,
+        "iterations_completed": 0,
+        "uncertainty_estimates": {
+          "behavior_ev_range": {
+            "FOLD": [
+              -1.0,
+              -1.0
+            ],
+            "CALL": [
+              2.5625,
+              2.5625
+            ],
+            "RAISE_2.0X": [
+              3.1875,
+              3.1875
+            ],
+            "RAISE_2.5X": [
+              3.125,
+              3.125
+            ],
+            "ALL_IN": [
+              3.125,
+              3.125
+            ]
+          },
+          "conditional_sampling": {
+            "loose-passive": {
+              "sampling_standard_error": {
+                "FOLD": 0.0,
+                "CALL": 1.2144498313463354,
+                "RAISE_2.0X": 1.260447412061062,
+                "RAISE_2.5X": 1.3152607020228781,
+                "ALL_IN": 1.3152607020228781
+              },
+              "paired_difference_standard_error": {
+                "FOLD": 0.0,
+                "CALL": 1.2144498313463354,
+                "RAISE_2.0X": 1.260447412061062,
+                "RAISE_2.5X": 1.3152607020228781,
+                "ALL_IN": 1.3152607020228781
+              },
+              "paired_reference_action": "FOLD",
+              "opponent_model_uncertainty": "not quantified"
+            }
+          },
+          "behavior_posterior": {
+            "loose-passive": 1.0
+          },
+          "private_hands": "compatible posterior integrated within each behavior hypothesis",
+          "continuation_error": "not bounded; supplied behavior governs unresolved continuations"
+        },
+        "model_versions_used": {
+          "loose-passive": {
+            "0": "observable-equity-profile-v1/loose_passive/24-deals",
+            "1": "observable-equity-profile-v1/loose_passive/24-deals"
+          }
+        },
+        "assumptions": [
+          "Displayed ranges are factors; joint card compatibility is enforced during evaluation.",
+          "Values include earlier contributions in this hand.",
+          "explicit prior",
+          "action likelihood: player=0, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "Exploitative mode: latent behavior mixture preserved jointly with hand ranges.",
+          "Behavior mixture is privately conditioned on the acting hand for EV only; public hypotheses are unchanged.",
+          "loose-passive: 1"
+        ],
+        "warnings": [
+          "Action EV assumes the supplied continuation behavior; this is not an equilibrium solve.",
+          "Sampling errors exclude uncertainty about opponent ranges and behavior.",
+          "Displayed range factors belong to the first hypothesis; the complete mixture is available on session.hypotheses."
+        ],
+        "baseline_probabilities": {
+          "FOLD": 0.0020959365600260937,
+          "CALL": 0.7433088291314865,
+          "RAISE_2.0X": 0.09391667061053223,
+          "RAISE_2.5X": 0.08184619118755576,
+          "ALL_IN": 0.0788323725103995
+        },
+        "current_big_blind": 1.0,
+        "strategy_by_hand": null,
+        "computation_breakdown": {
+          "terminal_leaf_evaluations": 40,
+          "rollout_leaves": 32,
+          "learned_leaves": 0
+        }
+      }
+    },
+    {
+      "before": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 3.75,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0,
+          26,
+          15
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [
+          32,
+          38,
+          23
+        ],
+        "street": "FLOP",
+        "pot": 4.5,
+        "highest": 0.0,
+        "last_full_raise": 1.0,
+        "pending": [
+          0,
+          1
+        ],
+        "current_player": 1,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CALL",
+            "amount_to": 2.25,
+            "amount_added": 1.25,
+            "pot_before": 3.25,
+            "pot_after": 4.5,
+            "highest_before": 2.25
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "after": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 3.75,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": 0.0
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0,
+          26,
+          15
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [
+          32,
+          38,
+          23
+        ],
+        "street": "FLOP",
+        "pot": 4.5,
+        "highest": 0.0,
+        "last_full_raise": 1.0,
+        "pending": [
+          0
+        ],
+        "current_player": 0,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CALL",
+            "amount_to": 2.25,
+            "amount_added": 1.25,
+            "pot_before": 3.25,
+            "pot_after": 4.5,
+            "highest_before": 2.25
+          },
+          {
+            "street": "FLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "action": {
+        "action_id": "CHECK",
+        "category": "CHECK",
+        "amount_to": null
+      },
+      "likelihoods": [
+        0.0,
+        0.8096025032990262,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.059459938843890815,
+        0.05014288970918675,
+        0.041446379576217836,
+        0.0,
+        0.0,
+        0.03934828857167822
+      ],
+      "posterior": {
+        "0": [
+          {
+            "cards": [
+              20,
+              31
+            ],
+            "probability": 0.35058843422278213
+          },
+          {
+            "cards": [
+              4,
+              18
+            ],
+            "probability": 0.06370292550374018
+          },
+          {
+            "cards": [
+              13,
+              48
+            ],
+            "probability": 0.15471076806098913
+          },
+          {
+            "cards": [
+              29,
+              44
+            ],
+            "probability": 0.23361450514107235
+          },
+          {
+            "cards": [
+              14,
+              31
+            ],
+            "probability": 0.19738336707141624
+          }
+        ],
+        "1": [
+          {
+            "cards": [
+              42,
+              46
+            ],
+            "probability": 0.30709180792058816
+          },
+          {
+            "cards": [
+              26,
+              30
+            ],
+            "probability": 0.16771581963144114
+          },
+          {
+            "cards": [
+              6,
+              36
+            ],
+            "probability": 0.17884863670665285
+          },
+          {
+            "cards": [
+              22,
+              47
+            ],
+            "probability": 0.1863523182775956
+          },
+          {
+            "cards": [
+              45,
+              47
+            ],
+            "probability": 0.1599914174637223
+          }
+        ]
+      },
+      "analysis": {
+        "legal_actions": [
+          {
+            "action_id": "CHECK",
+            "category": "CHECK",
+            "amount_to": null
+          },
+          {
+            "action_id": "BET_RAISE_33P",
+            "category": "RAISE",
+            "amount_to": 1.485
+          },
+          {
+            "action_id": "BET_RAISE_50P",
+            "category": "RAISE",
+            "amount_to": 2.25
+          },
+          {
+            "action_id": "BET_RAISE_75P",
+            "category": "RAISE",
+            "amount_to": 3.375
+          },
+          {
+            "action_id": "ALL_IN",
+            "category": "RAISE",
+            "amount_to": 3.75
+          }
+        ],
+        "action_probabilities": {
+          "CHECK": 0.0,
+          "BET_RAISE_33P": 1.0,
+          "BET_RAISE_50P": 0.0,
+          "BET_RAISE_75P": 0.0,
+          "ALL_IN": 0.0
+        },
+        "estimated_ev_by_action": {
+          "CHECK": 0.0625,
+          "BET_RAISE_33P": 0.15812499999999974,
+          "BET_RAISE_50P": 0.0625,
+          "BET_RAISE_75P": 0.0,
+          "ALL_IN": 0.0
+        },
+        "ev_units": "physical_chips/hand_delta",
+        "opponent_ranges": {
+          "0": [
+            {
+              "cards": [
+                20,
+                31
+              ],
+              "probability": 0.35058843422278213
+            },
+            {
+              "cards": [
+                4,
+                18
+              ],
+              "probability": 0.06370292550374018
+            },
+            {
+              "cards": [
+                13,
+                48
+              ],
+              "probability": 0.15471076806098913
+            },
+            {
+              "cards": [
+                29,
+                44
+              ],
+              "probability": 0.23361450514107235
+            },
+            {
+              "cards": [
+                14,
+                31
+              ],
+              "probability": 0.19738336707141624
+            }
+          ]
+        },
+        "own_public_range": [
+          {
+            "cards": [
+              42,
+              46
+            ],
+            "probability": 0.30981812210895887
+          },
+          {
+            "cards": [
+              26,
+              30
+            ],
+            "probability": 0.1783549849334207
+          },
+          {
+            "cards": [
+              6,
+              36
+            ],
+            "probability": 0.1783549849334207
+          },
+          {
+            "cards": [
+              22,
+              47
+            ],
+            "probability": 0.17392209329442743
+          },
+          {
+            "cards": [
+              45,
+              47
+            ],
+            "probability": 0.15954981472977228
+          }
+        ],
+        "calculation_method_by_action": {
+          "CHECK": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_33P": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_50P": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_75P": "sampled-chance/depth-limited-policy-rollout",
+          "ALL_IN": "sampled-chance/depth-limited-policy-rollout"
+        },
+        "search_nodes": 160,
+        "samples_used": 8,
+        "iterations_completed": 0,
+        "uncertainty_estimates": {
+          "behavior_ev_range": {
+            "CHECK": [
+              0.0625,
+              0.0625
+            ],
+            "BET_RAISE_33P": [
+              0.15812499999999974,
+              0.15812499999999974
+            ],
+            "BET_RAISE_50P": [
+              0.0625,
+              0.0625
+            ],
+            "BET_RAISE_75P": [
+              0.0,
+              0.0
+            ],
+            "ALL_IN": [
+              0.0,
+              0.0
+            ]
+          },
+          "conditional_sampling": {
+            "loose-passive": {
+              "sampling_standard_error": {
+                "CHECK": 1.435946365393121,
+                "BET_RAISE_33P": 1.6066329970013598,
+                "BET_RAISE_50P": 1.7739118898234891,
+                "BET_RAISE_75P": 1.889822365046136,
+                "ALL_IN": 1.889822365046136
+              },
+              "paired_difference_standard_error": {
+                "CHECK": 0.0,
+                "BET_RAISE_33P": 0.43502815744254664,
+                "BET_RAISE_50P": 0.6087164481806897,
+                "BET_RAISE_75P": 0.7376210554401029,
+                "ALL_IN": 0.7376210554401029
+              },
+              "paired_reference_action": "CHECK",
+              "opponent_model_uncertainty": "not quantified"
+            }
+          },
+          "behavior_posterior": {
+            "loose-passive": 1.0
+          },
+          "private_hands": "compatible posterior integrated within each behavior hypothesis",
+          "continuation_error": "not bounded; supplied behavior governs unresolved continuations"
+        },
+        "model_versions_used": {
+          "loose-passive": {
+            "0": "observable-equity-profile-v1/loose_passive/24-deals",
+            "1": "observable-equity-profile-v1/loose_passive/24-deals"
+          }
+        },
+        "assumptions": [
+          "Displayed ranges are factors; joint card compatibility is enforced during evaluation.",
+          "Values include earlier contributions in this hand.",
+          "explicit prior",
+          "action likelihood: player=0, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "public board reveal",
+          "Exploitative mode: latent behavior mixture preserved jointly with hand ranges.",
+          "Behavior mixture is privately conditioned on the acting hand for EV only; public hypotheses are unchanged.",
+          "loose-passive: 1"
+        ],
+        "warnings": [
+          "Action EV assumes the supplied continuation behavior; this is not an equilibrium solve.",
+          "Sampling errors exclude uncertainty about opponent ranges and behavior.",
+          "Displayed range factors belong to the first hypothesis; the complete mixture is available on session.hypotheses."
+        ],
+        "baseline_probabilities": {
+          "CHECK": 0.8096025032990262,
+          "BET_RAISE_33P": 0.059459938843890815,
+          "BET_RAISE_50P": 0.05014288970918675,
+          "BET_RAISE_75P": 0.041446379576217836,
+          "ALL_IN": 0.03934828857167822
+        },
+        "current_big_blind": 1.0,
+        "strategy_by_hand": null,
+        "computation_breakdown": {
+          "terminal_leaf_evaluations": 40,
+          "rollout_leaves": 40,
+          "learned_leaves": 0
+        }
+      }
+    },
+    {
+      "before": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 3.75,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": 0.0
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0,
+          26,
+          15
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [
+          32,
+          38,
+          23
+        ],
+        "street": "FLOP",
+        "pot": 4.5,
+        "highest": 0.0,
+        "last_full_raise": 1.0,
+        "pending": [
+          0
+        ],
+        "current_player": 0,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CALL",
+            "amount_to": 2.25,
+            "amount_added": 1.25,
+            "pot_before": 3.25,
+            "pot_after": 4.5,
+            "highest_before": 2.25
+          },
+          {
+            "street": "FLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "after": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 3.75,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0,
+          26
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [
+          32,
+          38,
+          23,
+          15
+        ],
+        "street": "TURN",
+        "pot": 4.5,
+        "highest": 0.0,
+        "last_full_raise": 1.0,
+        "pending": [
+          0,
+          1
+        ],
+        "current_player": 1,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CALL",
+            "amount_to": 2.25,
+            "amount_added": 1.25,
+            "pot_before": 3.25,
+            "pot_after": 4.5,
+            "highest_before": 2.25
+          },
+          {
+            "street": "FLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "FLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "action": {
+        "action_id": "CHECK",
+        "category": "CHECK",
+        "amount_to": null
+      },
+      "likelihoods": [
+        0.0,
+        0.8551928057495092,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.05542808117852072,
+        0.046742802218875376,
+        0.0,
+        0.0,
+        0.0,
+        0.04263631085309461
+      ],
+      "posterior": {
+        "0": [
+          {
+            "cards": [
+              20,
+              31
+            ],
+            "probability": 0.33475618053917633
+          },
+          {
+            "cards": [
+              4,
+              18
+            ],
+            "probability": 0.0674194576179682
+          },
+          {
+            "cards": [
+              13,
+              48
+            ],
+            "probability": 0.1631884227496614
+          },
+          {
+            "cards": [
+              29,
+              44
+            ],
+            "probability": 0.23364476777140103
+          },
+          {
+            "cards": [
+              14,
+              31
+            ],
+            "probability": 0.20099117132179306
+          }
+        ],
+        "1": [
+          {
+            "cards": [
+              42,
+              46
+            ],
+            "probability": 0.30709180792058816
+          },
+          {
+            "cards": [
+              26,
+              30
+            ],
+            "probability": 0.16771581963144114
+          },
+          {
+            "cards": [
+              6,
+              36
+            ],
+            "probability": 0.17884863670665285
+          },
+          {
+            "cards": [
+              22,
+              47
+            ],
+            "probability": 0.1863523182775956
+          },
+          {
+            "cards": [
+              45,
+              47
+            ],
+            "probability": 0.1599914174637223
+          }
+        ]
+      },
+      "analysis": {
+        "legal_actions": [
+          {
+            "action_id": "CHECK",
+            "category": "CHECK",
+            "amount_to": null
+          },
+          {
+            "action_id": "BET_RAISE_33P",
+            "category": "RAISE",
+            "amount_to": 1.485
+          },
+          {
+            "action_id": "BET_RAISE_50P",
+            "category": "RAISE",
+            "amount_to": 2.25
+          },
+          {
+            "action_id": "ALL_IN",
+            "category": "RAISE",
+            "amount_to": 2.75
+          }
+        ],
+        "action_probabilities": {
+          "CHECK": 0.0,
+          "BET_RAISE_33P": 1.0,
+          "BET_RAISE_50P": 0.0,
+          "ALL_IN": 0.0
+        },
+        "estimated_ev_by_action": {
+          "CHECK": -2.3125,
+          "BET_RAISE_33P": -1.4006250000000002,
+          "BET_RAISE_50P": -1.6875,
+          "ALL_IN": -1.875
+        },
+        "ev_units": "physical_chips/hand_delta",
+        "opponent_ranges": {
+          "1": [
+            {
+              "cards": [
+                42,
+                46
+              ],
+              "probability": 0.30709180792058816
+            },
+            {
+              "cards": [
+                26,
+                30
+              ],
+              "probability": 0.16771581963144114
+            },
+            {
+              "cards": [
+                6,
+                36
+              ],
+              "probability": 0.17884863670665285
+            },
+            {
+              "cards": [
+                22,
+                47
+              ],
+              "probability": 0.1863523182775956
+            },
+            {
+              "cards": [
+                45,
+                47
+              ],
+              "probability": 0.1599914174637223
+            }
+          ]
+        },
+        "own_public_range": [
+          {
+            "cards": [
+              20,
+              31
+            ],
+            "probability": 0.35058843422278213
+          },
+          {
+            "cards": [
+              4,
+              18
+            ],
+            "probability": 0.06370292550374018
+          },
+          {
+            "cards": [
+              13,
+              48
+            ],
+            "probability": 0.15471076806098913
+          },
+          {
+            "cards": [
+              29,
+              44
+            ],
+            "probability": 0.23361450514107235
+          },
+          {
+            "cards": [
+              14,
+              31
+            ],
+            "probability": 0.19738336707141624
+          }
+        ],
+        "calculation_method_by_action": {
+          "CHECK": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_33P": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_50P": "sampled-chance/depth-limited-policy-rollout",
+          "ALL_IN": "sampled-chance/depth-limited-policy-rollout"
+        },
+        "search_nodes": 143,
+        "samples_used": 8,
+        "iterations_completed": 0,
+        "uncertainty_estimates": {
+          "behavior_ev_range": {
+            "CHECK": [
+              -2.3125,
+              -2.3125
+            ],
+            "BET_RAISE_33P": [
+              -1.4006250000000002,
+              -1.4006250000000002
+            ],
+            "BET_RAISE_50P": [
+              -1.6875,
+              -1.6875
+            ],
+            "ALL_IN": [
+              -1.875,
+              -1.875
+            ]
+          },
+          "conditional_sampling": {
+            "loose-passive": {
+              "sampling_standard_error": {
+                "CHECK": 1.216286429494068,
+                "BET_RAISE_33P": 1.500932280968589,
+                "BET_RAISE_50P": 1.5696266048240353,
+                "ALL_IN": 1.6194961738586655
+              },
+              "paired_difference_standard_error": {
+                "CHECK": 0.0,
+                "BET_RAISE_33P": 0.9501038183403959,
+                "BET_RAISE_50P": 0.9910312089651149,
+                "ALL_IN": 1.0272514471706944
+              },
+              "paired_reference_action": "CHECK",
+              "opponent_model_uncertainty": "not quantified"
+            }
+          },
+          "behavior_posterior": {
+            "loose-passive": 1.0
+          },
+          "private_hands": "compatible posterior integrated within each behavior hypothesis",
+          "continuation_error": "not bounded; supplied behavior governs unresolved continuations"
+        },
+        "model_versions_used": {
+          "loose-passive": {
+            "0": "observable-equity-profile-v1/loose_passive/24-deals",
+            "1": "observable-equity-profile-v1/loose_passive/24-deals"
+          }
+        },
+        "assumptions": [
+          "Displayed ranges are factors; joint card compatibility is enforced during evaluation.",
+          "Values include earlier contributions in this hand.",
+          "explicit prior",
+          "action likelihood: player=0, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "public board reveal",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "Exploitative mode: latent behavior mixture preserved jointly with hand ranges.",
+          "Behavior mixture is privately conditioned on the acting hand for EV only; public hypotheses are unchanged.",
+          "loose-passive: 1"
+        ],
+        "warnings": [
+          "Action EV assumes the supplied continuation behavior; this is not an equilibrium solve.",
+          "Sampling errors exclude uncertainty about opponent ranges and behavior.",
+          "Displayed range factors belong to the first hypothesis; the complete mixture is available on session.hypotheses."
+        ],
+        "baseline_probabilities": {
+          "CHECK": 0.8551928057495092,
+          "BET_RAISE_33P": 0.05542808117852072,
+          "BET_RAISE_50P": 0.046742802218875376,
+          "ALL_IN": 0.04263631085309461
+        },
+        "current_big_blind": 1.0,
+        "strategy_by_hand": null,
+        "computation_breakdown": {
+          "terminal_leaf_evaluations": 32,
+          "rollout_leaves": 32,
+          "learned_leaves": 0
+        }
+      }
+    },
+    {
+      "before": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 3.75,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0,
+          26
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [
+          32,
+          38,
+          23,
+          15
+        ],
+        "street": "TURN",
+        "pot": 4.5,
+        "highest": 0.0,
+        "last_full_raise": 1.0,
+        "pending": [
+          0,
+          1
+        ],
+        "current_player": 1,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CALL",
+            "amount_to": 2.25,
+            "amount_added": 1.25,
+            "pot_before": 3.25,
+            "pot_after": 4.5,
+            "highest_before": 2.25
+          },
+          {
+            "street": "FLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "FLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "after": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 3.75,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": 0.0
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0,
+          26
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [
+          32,
+          38,
+          23,
+          15
+        ],
+        "street": "TURN",
+        "pot": 4.5,
+        "highest": 0.0,
+        "last_full_raise": 1.0,
+        "pending": [
+          0
+        ],
+        "current_player": 0,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CALL",
+            "amount_to": 2.25,
+            "amount_added": 1.25,
+            "pot_before": 3.25,
+            "pot_after": 4.5,
+            "highest_before": 2.25
+          },
+          {
+            "street": "FLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "FLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "TURN",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "action": {
+        "action_id": "CHECK",
+        "category": "CHECK",
+        "amount_to": null
+      },
+      "likelihoods": [
+        0.0,
+        0.8818356674136509,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.03690197671111274,
+        0.031119637595564385,
+        0.025722416867885366,
+        0.0,
+        0.0,
+        0.024420301411786628
+      ],
+      "posterior": {
+        "0": [
+          {
+            "cards": [
+              20,
+              31
+            ],
+            "probability": 0.33475618053917633
+          },
+          {
+            "cards": [
+              4,
+              18
+            ],
+            "probability": 0.0674194576179682
+          },
+          {
+            "cards": [
+              13,
+              48
+            ],
+            "probability": 0.1631884227496614
+          },
+          {
+            "cards": [
+              29,
+              44
+            ],
+            "probability": 0.23364476777140103
+          },
+          {
+            "cards": [
+              14,
+              31
+            ],
+            "probability": 0.20099117132179306
+          }
+        ],
+        "1": [
+          {
+            "cards": [
+              42,
+              46
+            ],
+            "probability": 0.3437303363350558
+          },
+          {
+            "cards": [
+              26,
+              30
+            ],
+            "probability": 0.14212280607458516
+          },
+          {
+            "cards": [
+              6,
+              36
+            ],
+            "probability": 0.18155949653765144
+          },
+          {
+            "cards": [
+              22,
+              47
+            ],
+            "probability": 0.1914999272634847
+          },
+          {
+            "cards": [
+              45,
+              47
+            ],
+            "probability": 0.14108743378922295
+          }
+        ]
+      },
+      "analysis": {
+        "legal_actions": [
+          {
+            "action_id": "CHECK",
+            "category": "CHECK",
+            "amount_to": null
+          },
+          {
+            "action_id": "BET_RAISE_33P",
+            "category": "RAISE",
+            "amount_to": 1.485
+          },
+          {
+            "action_id": "BET_RAISE_50P",
+            "category": "RAISE",
+            "amount_to": 2.25
+          },
+          {
+            "action_id": "BET_RAISE_75P",
+            "category": "RAISE",
+            "amount_to": 3.375
+          },
+          {
+            "action_id": "ALL_IN",
+            "category": "RAISE",
+            "amount_to": 3.75
+          }
+        ],
+        "action_probabilities": {
+          "CHECK": 1.0,
+          "BET_RAISE_33P": 0.0,
+          "BET_RAISE_50P": 0.0,
+          "BET_RAISE_75P": 0.0,
+          "ALL_IN": 0.0
+        },
+        "estimated_ev_by_action": {
+          "CHECK": 0.6875,
+          "BET_RAISE_33P": 0.3162499999999997,
+          "BET_RAISE_50P": 0.125,
+          "BET_RAISE_75P": 0.0,
+          "ALL_IN": 0.0
+        },
+        "ev_units": "physical_chips/hand_delta",
+        "opponent_ranges": {
+          "0": [
+            {
+              "cards": [
+                20,
+                31
+              ],
+              "probability": 0.33475618053917633
+            },
+            {
+              "cards": [
+                4,
+                18
+              ],
+              "probability": 0.0674194576179682
+            },
+            {
+              "cards": [
+                13,
+                48
+              ],
+              "probability": 0.1631884227496614
+            },
+            {
+              "cards": [
+                29,
+                44
+              ],
+              "probability": 0.23364476777140103
+            },
+            {
+              "cards": [
+                14,
+                31
+              ],
+              "probability": 0.20099117132179306
+            }
+          ]
+        },
+        "own_public_range": [
+          {
+            "cards": [
+              42,
+              46
+            ],
+            "probability": 0.30709180792058816
+          },
+          {
+            "cards": [
+              26,
+              30
+            ],
+            "probability": 0.16771581963144114
+          },
+          {
+            "cards": [
+              6,
+              36
+            ],
+            "probability": 0.17884863670665285
+          },
+          {
+            "cards": [
+              22,
+              47
+            ],
+            "probability": 0.1863523182775956
+          },
+          {
+            "cards": [
+              45,
+              47
+            ],
+            "probability": 0.1599914174637223
+          }
+        ],
+        "calculation_method_by_action": {
+          "CHECK": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_33P": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_50P": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_75P": "sampled-chance/depth-limited-policy-rollout",
+          "ALL_IN": "sampled-chance/depth-limited-policy-rollout"
+        },
+        "search_nodes": 128,
+        "samples_used": 8,
+        "iterations_completed": 0,
+        "uncertainty_estimates": {
+          "behavior_ev_range": {
+            "CHECK": [
+              0.6875,
+              0.6875
+            ],
+            "BET_RAISE_33P": [
+              0.3162499999999997,
+              0.3162499999999997
+            ],
+            "BET_RAISE_50P": [
+              0.125,
+              0.125
+            ],
+            "BET_RAISE_75P": [
+              0.0,
+              0.0
+            ],
+            "ALL_IN": [
+              0.0,
+              0.0
+            ]
+          },
+          "conditional_sampling": {
+            "loose-passive": {
+              "sampling_standard_error": {
+                "CHECK": 1.1695065351310723,
+                "BET_RAISE_33P": 1.5405312018679047,
+                "BET_RAISE_50P": 1.7493621286465697,
+                "BET_RAISE_75P": 1.889822365046136,
+                "ALL_IN": 1.889822365046136
+              },
+              "paired_difference_standard_error": {
+                "CHECK": 0.0,
+                "BET_RAISE_33P": 0.46538650411704646,
+                "BET_RAISE_50P": 0.7051310668440098,
+                "BET_RAISE_75P": 0.861826859476012,
+                "ALL_IN": 0.861826859476012
+              },
+              "paired_reference_action": "CHECK",
+              "opponent_model_uncertainty": "not quantified"
+            }
+          },
+          "behavior_posterior": {
+            "loose-passive": 1.0
+          },
+          "private_hands": "compatible posterior integrated within each behavior hypothesis",
+          "continuation_error": "not bounded; supplied behavior governs unresolved continuations"
+        },
+        "model_versions_used": {
+          "loose-passive": {
+            "0": "observable-equity-profile-v1/loose_passive/24-deals",
+            "1": "observable-equity-profile-v1/loose_passive/24-deals"
+          }
+        },
+        "assumptions": [
+          "Displayed ranges are factors; joint card compatibility is enforced during evaluation.",
+          "Values include earlier contributions in this hand.",
+          "explicit prior",
+          "action likelihood: player=0, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "public board reveal",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "action likelihood: player=0, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "public board reveal",
+          "Exploitative mode: latent behavior mixture preserved jointly with hand ranges.",
+          "Behavior mixture is privately conditioned on the acting hand for EV only; public hypotheses are unchanged.",
+          "loose-passive: 1"
+        ],
+        "warnings": [
+          "Action EV assumes the supplied continuation behavior; this is not an equilibrium solve.",
+          "Sampling errors exclude uncertainty about opponent ranges and behavior.",
+          "Displayed range factors belong to the first hypothesis; the complete mixture is available on session.hypotheses."
+        ],
+        "baseline_probabilities": {
+          "CHECK": 0.8818356674136509,
+          "BET_RAISE_33P": 0.03690197671111274,
+          "BET_RAISE_50P": 0.031119637595564385,
+          "BET_RAISE_75P": 0.025722416867885366,
+          "ALL_IN": 0.024420301411786628
+        },
+        "current_big_blind": 1.0,
+        "strategy_by_hand": null,
+        "computation_breakdown": {
+          "terminal_leaf_evaluations": 40,
+          "rollout_leaves": 40,
+          "learned_leaves": 0
+        }
+      }
+    },
+    {
+      "before": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 3.75,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": 0.0
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0,
+          26
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [
+          32,
+          38,
+          23,
+          15
+        ],
+        "street": "TURN",
+        "pot": 4.5,
+        "highest": 0.0,
+        "last_full_raise": 1.0,
+        "pending": [
+          0
+        ],
+        "current_player": 0,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CALL",
+            "amount_to": 2.25,
+            "amount_added": 1.25,
+            "pot_before": 3.25,
+            "pot_after": 4.5,
+            "highest_before": 2.25
+          },
+          {
+            "street": "FLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "FLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "TURN",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "after": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 3.75,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [
+          32,
+          38,
+          23,
+          15,
+          26
+        ],
+        "street": "RIVER",
+        "pot": 4.5,
+        "highest": 0.0,
+        "last_full_raise": 1.0,
+        "pending": [
+          0,
+          1
+        ],
+        "current_player": 1,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CALL",
+            "amount_to": 2.25,
+            "amount_added": 1.25,
+            "pot_before": 3.25,
+            "pot_after": 4.5,
+            "highest_before": 2.25
+          },
+          {
+            "street": "FLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "FLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "TURN",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "TURN",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "action": {
+        "action_id": "CHECK",
+        "category": "CHECK",
+        "amount_to": null
+      },
+      "likelihoods": [
+        0.0,
+        0.8957550695069417,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.03990199865224525,
+        0.033649572409562324,
+        0.0,
+        0.0,
+        0.0,
+        0.03069335943125093
+      ],
+      "posterior": {
+        "0": [
+          {
+            "cards": [
+              20,
+              31
+            ],
+            "probability": 0.32708224911037076
+          },
+          {
+            "cards": [
+              4,
+              18
+            ],
+            "probability": 0.07013754135077838
+          },
+          {
+            "cards": [
+              13,
+              48
+            ],
+            "probability": 0.1648203997530156
+          },
+          {
+            "cards": [
+              29,
+              44
+            ],
+            "probability": 0.24157614851519194
+          },
+          {
+            "cards": [
+              14,
+              31
+            ],
+            "probability": 0.1963836612706433
+          }
+        ],
+        "1": [
+          {
+            "cards": [
+              42,
+              46
+            ],
+            "probability": 0.40067545654435505
+          },
+          {
+            "cards": [
+              6,
+              36
+            ],
+            "probability": 0.21163809671508355
+          },
+          {
+            "cards": [
+              22,
+              47
+            ],
+            "probability": 0.22322533880080508
+          },
+          {
+            "cards": [
+              45,
+              47
+            ],
+            "probability": 0.16446110793975635
+          }
+        ]
+      },
+      "analysis": {
+        "legal_actions": [
+          {
+            "action_id": "CHECK",
+            "category": "CHECK",
+            "amount_to": null
+          },
+          {
+            "action_id": "BET_RAISE_33P",
+            "category": "RAISE",
+            "amount_to": 1.485
+          },
+          {
+            "action_id": "BET_RAISE_50P",
+            "category": "RAISE",
+            "amount_to": 2.25
+          },
+          {
+            "action_id": "ALL_IN",
+            "category": "RAISE",
+            "amount_to": 2.75
+          }
+        ],
+        "action_probabilities": {
+          "CHECK": 1.0,
+          "BET_RAISE_33P": 0.0,
+          "BET_RAISE_50P": 0.0,
+          "ALL_IN": 0.0
+        },
+        "estimated_ev_by_action": {
+          "CHECK": 0.09562499999999996,
+          "BET_RAISE_33P": 4.440892098500626e-16,
+          "BET_RAISE_50P": 0.0,
+          "ALL_IN": 0.0
+        },
+        "ev_units": "physical_chips/hand_delta",
+        "opponent_ranges": {
+          "1": [
+            {
+              "cards": [
+                42,
+                46
+              ],
+              "probability": 0.3437303363350558
+            },
+            {
+              "cards": [
+                26,
+                30
+              ],
+              "probability": 0.14212280607458516
+            },
+            {
+              "cards": [
+                6,
+                36
+              ],
+              "probability": 0.18155949653765144
+            },
+            {
+              "cards": [
+                22,
+                47
+              ],
+              "probability": 0.1914999272634847
+            },
+            {
+              "cards": [
+                45,
+                47
+              ],
+              "probability": 0.14108743378922295
+            }
+          ]
+        },
+        "own_public_range": [
+          {
+            "cards": [
+              20,
+              31
+            ],
+            "probability": 0.33475618053917633
+          },
+          {
+            "cards": [
+              4,
+              18
+            ],
+            "probability": 0.0674194576179682
+          },
+          {
+            "cards": [
+              13,
+              48
+            ],
+            "probability": 0.1631884227496614
+          },
+          {
+            "cards": [
+              29,
+              44
+            ],
+            "probability": 0.23364476777140103
+          },
+          {
+            "cards": [
+              14,
+              31
+            ],
+            "probability": 0.20099117132179306
+          }
+        ],
+        "calculation_method_by_action": {
+          "CHECK": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_33P": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_50P": "sampled-chance/depth-limited-policy-rollout",
+          "ALL_IN": "sampled-chance/depth-limited-policy-rollout"
+        },
+        "search_nodes": 108,
+        "samples_used": 8,
+        "iterations_completed": 0,
+        "uncertainty_estimates": {
+          "behavior_ev_range": {
+            "CHECK": [
+              0.09562499999999996,
+              0.09562499999999996
+            ],
+            "BET_RAISE_33P": [
+              4.440892098500626e-16,
+              4.440892098500626e-16
+            ],
+            "BET_RAISE_50P": [
+              0.0,
+              0.0
+            ],
+            "ALL_IN": [
+              0.0,
+              0.0
+            ]
+          },
+          "conditional_sampling": {
+            "loose-passive": {
+              "sampling_standard_error": {
+                "CHECK": 1.0732300368763312,
+                "BET_RAISE_33P": 1.411697306689464,
+                "BET_RAISE_50P": 1.7008401285415224,
+                "ALL_IN": 1.889822365046136
+              },
+              "paired_difference_standard_error": {
+                "CHECK": 0.0,
+                "BET_RAISE_33P": 0.49539706071782197,
+                "BET_RAISE_50P": 0.7426673918455786,
+                "ALL_IN": 0.9176062791209216
+              },
+              "paired_reference_action": "CHECK",
+              "opponent_model_uncertainty": "not quantified"
+            }
+          },
+          "behavior_posterior": {
+            "loose-passive": 1.0
+          },
+          "private_hands": "compatible posterior integrated within each behavior hypothesis",
+          "continuation_error": "not bounded; supplied behavior governs unresolved continuations"
+        },
+        "model_versions_used": {
+          "loose-passive": {
+            "0": "observable-equity-profile-v1/loose_passive/24-deals",
+            "1": "observable-equity-profile-v1/loose_passive/24-deals"
+          }
+        },
+        "assumptions": [
+          "Displayed ranges are factors; joint card compatibility is enforced during evaluation.",
+          "Values include earlier contributions in this hand.",
+          "explicit prior",
+          "action likelihood: player=0, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "public board reveal",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "action likelihood: player=0, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "public board reveal",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "Exploitative mode: latent behavior mixture preserved jointly with hand ranges.",
+          "Behavior mixture is privately conditioned on the acting hand for EV only; public hypotheses are unchanged.",
+          "loose-passive: 1"
+        ],
+        "warnings": [
+          "Action EV assumes the supplied continuation behavior; this is not an equilibrium solve.",
+          "Sampling errors exclude uncertainty about opponent ranges and behavior.",
+          "Displayed range factors belong to the first hypothesis; the complete mixture is available on session.hypotheses."
+        ],
+        "baseline_probabilities": {
+          "CHECK": 0.8957550695069417,
+          "BET_RAISE_33P": 0.03990199865224525,
+          "BET_RAISE_50P": 0.033649572409562324,
+          "ALL_IN": 0.03069335943125093
+        },
+        "current_big_blind": 1.0,
+        "strategy_by_hand": null,
+        "computation_breakdown": {
+          "terminal_leaf_evaluations": 32,
+          "rollout_leaves": 32,
+          "learned_leaves": 0
+        }
+      }
+    },
+    {
+      "before": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 3.75,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [
+          32,
+          38,
+          23,
+          15,
+          26
+        ],
+        "street": "RIVER",
+        "pot": 4.5,
+        "highest": 0.0,
+        "last_full_raise": 1.0,
+        "pending": [
+          0,
+          1
+        ],
+        "current_player": 1,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CALL",
+            "amount_to": 2.25,
+            "amount_added": 1.25,
+            "pot_before": 3.25,
+            "pot_after": 4.5,
+            "highest_before": 2.25
+          },
+          {
+            "street": "FLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "FLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "TURN",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "TURN",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "after": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 3.75,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": 0.0
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [
+          32,
+          38,
+          23,
+          15,
+          26
+        ],
+        "street": "RIVER",
+        "pot": 4.5,
+        "highest": 0.0,
+        "last_full_raise": 1.0,
+        "pending": [
+          0
+        ],
+        "current_player": 0,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CALL",
+            "amount_to": 2.25,
+            "amount_added": 1.25,
+            "pot_before": 3.25,
+            "pot_after": 4.5,
+            "highest_before": 2.25
+          },
+          {
+            "street": "FLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "FLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "TURN",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "TURN",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "RIVER",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "action": {
+        "action_id": "CHECK",
+        "category": "CHECK",
+        "amount_to": null
+      },
+      "likelihoods": [
+        0.0,
+        0.9107176760801048,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.02788230734175543,
+        0.023513301376678716,
+        0.01943528224240504,
+        0.0,
+        0.0,
+        0.018451432959055894
+      ],
+      "posterior": {
+        "0": [
+          {
+            "cards": [
+              20,
+              31
+            ],
+            "probability": 0.32708224911037076
+          },
+          {
+            "cards": [
+              4,
+              18
+            ],
+            "probability": 0.07013754135077838
+          },
+          {
+            "cards": [
+              13,
+              48
+            ],
+            "probability": 0.1648203997530156
+          },
+          {
+            "cards": [
+              29,
+              44
+            ],
+            "probability": 0.24157614851519194
+          },
+          {
+            "cards": [
+              14,
+              31
+            ],
+            "probability": 0.1963836612706433
+          }
+        ],
+        "1": [
+          {
+            "cards": [
+              42,
+              46
+            ],
+            "probability": 0.41985703058382384
+          },
+          {
+            "cards": [
+              6,
+              36
+            ],
+            "probability": 0.19227286510700034
+          },
+          {
+            "cards": [
+              22,
+              47
+            ],
+            "probability": 0.23116379681445348
+          },
+          {
+            "cards": [
+              45,
+              47
+            ],
+            "probability": 0.15670630749472234
+          }
+        ]
+      },
+      "analysis": {
+        "legal_actions": [
+          {
+            "action_id": "CHECK",
+            "category": "CHECK",
+            "amount_to": null
+          },
+          {
+            "action_id": "BET_RAISE_33P",
+            "category": "RAISE",
+            "amount_to": 1.485
+          },
+          {
+            "action_id": "BET_RAISE_50P",
+            "category": "RAISE",
+            "amount_to": 2.25
+          },
+          {
+            "action_id": "BET_RAISE_75P",
+            "category": "RAISE",
+            "amount_to": 3.375
+          },
+          {
+            "action_id": "ALL_IN",
+            "category": "RAISE",
+            "amount_to": 3.75
+          }
+        ],
+        "action_probabilities": {
+          "CHECK": 1.0,
+          "BET_RAISE_33P": 0.0,
+          "BET_RAISE_50P": 0.0,
+          "BET_RAISE_75P": 0.0,
+          "ALL_IN": 0.0
+        },
+        "estimated_ev_by_action": {
+          "CHECK": -1.873125,
+          "BET_RAISE_33P": -2.9593750000000005,
+          "BET_RAISE_50P": -3.5,
+          "BET_RAISE_75P": -3.75,
+          "ALL_IN": -3.75
+        },
+        "ev_units": "physical_chips/hand_delta",
+        "opponent_ranges": {
+          "0": [
+            {
+              "cards": [
+                20,
+                31
+              ],
+              "probability": 0.32708224911037076
+            },
+            {
+              "cards": [
+                4,
+                18
+              ],
+              "probability": 0.07013754135077838
+            },
+            {
+              "cards": [
+                13,
+                48
+              ],
+              "probability": 0.1648203997530156
+            },
+            {
+              "cards": [
+                29,
+                44
+              ],
+              "probability": 0.24157614851519194
+            },
+            {
+              "cards": [
+                14,
+                31
+              ],
+              "probability": 0.1963836612706433
+            }
+          ]
+        },
+        "own_public_range": [
+          {
+            "cards": [
+              42,
+              46
+            ],
+            "probability": 0.40067545654435505
+          },
+          {
+            "cards": [
+              6,
+              36
+            ],
+            "probability": 0.21163809671508355
+          },
+          {
+            "cards": [
+              22,
+              47
+            ],
+            "probability": 0.22322533880080508
+          },
+          {
+            "cards": [
+              45,
+              47
+            ],
+            "probability": 0.16446110793975635
+          }
+        ],
+        "calculation_method_by_action": {
+          "CHECK": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_33P": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_50P": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_75P": "sampled-chance/depth-limited-policy-rollout",
+          "ALL_IN": "sampled-chance/depth-limited-policy-rollout"
+        },
+        "search_nodes": 86,
+        "samples_used": 8,
+        "iterations_completed": 0,
+        "uncertainty_estimates": {
+          "behavior_ev_range": {
+            "CHECK": [
+              -1.873125,
+              -1.873125
+            ],
+            "BET_RAISE_33P": [
+              -2.9593750000000005,
+              -2.9593750000000005
+            ],
+            "BET_RAISE_50P": [
+              -3.5,
+              -3.5
+            ],
+            "BET_RAISE_75P": [
+              -3.75,
+              -3.75
+            ],
+            "ALL_IN": [
+              -3.75,
+              -3.75
+            ]
+          },
+          "conditional_sampling": {
+            "loose-passive": {
+              "sampling_standard_error": {
+                "CHECK": 0.9607841558833226,
+                "BET_RAISE_33P": 0.969060405339331,
+                "BET_RAISE_50P": 1.14564392373896,
+                "BET_RAISE_75P": 1.25,
+                "ALL_IN": 1.25
+              },
+              "paired_difference_standard_error": {
+                "CHECK": 0.0,
+                "BET_RAISE_33P": 0.20795936673851873,
+                "BET_RAISE_50P": 0.3270251976694063,
+                "BET_RAISE_75P": 0.4577009097302049,
+                "ALL_IN": 0.4577009097302049
+              },
+              "paired_reference_action": "CHECK",
+              "opponent_model_uncertainty": "not quantified"
+            }
+          },
+          "behavior_posterior": {
+            "loose-passive": 1.0
+          },
+          "private_hands": "compatible posterior integrated within each behavior hypothesis",
+          "continuation_error": "not bounded; supplied behavior governs unresolved continuations"
+        },
+        "model_versions_used": {
+          "loose-passive": {
+            "0": "observable-equity-profile-v1/loose_passive/24-deals",
+            "1": "observable-equity-profile-v1/loose_passive/24-deals"
+          }
+        },
+        "assumptions": [
+          "Displayed ranges are factors; joint card compatibility is enforced during evaluation.",
+          "Values include earlier contributions in this hand.",
+          "explicit prior",
+          "action likelihood: player=0, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "public board reveal",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "action likelihood: player=0, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "public board reveal",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "action likelihood: player=0, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "public board reveal",
+          "Exploitative mode: latent behavior mixture preserved jointly with hand ranges.",
+          "Behavior mixture is privately conditioned on the acting hand for EV only; public hypotheses are unchanged.",
+          "loose-passive: 1"
+        ],
+        "warnings": [
+          "Action EV assumes the supplied continuation behavior; this is not an equilibrium solve.",
+          "Sampling errors exclude uncertainty about opponent ranges and behavior.",
+          "Public range product exceeds exact CFR limit; behavior-conditioned rollout mode selected.",
+          "Displayed range factors belong to the first hypothesis; the complete mixture is available on session.hypotheses."
+        ],
+        "baseline_probabilities": {
+          "CHECK": 0.9107176760801048,
+          "BET_RAISE_33P": 0.02788230734175543,
+          "BET_RAISE_50P": 0.023513301376678716,
+          "BET_RAISE_75P": 0.01943528224240504,
+          "ALL_IN": 0.018451432959055894
+        },
+        "current_big_blind": 1.0,
+        "strategy_by_hand": null,
+        "computation_breakdown": {
+          "terminal_leaf_evaluations": 40,
+          "rollout_leaves": 40,
+          "learned_leaves": 0
+        }
+      }
+    },
+    {
+      "before": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 2.75,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": null
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 3.75,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": 0.0
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [
+          32,
+          38,
+          23,
+          15,
+          26
+        ],
+        "street": "RIVER",
+        "pot": 4.5,
+        "highest": 0.0,
+        "last_full_raise": 1.0,
+        "pending": [
+          0
+        ],
+        "current_player": 0,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CALL",
+            "amount_to": 2.25,
+            "amount_added": 1.25,
+            "pot_before": 3.25,
+            "pot_after": 4.5,
+            "highest_before": 2.25
+          },
+          {
+            "street": "FLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "FLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "TURN",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "TURN",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "RIVER",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          }
+        ],
+        "terminal": false,
+        "showdown": false,
+        "awards": {},
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "after": {
+        "players": {
+          "0": {
+            "player_id": 0,
+            "stack": 7.25,
+            "position": "SB",
+            "cards": [
+              20,
+              31
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": 0.0
+          },
+          "1": {
+            "player_id": 1,
+            "stack": 3.75,
+            "position": "BB",
+            "cards": [
+              42,
+              46
+            ],
+            "street_bet": 0.0,
+            "contribution": 2.25,
+            "folded": false,
+            "acted_at": 0.0
+          }
+        },
+        "button": 0,
+        "blinds": {
+          "small": 0.5,
+          "big": 1.0
+        },
+        "deck": [
+          17,
+          43,
+          44,
+          11,
+          45,
+          19,
+          21,
+          30,
+          50,
+          13,
+          41,
+          2,
+          1,
+          35,
+          7,
+          5,
+          16,
+          47,
+          18,
+          51,
+          25,
+          8,
+          27,
+          37,
+          6,
+          48,
+          24,
+          3,
+          34,
+          10,
+          33,
+          36,
+          40,
+          4,
+          12,
+          14,
+          29,
+          39,
+          28,
+          9,
+          49,
+          22,
+          0
+        ],
+        "total_chips": 11.0,
+        "initial_stacks": {
+          "0": 5.0,
+          "1": 6.0
+        },
+        "board": [
+          32,
+          38,
+          23,
+          15,
+          26
+        ],
+        "street": "RIVER",
+        "pot": 0.0,
+        "highest": 0.0,
+        "last_full_raise": 1.0,
+        "pending": [],
+        "current_player": null,
+        "history": [
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "BLIND",
+            "amount_to": 0.5,
+            "amount_added": 0.5,
+            "pot_before": 0.0,
+            "pot_after": 0.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "BLIND",
+            "amount_to": 1.0,
+            "amount_added": 1.0,
+            "pot_before": 0.5,
+            "pot_after": 1.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "RAISE",
+            "amount_to": 2.25,
+            "amount_added": 1.75,
+            "pot_before": 1.5,
+            "pot_after": 3.25,
+            "highest_before": 1.0
+          },
+          {
+            "street": "PREFLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CALL",
+            "amount_to": 2.25,
+            "amount_added": 1.25,
+            "pot_before": 3.25,
+            "pot_after": 4.5,
+            "highest_before": 2.25
+          },
+          {
+            "street": "FLOP",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "FLOP",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "TURN",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "TURN",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "RIVER",
+            "player_id": 1,
+            "position": "BB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          },
+          {
+            "street": "RIVER",
+            "player_id": 0,
+            "position": "SB",
+            "action": "CHECK",
+            "amount_to": 0.0,
+            "amount_added": 0.0,
+            "pot_before": 4.5,
+            "pot_after": 4.5,
+            "highest_before": 0.0
+          }
+        ],
+        "terminal": true,
+        "showdown": true,
+        "awards": {
+          "0": 4.5,
+          "1": 0.0
+        },
+        "hand_number": 1,
+        "blind_level_index": 0
+      },
+      "action": {
+        "action_id": "CHECK",
+        "category": "CHECK",
+        "amount_to": null
+      },
+      "likelihoods": [
+        0.0,
+        0.6981331429986394,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.11554605930719927,
+        0.09744062003466601,
+        0.0,
+        0.0,
+        0.0,
+        0.0888801776594954
+      ],
+      "posterior": {
+        "0": [
+          {
+            "cards": [
+              20,
+              31
+            ],
+            "probability": 0.29671230663354814
+          },
+          {
+            "cards": [
+              4,
+              18
+            ],
+            "probability": 0.08836828811250315
+          },
+          {
+            "cards": [
+              13,
+              48
+            ],
+            "probability": 0.1983050678049286
+          },
+          {
+            "cards": [
+              29,
+              44
+            ],
+            "probability": 0.23846511266155235
+          },
+          {
+            "cards": [
+              14,
+              31
+            ],
+            "probability": 0.17814922478746775
+          }
+        ],
+        "1": [
+          {
+            "cards": [
+              42,
+              46
+            ],
+            "probability": 0.41985703058382384
+          },
+          {
+            "cards": [
+              6,
+              36
+            ],
+            "probability": 0.19227286510700034
+          },
+          {
+            "cards": [
+              22,
+              47
+            ],
+            "probability": 0.23116379681445348
+          },
+          {
+            "cards": [
+              45,
+              47
+            ],
+            "probability": 0.15670630749472234
+          }
+        ]
+      },
+      "analysis": {
+        "legal_actions": [
+          {
+            "action_id": "CHECK",
+            "category": "CHECK",
+            "amount_to": null
+          },
+          {
+            "action_id": "BET_RAISE_33P",
+            "category": "RAISE",
+            "amount_to": 1.485
+          },
+          {
+            "action_id": "BET_RAISE_50P",
+            "category": "RAISE",
+            "amount_to": 2.25
+          },
+          {
+            "action_id": "ALL_IN",
+            "category": "RAISE",
+            "amount_to": 2.75
+          }
+        ],
+        "action_probabilities": {
+          "CHECK": 0.0,
+          "BET_RAISE_33P": 0.0,
+          "BET_RAISE_50P": 0.0,
+          "ALL_IN": 1.0
+        },
+        "estimated_ev_by_action": {
+          "CHECK": 2.25,
+          "BET_RAISE_33P": 3.8931250000000013,
+          "BET_RAISE_50P": 4.5625,
+          "ALL_IN": 5.0
+        },
+        "ev_units": "physical_chips/hand_delta",
+        "opponent_ranges": {
+          "1": [
+            {
+              "cards": [
+                42,
+                46
+              ],
+              "probability": 0.41985703058382384
+            },
+            {
+              "cards": [
+                6,
+                36
+              ],
+              "probability": 0.19227286510700034
+            },
+            {
+              "cards": [
+                22,
+                47
+              ],
+              "probability": 0.23116379681445348
+            },
+            {
+              "cards": [
+                45,
+                47
+              ],
+              "probability": 0.15670630749472234
+            }
+          ]
+        },
+        "own_public_range": [
+          {
+            "cards": [
+              20,
+              31
+            ],
+            "probability": 0.32708224911037076
+          },
+          {
+            "cards": [
+              4,
+              18
+            ],
+            "probability": 0.07013754135077838
+          },
+          {
+            "cards": [
+              13,
+              48
+            ],
+            "probability": 0.1648203997530156
+          },
+          {
+            "cards": [
+              29,
+              44
+            ],
+            "probability": 0.24157614851519194
+          },
+          {
+            "cards": [
+              14,
+              31
+            ],
+            "probability": 0.1963836612706433
+          }
+        ],
+        "calculation_method_by_action": {
+          "CHECK": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_33P": "sampled-chance/depth-limited-policy-rollout",
+          "BET_RAISE_50P": "sampled-chance/depth-limited-policy-rollout",
+          "ALL_IN": "sampled-chance/depth-limited-policy-rollout"
+        },
+        "search_nodes": 58,
+        "samples_used": 8,
+        "iterations_completed": 0,
+        "uncertainty_estimates": {
+          "behavior_ev_range": {
+            "CHECK": [
+              2.25,
+              2.25
+            ],
+            "BET_RAISE_33P": [
+              3.8931250000000013,
+              3.8931250000000013
+            ],
+            "BET_RAISE_50P": [
+              4.5625,
+              4.5625
+            ],
+            "ALL_IN": [
+              5.0,
+              5.0
+            ]
+          },
+          "conditional_sampling": {
+            "loose-passive": {
+              "sampling_standard_error": {
+                "CHECK": 0.0,
+                "BET_RAISE_33P": 0.15812499999999985,
+                "BET_RAISE_50P": 0.0625,
+                "ALL_IN": 0.0
+              },
+              "paired_difference_standard_error": {
+                "CHECK": 0.0,
+                "BET_RAISE_33P": 0.15812499999999985,
+                "BET_RAISE_50P": 0.0625,
+                "ALL_IN": 0.0
+              },
+              "paired_reference_action": "CHECK",
+              "opponent_model_uncertainty": "not quantified"
+            }
+          },
+          "behavior_posterior": {
+            "loose-passive": 1.0
+          },
+          "private_hands": "compatible posterior integrated within each behavior hypothesis",
+          "continuation_error": "not bounded; supplied behavior governs unresolved continuations"
+        },
+        "model_versions_used": {
+          "loose-passive": {
+            "0": "observable-equity-profile-v1/loose_passive/24-deals",
+            "1": "observable-equity-profile-v1/loose_passive/24-deals"
+          }
+        },
+        "assumptions": [
+          "Displayed ranges are factors; joint card compatibility is enforced during evaluation.",
+          "Values include earlier contributions in this hand.",
+          "explicit prior",
+          "action likelihood: player=0, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "public board reveal",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "action likelihood: player=0, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "public board reveal",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "action likelihood: player=0, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "public board reveal",
+          "action likelihood: player=1, model=observable-equity-profile-v1/loose_passive/24-deals",
+          "Exploitative mode: latent behavior mixture preserved jointly with hand ranges.",
+          "Behavior mixture is privately conditioned on the acting hand for EV only; public hypotheses are unchanged.",
+          "loose-passive: 1"
+        ],
+        "warnings": [
+          "Action EV assumes the supplied continuation behavior; this is not an equilibrium solve.",
+          "Sampling errors exclude uncertainty about opponent ranges and behavior.",
+          "Public range product exceeds exact CFR limit; behavior-conditioned rollout mode selected.",
+          "Displayed range factors belong to the first hypothesis; the complete mixture is available on session.hypotheses."
+        ],
+        "baseline_probabilities": {
+          "CHECK": 0.6981331429986394,
+          "BET_RAISE_33P": 0.11554605930719927,
+          "BET_RAISE_50P": 0.09744062003466601,
+          "ALL_IN": 0.0888801776594954
+        },
+        "current_big_blind": 1.0,
+        "strategy_by_hand": null,
+        "computation_breakdown": {
+          "terminal_leaf_evaluations": 32,
+          "rollout_leaves": 24,
+          "learned_leaves": 0
+        }
+      }
+    }
+  ],
+  "utilities": {
+    "0": 2.25,
+    "1": -2.25
+  }
+}

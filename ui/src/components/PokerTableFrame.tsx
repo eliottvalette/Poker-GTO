@@ -1,6 +1,7 @@
 // ui/src/components/PokerTableFrame.tsx
 "use client";
 import React from "react";
+import SeatInspection from "./SeatInspection";
 import styles from "./PokerTableFrame.module.css";
 
 type Seat = {
@@ -13,6 +14,7 @@ type Seat = {
   active?: boolean;
   cards?: string[];      // ["A♥","8♣","10♠","XX"]
   netStackChange?: number;
+  inspection?: React.ReactNode;
 };
 
 export default function PokerTableFrame({
@@ -62,7 +64,7 @@ export default function PokerTableFrame({
 
       {/* Seats and hole cards */}
       <div className={`${styles.leftSeat} absolute left-[8%] top-[12%] flex flex-col items-center`}>
-        <SeatChip {...left} />
+        <InspectableSeat seat={left} />
         <StreetBet seat={left} className={styles.leftBet} />
         {left.cards?.length ? (
           <div className="mt-2 flex gap-1">
@@ -72,7 +74,7 @@ export default function PokerTableFrame({
       </div>
 
       <div className={`${styles.rightSeat} absolute right-[8%] top-[12%] flex flex-col items-center`}>
-        <SeatChip {...right} />
+        <InspectableSeat seat={right} />
         <StreetBet seat={right} className={styles.rightBet} />
         {right.cards?.length ? (
           <div className="mt-2 flex gap-1">
@@ -92,6 +94,10 @@ export default function PokerTableFrame({
       </div>
     </div>
   );
+}
+
+function InspectableSeat({seat}:{seat:Seat}) {
+  return seat.inspection ? <SeatInspection seat={seat.id} content={seat.inspection}><SeatChip {...seat}/></SeatInspection> : <SeatChip {...seat}/>;
 }
 
 function StreetBet({ seat, className }: { seat: Seat; className: string }) {

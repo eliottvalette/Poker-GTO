@@ -47,7 +47,7 @@ class RootSampler:
                 or type(config["max_rollout_hands"]) is not int or config["max_rollout_hands"] < 1):
             raise ValueError(f"Invalid tournament root search configuration: {config}")
         self.player_count, self.config = player_count, config
-        if config["hole_card_sampling"] not in ("random", "stratified"):
+        if config["hole_card_sampling"] not in ("random", "stratified", "stratified_recorded_opening"):
             raise ValueError(f"Invalid hole-card sampling mode: {config['hole_card_sampling']}")
         self.rng = random.Random(seed)
         self.card_rng = random.Random(seed + 1000003)
@@ -84,7 +84,7 @@ class RootSampler:
 
         return sample_task
 
-    def stratify_cards(self, root: HandState, player: int) -> HandState:
+    def stratify_cards(self, root: HandState, player: int, *, stream: str = "") -> HandState:
         """Uniform exact combos without replacement, then a conditional deal.
 
         Public roots are sampled first with their original RNG. The independent
@@ -93,7 +93,7 @@ class RootSampler:
         """
         if player not in root.players or root.street != "PREFLOP" or root.board or root.terminal:
             raise ValueError("Hole-card stratification requires a live preflop root and a seated player")
-        key = f"{player}:{root.players[player].position}"
+        key = f"{player}:{root.players[player].position}" + (f":{stream}" if stream else "")
         cursor = self.card_cursors.get(key, len(HOLE_COMBOS))
         if cursor == len(HOLE_COMBOS):
             order = list(range(len(HOLE_COMBOS)))
@@ -190,12 +190,18 @@ class RootSampler:
                                hand_number=stage.first_hand, blind_level_index=level)
 
     def sample(self, _solver_rng: random.Random | None = None, *, traverser: int | None = None) -> HandState:
-        if self.config["hole_card_sampling"] == "stratified" and traverser not in range(self.player_count):
+        if self.config["hole_card_sampling"] != "random" and traverser not in range(self.player_count):
             raise ValueError("Stratified hole-card roots require an explicit seated traverser")
         source = self.rng.choices(SOURCES, weights=[self.config["mixture"][s] for s in SOURCES], k=1)[0]
         root = self._on_policy() if source == "on_policy" else self._exploration(source == "stratified")
         if self.config["hole_card_sampling"] == "stratified" and not root.terminal:
             root = self.stratify_cards(root, traverser)
+        elif self.config["hole_card_sampling"] == "stratified_recorded_opening" and not root.terminal:
+            # Opening observations come from the actor, not necessarily the
+            # traverser. Each dataset uses an independent uniform permutation.
+            actor = root.current_player if self.player_count == 2 else traverser
+            source_kind = ("advantage" if actor == traverser else "strategy") if self.player_count == 2 else "both"
+            root = self.stratify_cards(root, actor, stream=source_kind)
         if root.terminal:
             # Terminal roots are legitimate draws, retained in counts and not resampled.
             self.coverage.counts.setdefault("terminal_roots", Counter())[source] += 1

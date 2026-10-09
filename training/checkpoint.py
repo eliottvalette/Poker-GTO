@@ -1,6 +1,6 @@
 """Atomic, checksummed primitive/tensor checkpoints; strict schema, no pickle objects."""
 from __future__ import annotations
-from dataclasses import asdict
+from dataclasses import asdict, fields
 import hashlib
 import io
 import os
@@ -18,6 +18,8 @@ from tournament import TournamentState
 from training.root_sampler import ROOT_SAMPLER_VERSION
 
 CHECKPOINT_VERSION = 4
+_SAMPLE_FIELDS = tuple(f.name for f in fields(TrainingSample) if f.name != 'state')
+_OBSERVATION_FIELDS = tuple(f.name for f in fields(NeuralObservation))
 CONTRACT = {"checkpoint": CHECKPOINT_VERSION, "advantage_layout": "shared_per_player_count", "state": STATE_VERSION, "feature": FEATURE_SCHEMA_VERSION,
             "memory": MEMORY_VERSION, "action_schema": ACTION_SCHEMA_VERSION, "evaluation_schema": 2, "actions": list(ACTION_IDS), "model": MODEL_ARCHITECTURE,
             "objective": "hand_chip_delta", "root_sampler": ROOT_SAMPLER_VERSION, "traversal_modes": ["external_sampling", "outcome_sampling"],
@@ -61,12 +63,46 @@ def read_checkpoint(path: Path) -> dict:
 
 
 def pack_memory(memory: ReservoirMemory) -> dict:
+    from ml.stratified_memory import ProtectedReplay
+    if isinstance(memory, ProtectedReplay):
+        return {"allocation": "opening-protected-v1", "strata": {
+            name: pack_memory(m) for name, m in memory.memories.items()}}
     return {"capacity": memory.capacity, "kind": memory.kind, "objective": memory.objective,
             "byte_budget": memory.byte_budget, "seen": memory.seen, "rng": memory.rng.getstate(),
-            "traversal_mode": memory.traversal_mode, "samples": [asdict(s) for s in memory.samples]}
+            "traversal_mode": memory.traversal_mode, "samples": [_pack_sample(s) for s in memory.samples]}
+
+
+def _pack_sample(sample: TrainingSample) -> dict:
+    """Same primitive schema as asdict, without recursively copying immutable scalars."""
+    result = {name: getattr(sample, name) for name in _SAMPLE_FIELDS}
+    state = {name: getattr(sample.state, name) for name in _OBSERVATION_FIELDS}
+    # Valid compact observations contain flat sequences; keep mutable inputs isolated.
+    for name in ('cards', 'legal_mask'):
+        if isinstance(state[name], list):
+            state[name] = state[name].copy()
+    for name in ('numeric_data', 'history_data'):
+        if not isinstance(state[name], bytes):
+            import copy
+            state[name] = copy.deepcopy(state[name])
+    if isinstance(result['target'], list):
+        result['target'] = result['target'].copy()
+    result['state'] = state
+    return result
 
 
 def unpack_memory(raw: dict) -> ReservoirMemory:
+    if "allocation" in raw:
+        from ml.stratified_memory import ProtectedReplay
+        if raw["allocation"] != "opening-protected-v1" or set(raw["strata"]) != {"opening", "other"}:
+            raise ValueError("Unsupported replay allocation schema")
+        result = ProtectedReplay.__new__(ProtectedReplay)
+        result.memories = {name: unpack_memory(m) for name, m in raw["strata"].items()}
+        if any(not isinstance(m, ReservoirMemory) for m in result.memories.values()):
+            raise ValueError("Nested replay allocations are unsupported")
+        if (len({m.kind for m in result.memories.values()}) != 1
+                or any(m.traversal_mode not in (None, "external_sampling") for m in result.memories.values())):
+            raise ValueError("Incompatible protected replay strata")
+        return result
     memory = ReservoirMemory(raw["capacity"], 0, raw["kind"], raw["objective"], raw["byte_budget"], raw["traversal_mode"])
     if type(raw["seen"]) is not int or raw["seen"] < 0 or len(raw["samples"]) != min(raw["seen"], memory.capacity):
         raise ValueError("Invalid checkpoint reservoir counts")

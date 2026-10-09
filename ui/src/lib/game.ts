@@ -1,7 +1,10 @@
 /** Browser-owned table state; Python is used only for offline training and parity tests. */
 import { SeededRNG, TournamentState, type ActionEvent } from "./poker/engine";
-import { applyAction, legalActions, type SolverAction } from "./poker/actions";
+import { ACTION_IDS, applyAction, legalActions, type SolverAction } from "./poker/actions";
 
+import { observe, type Observation } from "./poker/observation";
+import { behaviorProbabilities } from "./poker/behavior";
+export type OpponentPolicy = (observation: Observation) => Promise<number[]>;
 export type { ActionEvent, SolverAction };
 export type PublicPlayer = {
   player_id: number; stack_bb: number; active: boolean; position: string | null;
@@ -19,20 +22,36 @@ export type TableView = {
 };
 
 export class BrowserTable {
-  constructor(public tournament: TournamentState, public readonly hero: number, private rng: SeededRNG) {
+  constructor(public tournament: TournamentState, public readonly hero: number, private rng: SeededRNG, public readonly opponentProfile = "uniform") {
     if (!tournament.original_players.includes(hero)) throw new Error(`Hero ${hero} is not seated`);
   }
 
-  static create(seed: number, hero = 2): BrowserTable {
+  private static initialize(seed: number, hero: number, profile: string): BrowserTable {
     const tournament = new TournamentState({ 0: 25, 1: 25, 2: 25 }, 0, new SeededRNG(seed));
     tournament.startHand();
-    const table = new BrowserTable(tournament, hero, new SeededRNG(seed + 1));
-    table.advanceBots();
-    return table;
+    return new BrowserTable(tournament, hero, new SeededRNG(seed + 1), profile);
+  }
+
+  static create(seed: number, hero = 2, profile = "uniform"): BrowserTable {
+    const table = this.initialize(seed, hero, profile); table.advanceBots(); return table;
+  }
+
+  static async createWithPolicy(seed: number, hero: number, profile: string, policy: OpponentPolicy): Promise<BrowserTable> {
+    const table = this.initialize(seed,hero,profile); await table.advanceWithPolicy(policy); return table;
+  }
+
+  async actWithPolicy(action: string, policy: OpponentPolicy): Promise<void> {
+    if (this.tournament.current_player !== this.hero) throw new Error(`Hero ${this.hero} is not acting`);
+    this.tournament.act(action); await this.advanceWithPolicy(policy);
+  }
+
+  async nextHandWithPolicy(policy: OpponentPolicy): Promise<void> {
+    if (this.tournament.terminal) throw new Error(`Tournament already won by player ${this.tournament.winner}`);
+    this.tournament.startHand(); await this.advanceWithPolicy(policy);
   }
 
   clone(): BrowserTable {
-    return new BrowserTable(this.tournament.clone(), this.hero, this.rng.clone());
+    return new BrowserTable(this.tournament.clone(), this.hero, this.rng.clone(), this.opponentProfile);
   }
 
   act(action: string): void {
@@ -47,17 +66,32 @@ export class BrowserTable {
     this.advanceBots();
   }
 
-  private advanceBots(): void {
+  private *botDecisions(): Generator<Observation, void, number[]> {
     const hand = this.tournament.hand;
     if (!hand) throw new Error("Table has no current hand");
-    let decisions = 0;
-    while (!hand.terminal && hand.current_player !== this.hero) {
-      if (++decisions > 100) throw new Error("Bot action budget exceeded: 100 decisions per hand");
-      const actions = legalActions(hand);
-      if (actions.length === 0) throw new Error(`No legal actions for player ${hand.current_player}`);
-      applyAction(hand, actions[Math.floor(this.rng.next() * actions.length)].action_id);
+    let decisions=0;
+    while(!hand.terminal && hand.current_player!==this.hero) {
+      if(++decisions>100) throw new Error("Bot action budget exceeded: 100 decisions per hand");
+      const observation=observe(hand);
+      const probabilities=yield observation;
+      if(probabilities.length!==ACTION_IDS.length || probabilities.some((p,i)=>!Number.isFinite(p)||p<0||(!observation.legal_mask[i]&&p!==0))
+        || Math.abs(probabilities.reduce((a,b)=>a+b,0)-1)>1e-5) throw new Error("Invalid opponent action distribution");
+      let draw=this.rng.next(), selected=-1;
+      for(let i=0;i<probabilities.length;i++) {draw-=probabilities[i]; if(probabilities[i]>0) selected=i; if(draw<0) break;}
+      if(selected<0) throw new Error("Opponent policy has no legal action mass");
+      applyAction(hand,ACTION_IDS[selected]);
     }
     this.tournament.assertInvariants();
+  }
+
+  private advanceBots():void {
+    const stream=this.botDecisions(); let step=stream.next();
+    while(!step.done) step=stream.next(behaviorProbabilities(step.value,this.opponentProfile));
+  }
+
+  private async advanceWithPolicy(policy:OpponentPolicy):Promise<void> {
+    const stream=this.botDecisions(); let step=stream.next();
+    while(!step.done) step=stream.next(await policy(step.value));
   }
 
   view(): TableView {

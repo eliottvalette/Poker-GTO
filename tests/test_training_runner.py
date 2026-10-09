@@ -27,12 +27,102 @@ def deterministic_metric(row):
     result.pop('wall_seconds', None)
     result.pop('checkpoint_path', None)
     for track in result['tracks'].values():
-        for key in ('worker_seconds', 'worker_cpu_seconds', 'worker_peak_rss_bytes', 'generation_seconds', 'root_seconds', 'fit_seconds'):
+        for key in ('worker_seconds', 'worker_cpu_seconds', 'worker_peak_rss_bytes', 'generation_seconds', 'root_seconds', 'fit_seconds', 'fit_component_seconds'):
             track.pop(key, None)
     return result
 
 
 class TrainingRunnerTests(unittest.TestCase):
+    def test_execution_only_resume_is_explicit_and_audited(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config=tiny_config(directory)
+            runner=TrainingRunner(config);runner.run_iteration()
+            path=Path(directory)/'checkpoints/iteration_000001.pt'
+            requested=deepcopy(config)
+            requested.update(workers=2,trainer_threads=2,generation_batch_size=1)
+            with self.assertRaisesRegex(ValueError,'hash mismatch'):
+                TrainingRunner.load_checkpoint(path,requested)
+            resumed=TrainingRunner.load_checkpoint(path,requested,allow_execution_changes=True)
+            self.assertEqual(resumed.config,requested)
+            self.assertEqual(resumed.metadata['resume_execution_changes'][0]['after'],
+                             {'workers':2,'trainer_threads':2,'generation_batch_size':1})
+            for name,solver in runner.solvers.items():
+                self.assertEqual(solver.strategy_memory.samples,resumed.solvers[name].strategy_memory.samples)
+                self.assertEqual(solver.rng.getstate(),resumed.solvers[name].rng.getstate())
+                for k,v in solver.advantage_model.state_dict().items():
+                    self.assertTrue(torch.equal(v,resumed.solvers[name].advantage_model.state_dict()[k]))
+            for key,value in (('batch_size',128),('advantage_epochs',7),('seed',100)):
+                invalid=deepcopy(requested);invalid[key]=value
+                with self.assertRaisesRegex(ValueError,'hash mismatch'):
+                    TrainingRunner.load_checkpoint(path,invalid,allow_execution_changes=True)
+
+    def test_generation_chunks_preserve_replay_and_models(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = tiny_config(Path(directory)/'whole')
+            other = deepcopy(config)
+            other.update(output_dir=str(Path(directory)/'chunks'), generation_batch_size=1)
+            a,b = TrainingRunner(config),TrainingRunner(other)
+            a.run_iteration();b.run_iteration()
+            for name, solver in a.solvers.items():
+                self.assertEqual(solver.advantage_memory.samples,b.solvers[name].advantage_memory.samples)
+                self.assertEqual(solver.strategy_memory.samples,b.solvers[name].strategy_memory.samples)
+                for key,value in solver.average_model.state_dict().items():
+                    self.assertTrue(torch.equal(value,b.solvers[name].average_model.state_dict()[key]))
+
+    def test_independent_average_schedule_and_warm_resume(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = tiny_config(directory)
+            config['fit_schedule'] = {'average_every': 3, 'advantage_max_updates': 2,
+                'average_max_updates': 2, 'advantage_initialization': 'warm',
+                'average_initialization': 'warm', 'cache_encoding': True}
+            runner = TrainingRunner(config)
+            runner.run_iteration()
+            original = {n: deepcopy(s.average_model.state_dict()) for n, s in runner.solvers.items()}
+            row = runner.run_iteration()
+            for name, solver in runner.solvers.items():
+                self.assertTrue(row['tracks'][name]['average_policy']['skipped'])
+                self.assertEqual(row['tracks'][name]['average_model_iteration'], 1)
+                for k,v in original[name].items():
+                    self.assertTrue(torch.equal(v, solver.average_model.state_dict()[k]))
+            resumed = TrainingRunner.load_checkpoint(Path(directory) / 'checkpoints/iteration_000002.pt')
+            expected, actual = runner.run_iteration(), resumed.run_iteration()
+            self.assertEqual(deterministic_metric(expected), deterministic_metric(actual))
+            for name, solver in runner.solvers.items():
+                self.assertEqual(actual['tracks'][name]['average_model_iteration'], 3)
+                self.assertLessEqual(actual['tracks'][name]['advantage']['updates_completed'], 2)
+                for key, value in solver.average_model.state_dict().items():
+                    self.assertTrue(torch.equal(value, resumed.solvers[name].average_model.state_dict()[key]))
+
+    def test_protected_replay_runner_resume_preserves_weighted_fit(self):
+        from ml.stratified_memory import ProtectedReplay
+        with tempfile.TemporaryDirectory() as directory:
+            config = tiny_config(directory)
+            config['replay_opening_fraction'] = 0.25
+            config['strategy_capacity'] = 20
+            for track in ('hu', '3max'):
+                config[track]['advantage_capacity'] = 20
+                config[track]['root_sampling']['hole_card_sampling'] = 'stratified_recorded_opening'
+            runner = TrainingRunner(config)
+            runner.run_iteration()
+            resumed = TrainingRunner.load_checkpoint(Path(directory) / 'checkpoints/iteration_000001.pt')
+            for name, solver in runner.solvers.items():
+                for kind in ('advantage_memory', 'strategy_memory'):
+                    memory = getattr(solver, kind)
+                    self.assertIsInstance(memory, ProtectedReplay)
+                    self.assertEqual(memory.samples, getattr(resumed.solvers[name], kind).samples)
+                    self.assertAlmostEqual(sum(s.weight for s in memory.samples),
+                                           sum(s.weight for s in getattr(resumed.solvers[name], kind).samples))
+            first, second = runner.run_iteration(), resumed.run_iteration()
+            self.assertEqual(deterministic_metric(first), deterministic_metric(second))
+            for name, solver in runner.solvers.items():
+                self.assertEqual(solver.strategy_memory.samples, resumed.solvers[name].strategy_memory.samples)
+                for key, weight in solver.average_model.state_dict().items():
+                    self.assertTrue(torch.equal(weight, resumed.solvers[name].average_model.state_dict()[key]))
+            config['traversal_mode'] = 'outcome_sampling'
+            config['outcome_epsilon'] = 0.6
+            with self.assertRaisesRegex(ValueError, 'external_sampling'):
+                TrainingRunner(config)
+
     @classmethod
     def setUpClass(cls):
         torch.set_num_threads(1)

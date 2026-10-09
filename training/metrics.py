@@ -5,6 +5,8 @@ from features.neural import NEURAL_NUMERIC_NAMES, NeuralObservation
 from infoset import Observation
 from infoset import POSITIONS, EVENTS
 from actions import ACTION_IDS
+import json
+import math
 
 
 def opening_hand_class(obs: Observation | NeuralObservation) -> str | None:
@@ -24,8 +26,24 @@ class Coverage:
     def __init__(self) -> None:
         self.counts: dict[str, Counter] = {}
 
-    def record(self, obs: Observation | NeuralObservation, source: str) -> None:
+    def record(self, obs: Observation | NeuralObservation, source: str, *,
+               exact_cards: tuple[int, int] | None = None, iteration: int | None = None,
+               weight: float = 1.) -> None:
+        if not math.isfinite(weight) or weight <= 0:
+            raise ValueError("Coverage weight must be finite and positive")
+        effective_weight = weight * (iteration if iteration is not None else 1)
+        for group in (source, f"{source}/street={obs.street}"):
+            mass = self.counts.setdefault("effective_weight_sum", Counter())
+            square = self.counts.setdefault("effective_weight_square_sum", Counter())
+            mass[group] += effective_weight
+            square[group] += effective_weight**2
         holding = opening_hand_class(obs)
+        high, low = sorted((card//4 for card in obs.cards[:2]), reverse=True)
+        ranks = "23456789TJQKA"
+        hand_class = ranks[high]+ranks[low]+("" if high == low else "s" if obs.cards[0]%4 == obs.cards[1]%4 else "o")
+        self.counts.setdefault(f"{source}_all_street_hand_class", Counter())[f"{obs.street}:{hand_class}"] += 1
+        identity = "exact" if exact_cards is not None else "canonical"
+        self.counts.setdefault(f"{source}_{identity}_combination", Counter())[str(sorted(exact_cards or obs.cards[:2]))] += 1
         if holding is not None:
             self.counts.setdefault(f"{source}_opening_hand_class", Counter())[holding] += 1
         values = dict(zip(NEURAL_NUMERIC_NAMES, obs.numeric))
@@ -44,6 +62,23 @@ class Coverage:
                   "history_length": len(obs.history)}
         for name, value in labels.items():
             self.counts.setdefault(name, Counter())[str(value)] += 1
+        if holding is not None:
+            context = {"dataset": source, "player_count": labels["players"], "position": labels["position"],
+                       "hand_class": holding, "effective_stack_bin": bin_name,
+                       "blind_level": labels["blind_level"], "source_iteration": iteration,
+                       "public_context": {"pot_bb": labels["pot_current_bb"],
+                                          "stack_bb": labels["hero_stack_current_bb"],
+                                          "effective_bb": labels["effective_stack_current_bb"],
+                                          "initial_stacks_bb": [values[f"initial_{i}"] * 25 for i in range(labels["players"])],
+                                          "remaining_stacks_bb": [values[f"stack_{i}"] * 25 for i in range(labels["players"])],
+                                          "street_bets_bb": [values[f"street_bet_{i}"] * 25 for i in range(labels["players"])],
+                                          "current_big_blind_chips": values["chip_unit_big_blind"],
+                                          "legal_mask": obs.legal_mask}}
+            if exact_cards is not None:
+                context["exact_combo"] = sorted(exact_cards)
+            else:
+                context["canonical_combo"] = sorted(obs.cards[:2])
+            self.counts.setdefault("opening_joint_coverage", Counter())[json.dumps(context, sort_keys=True)] += 1
         for name, legal in zip(ACTION_IDS, obs.legal_mask):
             if legal:
                 self.counts.setdefault("legal_action_frequencies", Counter())[name] += 1
@@ -51,7 +86,12 @@ class Coverage:
 
     def merge(self, raw: dict) -> None:
         for name, values in raw.items():
+            if name == "effective_sample_size":
+                continue  # Recompute from additive moments, never sum ESS values.
             self.counts.setdefault(name, Counter()).update(values)
 
     def as_dict(self) -> dict:
-        return {name: dict(sorted(values.items())) for name, values in self.counts.items()}
+        result = {name: dict(sorted(values.items())) for name, values in self.counts.items()}
+        result["effective_sample_size"] = {key: mass**2/self.counts["effective_weight_square_sum"][key]
+                                           for key,mass in self.counts.get("effective_weight_sum",{}).items()}
+        return result

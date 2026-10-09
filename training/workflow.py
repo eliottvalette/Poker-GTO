@@ -114,7 +114,7 @@ def exclusive_lock(path: Path) -> Iterator[None]:
             fcntl.flock(file, fcntl.LOCK_UN)
 
 
-def train_track(track: str, seconds: float) -> dict:
+def train_track(track: str, seconds: float, *, resume_active: bool = False) -> dict:
     config = config_for(track)
     checkpoint = candidate_checkpoint(track)
     with exclusive_lock(POLICY_ROOT / ".compute.lock"), exclusive_lock(checkpoint.parent / ".training.lock"):
@@ -122,9 +122,10 @@ def train_track(track: str, seconds: float) -> dict:
             source = checkpoint
             origin = "training checkpoint"
         else:
-            source = active_checkpoint(track)
+            source = active_checkpoint(track) if resume_active else None
             origin = "active policy checkpoint" if source else "fresh initialization"
-        runner = TrainingRunner.load_checkpoint(source, config, allow_budget_increase=True) if source else TrainingRunner(config)
+        runner = TrainingRunner.load_checkpoint(source, config, allow_budget_increase=True,
+                                               allow_execution_changes=True) if source else TrainingRunner(config)
         if set(runner.solvers) != {track}:
             raise ValueError(f"Session {track} requires a dedicated checkpoint: {source}")
         print(f"[{track}] {origin}; iteration={runner.iteration}; duration={seconds / 60:g} minutes", flush=True)
@@ -132,6 +133,10 @@ def train_track(track: str, seconds: float) -> dict:
             change = runner.resume_budget_change
             print(f"[{track}] explicit traversal budget increase: {change['before']} -> {change['after']}; "
                   "models, replay and RNG restored unchanged; change recorded in checkpoint metadata", flush=True)
+        if runner.resume_execution_change is not None:
+            change = runner.resume_execution_change
+            print(f"[{track}] execution settings: {change['before']} -> {change['after']}; "
+                  "models, replay and RNG restored; change recorded in checkpoint metadata", flush=True)
         print(f"[{track}] checkpoint={checkpoint}; workers={config['workers']}; traversals/iteration={TRACKS[track] * config[track]['traversals_per_player']}", flush=True)
         result = runner.run_for(seconds, checkpoint)
         print(f"[{track}] saved iteration {runner.iteration} at {checkpoint}", flush=True)
@@ -195,7 +200,8 @@ def prepare_migration(action: str, tracks: tuple[str, ...]) -> PreparedMigration
             checkpoint_id = digest(temporary / "checkpoint.pt")
             destination = parent / checkpoint_id
             prepared.bundles.append((temporary, destination))
-            runner = TrainingRunner.load_checkpoint(temporary / "checkpoint.pt", config_for(track), allow_budget_increase=True)
+            runner = TrainingRunner.load_checkpoint(temporary / "checkpoint.pt", config_for(track), allow_budget_increase=True,
+                                                   allow_execution_changes=True)
             if set(runner.solvers) != {track} or runner.iteration < 1:
                 raise ValueError(f"No trained dedicated {track} policy in {source}")
             average = temporary / f"average_{track}.pt"
@@ -219,7 +225,8 @@ def prepare_migration(action: str, tracks: tuple[str, ...]) -> PreparedMigration
             destination = parent / bundle_id
             prepared.bundles.append((temporary, destination))
             for track, snapshot in snapshots.items():
-                runner = TrainingRunner.load_checkpoint(snapshot / "checkpoint.pt", config_for(track), allow_budget_increase=True)
+                runner = TrainingRunner.load_checkpoint(snapshot / "checkpoint.pt", config_for(track), allow_budget_increase=True,
+                                                       allow_execution_changes=True)
                 export_average_policy(snapshot / f"average_{track}.pt", temporary / f"average_{track}.onnx",
                                       temporary / f"average_{track}.json", observe(runner.probes[track][0][1]))
                 catalog["exports"][track] = {"bundle_id": bundle_id, "checkpoint_sha256": sources[track],

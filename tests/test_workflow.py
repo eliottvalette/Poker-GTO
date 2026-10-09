@@ -57,9 +57,24 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(workflow.read_catalog()['active']['hu']['iteration'], 1)
         self.assertEqual(workflow.read_catalog()['exports'], {})
         workflow.candidate_checkpoint('hu').unlink()
-        continued = self.train('hu')
+        continued = workflow.train_track('hu', .001, resume_active=True)
         self.assertEqual(continued['initial_iteration'], 1)
         self.assertEqual(continued['final_iteration'], 2)
+
+    def test_new_run_does_not_implicitly_resume_published_policy(self):
+        self.train('hu')
+        prepared = workflow.prepare_migration('activate', ('hu',))
+        self.addCleanup(prepared.close)
+        prepared.publish()
+        workflow.candidate_checkpoint('hu').unlink()
+        with self.assertRaisesRegex(FileExistsError, 'Training history exists'):
+            self.train('hu')
+        config = workflow.config_for('hu')
+        config['output_dir'] = str(self.root / 'fresh-hu')
+        (self.root / 'configs/train_hu.json').write_text(json.dumps(config))
+        fresh = self.train('hu')
+        self.assertEqual(fresh['initial_iteration'], 0)
+        self.assertEqual(fresh['final_iteration'], 1)
 
     def test_export_both_publishes_complete_ui_bundle_without_activation(self):
         self.train('3max')

@@ -21,12 +21,39 @@ def validate_config(raw: dict) -> dict:
         expected.add("outcome_epsilon")
     if not isinstance(raw, dict):
         raise ValueError(f"Training config must be a JSON object: {type(raw).__name__}")
+    if 'generation_batch_size' in raw:
+        expected.add('generation_batch_size')
+    if 'root_policy' in raw:
+        expected.add('root_policy')
+        if raw['root_policy'] not in ('average', 'current_advantage'):
+            raise ValueError('root_policy must be average or current_advantage')
+    if 'fit_schedule' in raw:
+        expected.add('fit_schedule')
+        schedule = raw['fit_schedule']
+        fields = {'average_every', 'advantage_max_updates', 'average_max_updates',
+                  'advantage_initialization', 'average_initialization', 'cache_encoding'}
+        if not isinstance(schedule, dict) or set(schedule) != fields:
+            raise ValueError(f"fit_schedule must contain exactly {fields}")
+        for key in ('average_every', 'advantage_max_updates', 'average_max_updates'):
+            if type(schedule[key]) is not int or schedule[key] < 1:
+                raise ValueError(f"fit_schedule requires positive integer {key}")
+        for key in ('advantage_initialization', 'average_initialization'):
+            if schedule[key] not in ('fresh', 'warm'):
+                raise ValueError(f"Invalid {key}: {schedule[key]}")
+        if type(schedule['cache_encoding']) is not bool:
+            raise ValueError('cache_encoding must be boolean')
+    if "replay_opening_fraction" in raw:
+        expected.add("replay_opening_fraction")
+        fraction = raw["replay_opening_fraction"]
+        if (type(fraction) not in (float, int) or not math.isfinite(fraction)
+                or not 0 < fraction < 1 or raw["traversal_mode"] != "external_sampling"):
+            raise ValueError("replay_opening_fraction requires (0, 1) and external_sampling")
     if set(raw) != expected:
         raise ValueError(f"Training config fields must match exactly; missing={expected - set(raw)}, extra={set(raw) - expected}")
     if (raw["config_version"] != CONFIG_VERSION or raw["root_sampler_version"] != ROOT_SAMPLER_VERSION
             or raw["feature_schema_version"] != FEATURE_SCHEMA_VERSION or raw["model_schema_version"] != MODEL_ARCHITECTURE):
         raise ValueError("Incompatible training config/schema versions")
-    for name in expected - {"3max", "hu", "learning_rate", "traversal_mode", "model_schema_version", "output_dir", "outcome_epsilon"}:
+    for name in expected - {"3max", "hu", "learning_rate", "traversal_mode", "model_schema_version", "output_dir", "outcome_epsilon", "replay_opening_fraction", "fit_schedule", "root_policy"}:
         if type(raw[name]) is not int or raw[name] < (0 if name == "seed" else 1):
             raise ValueError(f"Training config requires positive integer {name}: {raw[name]!r}")
     if raw["traversal_mode"] not in ("external_sampling", "outcome_sampling"):
@@ -46,7 +73,12 @@ def validate_config(raw: dict) -> dict:
         for field in ("advantage_capacity", "advantage_byte_budget"):
             if type(track[field]) is not int or track[field] < 1:
                 raise ValueError(f"Track {name} requires positive integer {field}: {track[field]}")
+        if "replay_opening_fraction" in raw and (track["advantage_capacity"] < 2 or raw["strategy_capacity"] < 2):
+            raise ValueError("Protected replay requires at least two slots per memory")
         RootSampler(count, raw["seed"], track["root_sampling"])
+        if (track["root_sampling"]["hole_card_sampling"] == "stratified_recorded_opening"
+                and raw["traversal_mode"] != "external_sampling"):
+            raise ValueError("Recorded-opening stratification requires the corrected external-sampling collectors")
     if not any(raw[t]["enabled"] for t in ("3max", "hu")):
         raise ValueError("At least one training track must be enabled")
     if (raw["hu"]["enabled"] and raw["hu"]["root_sampling"]["mixture"]["on_policy"] > 0

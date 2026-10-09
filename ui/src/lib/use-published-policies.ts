@@ -30,7 +30,7 @@ export function usePublishedPolicies() {
         }
         if (!disposed) setError(null);
       } catch (cause) {
-        if (!disposed) setError(cause instanceof Error ? cause.message : String(cause));
+        if (!disposed) { setModels({}); setError(cause instanceof Error ? cause.message : String(cause)); }
       } finally {
         running = false;
         if (!disposed) setLoading(false);

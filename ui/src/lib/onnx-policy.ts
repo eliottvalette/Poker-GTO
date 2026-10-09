@@ -87,14 +87,14 @@ export function validatePolicyManifest(raw: unknown): PolicyManifest {
 }
 
 /** Validated average-policy artifact selected by the published catalog. */
-export async function loadAveragePolicy(model: ArrayBuffer, rawManifest: unknown): Promise<LoadedAveragePolicy> {
+export async function loadAveragePolicy(model: ArrayBuffer, rawManifest: unknown, assetOrigin?: string): Promise<LoadedAveragePolicy> {
   const manifest = validatePolicyManifest(rawManifest);
   if (!model.byteLength) throw new Error("Average-policy ONNX model is empty");
   const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", model)),
     value => value.toString(16).padStart(2, "0")).join("");
   if (hash !== manifest.model_sha256) throw new Error(`ONNX model SHA256 ${hash} does not match selected manifest ${manifest.model_sha256}`);
   const ort = await import("onnxruntime-web/wasm");
-  ort.env.wasm.wasmPaths = "/onnxruntime/";
+  ort.env.wasm.wasmPaths = new URL("/onnxruntime/", assetOrigin ?? globalThis.location.origin).href;
   ort.env.wasm.numThreads = 1;
   const session = await ort.InferenceSession.create(model, { executionProviders: ["wasm"] });
   if (!equalArray(session.inputNames, INPUTS) || !equalArray(session.outputNames, ["probabilities"])) {
@@ -151,10 +151,11 @@ export async function loadAveragePolicy(model: ArrayBuffer, rawManifest: unknown
 }
 
 /** Load the immutable ONNX bundles selected by migrate.py's atomic catalog. */
-export async function loadPublishedPolicies(publishedCatalog?: unknown): Promise<Record<number, LoadedAveragePolicy>> {
+export async function loadPublishedPolicies(publishedCatalog?: unknown, assetOrigin?: string): Promise<Record<number, LoadedAveragePolicy>> {
+  const asset = (path: string) => new URL(path, assetOrigin ?? globalThis.location.origin).href;
   let catalog = publishedCatalog as { version: number; exports: Record<string, { bundle_id: string; iteration: number }> };
   if (publishedCatalog === undefined) {
-    const response = await fetch("/policy/index.json", { cache: "no-store" });
+    const response = await fetch(asset("/policy/index.json"), { cache: "no-store" });
     if (!response.ok) throw new Error(`Published policy catalog unavailable: HTTP ${response.status}; export policies with migrate.py`);
     catalog = await response.json();
   }
@@ -172,14 +173,13 @@ export async function loadPublishedPolicies(publishedCatalog?: unknown): Promise
         throw new Error(`Published ${track} policy is invalid; export this track again with migrate.py`);
       }
       const base = `/policy/releases/${entry.bundle_id}/average_${track}`;
-      const [weights, manifest] = await Promise.all([fetch(`${base}.onnx`), fetch(`${base}.json`)]);
+      const [weights, manifest] = await Promise.all([fetch(asset(`${base}.onnx`)), fetch(asset(`${base}.json`))]);
       if (!weights.ok || !manifest.ok) throw new Error(`Published ${track} bundle unavailable: model HTTP ${weights.status}, manifest HTTP ${manifest.status}`);
-      loaded[count] = await loadAveragePolicy(await weights.arrayBuffer(), await manifest.json());
+      loaded[count] = await loadAveragePolicy(await weights.arrayBuffer(), await manifest.json(), assetOrigin);
       if (!equalArray(loaded[count].manifest.supported_player_counts, [count]) || loaded[count].manifest.iteration !== entry.iteration) {
         throw new Error(`Published ${track} policy does not match its catalog entry`);
       }
     }
-    if (!Object.keys(loaded).length) throw new Error("No UI policies published; export a track with migrate.py");
     return loaded;
   } catch (cause) {
     await Promise.all(Object.values(loaded).map(policy => policy.release()));

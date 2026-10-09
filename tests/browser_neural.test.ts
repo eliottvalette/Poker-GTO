@@ -1,3 +1,4 @@
+import { loadPublishedPolicies } from "../ui/src/lib/onnx-policy";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -98,4 +99,8 @@ test("private descriptors cover pairs, suited cards, broadway and ace-low connec
     cards.forEach((card, index) => { obs.history[count + index][10] = card / 51; });
     almostEqual(neuralObservation(obs, 4).numeric.slice(-7), expected);
   }
+});
+
+ test("empty policy catalog returns no models without a legacy fallback", async () => {
+  assert.deepEqual(await loadPublishedPolicies({version:1,exports:{}}),{});
 });

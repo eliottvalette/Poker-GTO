@@ -2,7 +2,7 @@
 from __future__ import annotations
 from concurrent.futures import ProcessPoolExecutor
 import copy
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 import math
 import resource
 import sys
@@ -14,10 +14,10 @@ import torch
 from actions import ACTION_IDS
 from poker_game_expresso import HandState
 from tournament import TournamentState
-from cfr_solver import GameState, Traversal, TraversalBudgetExceeded, hand_root, regret_matching, validate_strategy
-from infoset import STATE_VERSION, Observation
+from cfr_solver import GameState, Traversal, TraversalBudgetExceeded, hand_root, regret_matching
+from infoset import STATE_VERSION, Observation, observe_fields
 from features import FEATURE_SCHEMA_VERSION, SUPPORTED_FEATURE_VERSIONS
-from features.neural import NeuralObservation, observe_neural, numeric_names
+from features.neural import NeuralObservation, numeric_names, neural_observation
 from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES
 from ml.memory import DEFAULT_BYTE_BUDGET, TRAVERSAL_MODES, ReservoirMemory, TrainingSample, sample_bytes
 from ml.model import MODEL_ARCHITECTURE, AdvantageNetwork, AveragePolicyNetwork, encode_batch, model_architecture
@@ -142,13 +142,20 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask,
     generated_bytes = 0
     from training.metrics import Coverage
     coverage = Coverage()
+    raw_cards: dict[int, tuple[int, int]] = {}
+    def recording_observer(state):
+        fields = observe_fields(state)
+        obs = neural_observation(fields)
+        raw_cards[id(obs)] = tuple(fields.cards[:2])
+        return obs
     def sink(kind, destination):
         def append(obs, target, weight):
             nonlocal generated_bytes
             sample = TrainingSample(snapshot.version + 1, obs.hero, obs, target,
                                     weight, kind, snapshot.version, task.traversal_mode)
             sample.validate()
-            coverage.record(sample.state, kind)
+            exact_cards = tuple(obs.cards[:2]) if isinstance(obs, Observation) else raw_cards.get(id(obs))
+            coverage.record(sample.state, kind, exact_cards=exact_cards, iteration=sample.iteration, weight=sample.weight)
             required = generated_bytes + sample_bytes(sample)
             if required > task.sample_byte_budget:
                 raise MemoryError(f"Traversal task={task.task_id} requires {required} accounted sample bytes, "
@@ -177,7 +184,7 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask,
         value = checked_traversal("outcome", lambda: walk.run(task.root, task.player, sink("advantage", advantages), sink("strategy", strategies)))
         return finish(GeneratedSamples(task.task_id, snapshot.version, advantages, strategies, walk.nodes, value,
                                 task.traversal_mode, _diagnostic_metadata(walk.diagnostics), walk.max_depth_seen))
-    walk = Traversal(strategy, rng, task.max_nodes, task.max_depth, observer=observe_neural)
+    walk = Traversal(strategy, rng, task.max_nodes, task.max_depth, observer=recording_observer)
     if snapshot.player_count == 2:
         value = checked_traversal("external", lambda: walk.regrets(
             task.root, task.player, sink("advantage", advantages), strategy_sink=sink("strategy", strategies)))
@@ -190,7 +197,7 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask,
     for opponent in root.players:
         if opponent == task.player:
             continue
-        walk = Traversal(strategy, rng, task.max_nodes, task.max_depth, observer=observe_neural)
+        walk = Traversal(strategy, rng, task.max_nodes, task.max_depth, observer=recording_observer)
         checked_traversal(f"strategy_enumerate_{opponent}", lambda: walk.average_partial(
             task.root, task.player, opponent, lambda obs, target, weight: strategy_sink(obs, target, weight / 2)))
         nodes += walk.nodes
@@ -202,7 +209,7 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask,
 class DeepCFRSolver:
     def __init__(self, players: tuple[int, ...], objective: str = "hand_chip_delta", seed: int = 0,
                  advantage_capacity: int | None = None, strategy_capacity: int = 10000,
-                 memory_byte_budget: int = DEFAULT_BYTE_BUDGET, advantage_byte_budget: int | None = None):
+                 memory_byte_budget: int = DEFAULT_BYTE_BUDGET, advantage_byte_budget: int | None = None, replay_opening_fraction: float | None = None):
         if len(players) not in (2, 3) or len(set(players)) != len(players):
             raise ValueError(f"Expected distinct 2/3 player IDs: {players}")
         if objective != "hand_chip_delta":
@@ -215,6 +222,15 @@ class DeepCFRSolver:
         advantage_byte_budget = len(players) * memory_byte_budget if advantage_byte_budget is None else advantage_byte_budget
         self.advantage_memory = ReservoirMemory(advantage_capacity, seed, "advantage", objective, advantage_byte_budget)
         self.strategy_memory = ReservoirMemory(strategy_capacity, seed + 10, "strategy", objective, memory_byte_budget)
+        if replay_opening_fraction is not None:
+            from ml.stratified_memory import ProtectedReplay
+            if not 0 < replay_opening_fraction < 1 or min(advantage_capacity, strategy_capacity) < 2:
+                raise ValueError("Protected replay requires a fraction in (0, 1) and at least two slots")
+            def protected(capacity, budget, kind, memory_seed):
+                opening = max(1, min(capacity - 1, int(capacity * replay_opening_fraction)))
+                return ProtectedReplay(opening, capacity - opening, kind=kind, seed=memory_seed, byte_budget=budget)
+            self.advantage_memory = protected(advantage_capacity, advantage_byte_budget, "advantage", seed)
+            self.strategy_memory = protected(strategy_capacity, memory_byte_budget, "strategy", seed + 10)
         self.advantage_model: AdvantageNetwork | None = None
         self.average_model: AveragePolicyNetwork | None = None
         self.metrics: list[dict] = []
@@ -256,7 +272,8 @@ class DeepCFRSolver:
                       sample_byte_budget: int = DEFAULT_BYTE_BUDGET,
                       generation_byte_budget: int = 256 * 1024 * 1024,
                       traversal_mode: str = "external_sampling", epsilon: float = 0.6,
-                      learning_rate: float = 3e-4, trainer_threads: int = 1, executor: ProcessPoolExecutor | None = None) -> dict:
+                      learning_rate: float = 3e-4, trainer_threads: int = 1, executor: ProcessPoolExecutor | None = None,
+                      fit_schedule: dict | None = None, generation_batch_size: int | None = None) -> dict:
         from scripts.parallel_cfr import collect_samples
         if traversals_per_player < 1 or workers < 1:
             raise ValueError(f"Invalid traversal count/workers: {traversals_per_player}, {workers}")
@@ -268,44 +285,80 @@ class DeepCFRSolver:
         tasks, rng = self.traversal_tasks(root_factory, traversals_per_player, max_nodes, max_depth,
                                           sample_byte_budget, traversal_mode, epsilon)
         root_seconds = time.perf_counter() - root_started
+        # Replay updates remain private until the complete generation and fitting succeeds.
+        advantage_memory = copy.deepcopy(self.advantage_memory)
+        strategy_memory = copy.deepcopy(self.strategy_memory)
+        chunk_size = len(tasks) if generation_batch_size is None else generation_batch_size
+        if type(chunk_size) is not int or chunk_size < 1:
+            raise ValueError("generation_batch_size must be a positive integer")
+        snapshot = self.snapshot()
+        results = []
+        advantage_count = strategy_count = 0
+        player_counts = {str(p): 0 for p in self.players}
         generation_started = time.perf_counter()
-        results = collect_samples(self.snapshot(), tasks, workers, aggregate_byte_budget=generation_byte_budget, executor=executor)
+        for offset in range(0, len(tasks), chunk_size):
+            chunk = collect_samples(snapshot, tasks[offset:offset + chunk_size], workers,
+                                    aggregate_byte_budget=generation_byte_budget, executor=executor)
+            for result in chunk:
+                if result.version != self.version:
+                    raise ValueError(f"Stale samples version={result.version}, expected {self.version}")
+                if result.traversal_mode != traversal_mode:
+                    raise ValueError(f"Worker traversal mode={result.traversal_mode}, expected {traversal_mode}")
+                advantage_count += len(result.advantages)
+                strategy_count += len(result.strategies)
+                for memory, samples in ((advantage_memory, result.advantages), (strategy_memory, result.strategies)):
+                    for sample in samples:
+                        if sample.player not in self.players or round(sample.state.numeric[NUMERIC_NAMES.index("player_count")] * 3) != len(self.players):
+                            raise ValueError(f"Sample perspective/player count is not in track {self.players}")
+                        memory.add(sample)
+                        if sample.kind == 'advantage':
+                            player_counts[str(sample.player)] += 1
+                results.append(replace(result, advantages=[], strategies=[]))
+            del chunk
         generation_seconds = time.perf_counter() - generation_started
         torch.set_num_threads(trainer_threads)
         fit_started = time.perf_counter()
-        # Build the next complete state before changing any published version.
-        advantage_memory = copy.deepcopy(self.advantage_memory)
-        strategy_memory = copy.deepcopy(self.strategy_memory)
-        for result in results:
-            if result.version != self.version:
-                raise ValueError(f"Stale samples version={result.version}, expected {self.version}")
-            if result.traversal_mode != traversal_mode:
-                raise ValueError(f"Worker traversal mode={result.traversal_mode}, expected {traversal_mode}")
-            for sample in result.advantages:
-                if sample.player not in self.players or round(sample.state.numeric[NUMERIC_NAMES.index("player_count")] * 3) != len(self.players):
-                    raise ValueError(f"Advantage sample perspective/player count is not in track {self.players}")
-                advantage_memory.add(sample)
-            for sample in result.strategies:
-                if sample.player not in self.players or round(sample.state.numeric[NUMERIC_NAMES.index("player_count")] * 3) != len(self.players):
-                    raise ValueError(f"Strategy sample perspective/player count is not in track {self.players}")
-                strategy_memory.add(sample)
         metrics = {"version": self.version + 1, "nodes": sum(r.nodes for r in results),
                    "strategy_collector": strategy_collector(len(self.players), traversal_mode),
-                   "advantage_samples": sum(len(r.advantages) for r in results),
-                   "strategy_samples": sum(len(r.strategies) for r in results),
+                   "advantage_samples": advantage_count,
+                   "strategy_samples": strategy_count,
                    "values": [r.value for r in results], "traversal_mode": traversal_mode,
                    "epsilon": epsilon if traversal_mode == "outcome_sampling" else None,
                    "traversal_diagnostics": [r.diagnostics for r in results]}
         metrics["max_depth_seen"] = max(r.max_depth_seen for r in results)
+        advantage_samples = advantage_memory.samples
+        strategy_samples = strategy_memory.samples
+        schedule = fit_schedule or {}
+        fit_average = self.average_model is None or (self.version + 1) % schedule.get('average_every', 1) == 0
+        cache_encoding = schedule.get('cache_encoding', False)
+        metrics['fit_initialization'] = {}
+        metrics['fit_component_seconds'] = {}
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(self.seed + (self.version + 1) * 101)
-            advantage = AdvantageNetwork()
-            metrics["advantage"] = fit(advantage, advantage_memory.samples, advantage_epochs, batch_size,
-                                       self.seed, learning_rate=learning_rate)
-            torch.manual_seed(self.seed + (self.version + 1) * 101 + 10)
-            average = AveragePolicyNetwork()
-            metrics["average_policy"] = fit(average, strategy_memory.samples, average_epochs, batch_size, self.seed + 10, learning_rate=learning_rate)
-        metrics["fit_epochs"] = {"advantage": advantage_epochs, "average_policy": average_epochs}
+            warm_a = schedule.get('advantage_initialization', 'fresh') == 'warm' and self.advantage_model is not None
+            advantage = copy.deepcopy(self.advantage_model) if warm_a else AdvantageNetwork()
+            component_started = time.perf_counter()
+            metrics["advantage"] = fit(advantage, advantage_samples, advantage_epochs, batch_size,
+                                       self.seed, learning_rate=learning_rate,
+                                       max_updates=schedule.get('advantage_max_updates'), cache_encoding=cache_encoding)
+            metrics['fit_component_seconds']['advantage'] = time.perf_counter() - component_started
+            metrics['fit_initialization']['advantage'] = 'warm_weights_fresh_optimizer' if warm_a else 'fresh'
+            average = self.average_model
+            if fit_average:
+                torch.manual_seed(self.seed + (self.version + 1) * 101 + 10)
+                warm_b = schedule.get('average_initialization', 'fresh') == 'warm' and average is not None
+                average = copy.deepcopy(average) if warm_b else AveragePolicyNetwork()
+                component_started = time.perf_counter()
+                metrics["average_policy"] = fit(average, strategy_samples, average_epochs, batch_size, self.seed + 10,
+                    learning_rate=learning_rate, max_updates=schedule.get('average_max_updates'), cache_encoding=cache_encoding)
+                metrics['fit_component_seconds']['average_policy'] = time.perf_counter() - component_started
+                metrics['fit_initialization']['average_policy'] = 'warm_weights_fresh_optimizer' if warm_b else 'fresh'
+            else:
+                metrics['average_policy'] = {'skipped': True}
+                metrics['fit_component_seconds']['average_policy'] = 0.0
+                metrics['fit_initialization']['average_policy'] = 'unchanged'
+        metrics['average_model_iteration'] = self.version + 1 if fit_average else self.metrics[-1].get('average_model_iteration', self.version)
+        metrics["fit_epochs"] = {"advantage": advantage_epochs, "average_policy": average_epochs if fit_average else 0}
         metrics["fit_seconds"] = time.perf_counter() - fit_started
         metrics["root_seconds"] = root_seconds
         metrics["generation_seconds"] = generation_seconds
@@ -319,15 +372,24 @@ class DeepCFRSolver:
         for result in results:
             coverage.merge(result.coverage)
         metrics["sample_coverage"] = coverage.as_dict()
-        metrics["replay"] = {"advantage": {"seen": advantage_memory.seen, "retained": len(advantage_memory.samples),
+        retained = Coverage()
+        for samples in (advantage_samples, strategy_samples):
+            for sample in samples:
+                # Compact replay has canonical cards; label this identity
+                # explicitly instead of claiming physical-suit provenance.
+                retained.record(sample.state, sample.kind, iteration=sample.iteration, weight=sample.weight)
+        metrics["retained_coverage"] = retained.as_dict()
+        metrics["replay"] = {"advantage": {"seen": advantage_memory.seen, "retained": len(advantage_samples),
                                              "bytes": advantage_memory.used_bytes},
-                             "strategy": {"seen": strategy_memory.seen, "retained": len(strategy_memory.samples),
+                             "strategy": {"seen": strategy_memory.seen, "retained": len(strategy_samples),
                                             "bytes": strategy_memory.used_bytes}}
-        metrics["advantage_samples_by_player"] = {str(p): sum(s.player == p for r in results for s in r.advantages)
-                                                  for p in self.players}
-        metrics["advantage_retained_by_player"] = {str(p): sum(s.player == p for s in advantage_memory.samples)
+        metrics["advantage_samples_by_player"] = player_counts
+        for kind, memory in (("advantage", advantage_memory), ("strategy", strategy_memory)):
+            if hasattr(memory, "diagnostics"):
+                metrics["replay"][kind]["strata"] = memory.diagnostics()
+        metrics["advantage_retained_by_player"] = {str(p): sum(s.player == p for s in advantage_samples)
                                                    for p in self.players}
-        probes = [s.state for s in strategy_memory.samples[:32]]
+        probes = [s.state for s in strategy_samples[:32]]
         if self.average_model is not None:
             with torch.no_grad():
                 batch = encode_batch(probes)
@@ -350,6 +412,7 @@ class DeepCFRSolver:
                     "actions": list(ACTION_IDS), "numeric_names": list(NUMERIC_NAMES),
                     "objective": self.objective, "iteration": self.version,
                     "training_metadata": {"advantage_layout": "shared_per_player_count",
+                                          "average_model_iteration": self.metrics[-1].get('average_model_iteration', self.version),
                                           "strategy_collector": strategy_collector(len(self.players), self.traversal_mode),
                                           "seat_normalization": "hero_then_clockwise_positions",
                                           "traversal_mode": self.traversal_mode,

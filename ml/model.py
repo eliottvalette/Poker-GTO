@@ -1,6 +1,7 @@
 """Modest exact-card, numeric MLP and full-history GRU encoder."""
 from __future__ import annotations
 import torch
+import numpy as np
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
 from actions import ACTION_IDS
@@ -22,27 +23,30 @@ def encode_batch(observations: list[Observation | NeuralObservation],
     if not observations:
         raise ValueError("Cannot encode an empty observation batch")
     observations = [neural_observation(o, feature_version) for o in observations]
-    # Compact replay stores packed bytes: decode each numeric/history vector once.
-    numerics = [o.numeric for o in observations]
-    histories = [o.history for o in observations]
-    for o, numeric_values, history_values in zip(observations, numerics, histories):
+    # Decode packed float64 buffers directly; avoid one Python tuple and tensor per history.
+    width = len(numeric_names(feature_version))
+    lengths_list = [len(o.history_data) // (8 * HISTORY_WIDTH) for o in observations]
+    for o, length in zip(observations, lengths_list):
         if (o.version != STATE_VERSION or len(o.cards) != 7 or any(c not in range(53) for c in o.cards)
-                or len(numeric_values) != len(numeric_names(feature_version)) or len(o.legal_mask) != len(ACTION_IDS)
-                or not any(o.legal_mask) or not history_values or o.street not in range(4)
-                or any(len(e) != HISTORY_WIDTH for e in history_values)):
+                or len(o.numeric_data) != width * 8 or len(o.legal_mask) != len(ACTION_IDS)
+                or not any(o.legal_mask) or not length or o.street not in range(4)
+                or len(o.history_data) % (8 * HISTORY_WIDTH)):
             raise ValueError(f"Invalid neural observation contract: {o}")
-    lengths = torch.tensor([len(values) for values in histories], dtype=torch.long)
-    history = torch.zeros(len(observations), int(lengths.max()), HISTORY_WIDTH)
-    for i, values in enumerate(histories):
-        history[i, :len(values)] = torch.tensor(values)
-    numeric = torch.tensor(numerics, dtype=torch.float32)
-    if not torch.isfinite(numeric).all() or not torch.isfinite(history).all():
+    numeric64 = np.stack([np.frombuffer(o.numeric_data, dtype='<f8') for o in observations])
+    history = np.zeros((len(observations), max(lengths_list), HISTORY_WIDTH), dtype=np.float32)
+    with np.errstate(over='ignore', invalid='ignore'):
+        numeric = numeric64.astype(np.float32)
+        for i, (o, length) in enumerate(zip(observations, lengths_list)):
+            history[i, :length] = np.frombuffer(o.history_data, dtype='<f8').reshape(length, HISTORY_WIDTH)
+    if not np.isfinite(numeric).all() or not np.isfinite(history).all():
         raise ValueError("Nonfinite numerical/history input")
     return {"cards": torch.tensor([o.cards for o in observations], dtype=torch.long),
             "street": torch.tensor([o.street for o in observations], dtype=torch.long),
-            "position": torch.tensor([round(values[NUMERIC_NAMES.index("hero_position")] * 2) for values in numerics], dtype=torch.long),
-            "numeric": numeric, "history": history, "lengths": lengths,
+            "position": torch.from_numpy(np.rint(numeric64[:, NUMERIC_NAMES.index("hero_position")] * 2).astype(np.int64)),
+            "numeric": torch.from_numpy(numeric), "history": torch.from_numpy(history),
+            "lengths": torch.tensor(lengths_list, dtype=torch.long),
             "mask": torch.tensor([o.legal_mask for o in observations], dtype=torch.bool)}
+
 
 
 class StateEncoder(nn.Module):

@@ -1,2 +1,2 @@
 """Editable session budgets; learning hyperparameters live in configs/train_*.json."""
-SESSION_SECONDS = {"3max": 60 * 60, "hu": 60 * 60}
+SESSION_SECONDS = {"3max": 30 * 60, "hu": 30 * 60}

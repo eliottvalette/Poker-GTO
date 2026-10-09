@@ -6,11 +6,11 @@
   "trainer_threads": 1,
   "batch_size": 64,
   "learning_rate": 0.0003,
-  "strategy_capacity": 10000,
-  "memory_byte_budget": 134217728,
+  "strategy_capacity": 50000,
+  "memory_byte_budget": 536870912,
   "sample_byte_budget": 67108864,
   "generation_byte_budget": 268435456,
-  "max_nodes": 20000,
+  "max_nodes": 200000,
   "max_depth": 64,
   "checkpoint_every": 5,
   "evaluation_every": 5,
@@ -18,7 +18,7 @@
   "root_sampler_version": 2,
   "feature_schema_version": 4,
   "model_schema_version": "cards8_numeric32_historyGRU32_head64_features4",
-  "output_dir": "runs/hu",
+  "output_dir": "runs/hu-batched",
   "evaluation_max_nodes": 20000,
   "3max": {
     "enabled": false,
@@ -32,14 +32,14 @@
       "max_rollout_decisions": 128,
       "max_rollout_hands": 128,
       "tournament_start_players": 3,
-      "hole_card_sampling": "random"
+      "hole_card_sampling": "stratified_recorded_opening"
     },
-    "advantage_capacity": 30000,
-    "advantage_byte_budget": 402653184
+    "advantage_capacity": 50000,
+    "advantage_byte_budget": 536870912
   },
   "hu": {
     "enabled": true,
-    "traversals_per_player": 128,
+    "traversals_per_player": 256,
     "root_sampling": {
       "mixture": {
         "on_policy": 0.5,
@@ -49,11 +49,22 @@
       "max_rollout_decisions": 128,
       "max_rollout_hands": 128,
       "tournament_start_players": 2,
-      "hole_card_sampling": "random"
+      "hole_card_sampling": "stratified_recorded_opening"
     },
-    "advantage_capacity": 20000,
-    "advantage_byte_budget": 268435456
+    "advantage_capacity": 50000,
+    "advantage_byte_budget": 536870912
   },
-  "advantage_epochs": 2,
-  "average_epochs": 2
+  "advantage_epochs": 4,
+  "average_epochs": 4,
+  "replay_opening_fraction": 0.2,
+  "root_policy": "current_advantage",
+  "generation_batch_size": 128,
+  "fit_schedule": {
+    "average_every": 3,
+    "advantage_max_updates": 800,
+    "average_max_updates": 800,
+    "advantage_initialization": "warm",
+    "average_initialization": "warm",
+    "cache_encoding": true
+  }
 }
