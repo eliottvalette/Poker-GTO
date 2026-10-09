@@ -224,7 +224,7 @@ test("explicit asynchronous opponent policies drive actions and survive cloning"
 
 
 test("HU format deals exactly two players and routes two-player observations through settlement", async () => {
-  const { ACTION_IDS } = await import("../ui/src/lib/poker/actions");
+  const { ACTION_IDS } = await import("../ui/src/lib/poker/actions.js");
   const counts: number[] = [];
   const passive = async (obs: ReturnType<typeof observe>) => {
     counts.push(Math.round(obs.numeric[NUMERIC_NAMES.indexOf("player_count")]*3));

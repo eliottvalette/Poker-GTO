@@ -1,0 +1,84 @@
+name: Validate and deploy continuous poker training
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: training-deploy
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: |
+          pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r deploy/vps/requirements.txt
+      - run: PYTHONPATH=.:tests python -m unittest test_vps_training test_publication
+      - run: npm ci && npm run lint && npm run build
+        working-directory: ui
+      - run: node tests/run_browser_tests.mjs
+      - run: git archive --format=tar.gz --output=training.tar.gz HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: training-source
+          path: training.tar.gz
+          retention-days: 2
+  deploy:
+    needs: validate
+    if: vars.GTO_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: training
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - track: hu
+            host: 46.224.1.152
+          - track: 3max
+            host: 46.62.239.78
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: training-source
+      - name: Configure SSH agent and pinned hosts
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          SSH_PASSPHRASE: ${{ secrets.VPS_SSH_PASSPHRASE }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          eval "$(ssh-agent -s)"
+          printf 'SSH_AUTH_SOCK=%s\nSSH_AGENT_PID=%s\n' "$SSH_AUTH_SOCK" "$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          printf '#!/bin/sh\nprintf "%%s\\n" "$SSH_PASSPHRASE"\n' > "$RUNNER_TEMP/askpass"
+          chmod 700 "$RUNNER_TEMP/askpass"
+          SSH_ASKPASS_REQUIRE=force SSH_ASKPASS="$RUNNER_TEMP/askpass" DISPLAY=:0 ssh-add ~/.ssh/deploy_key </dev/null
+          rm ~/.ssh/deploy_key "$RUNNER_TEMP/askpass"
+      - name: Deliver tested revision and activate
+        env:
+          TARGET_HOST: ${{ matrix.host }}
+          TRACK: ${{ matrix.track }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "root@$TARGET_HOST" 'mkdir -p /opt/gto/incoming'
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes training.tar.gz "root@$TARGET_HOST:/opt/gto/incoming/$GITHUB_SHA.tar.gz"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes deploy/vps/install.sh "root@$TARGET_HOST:/opt/gto/incoming/install.sh"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "root@$TARGET_HOST" "bash /opt/gto/incoming/install.sh '$GITHUB_SHA' '$TRACK'"
+      - name: Stop SSH agent
+        if: always()
+        run: if [ -n "${SSH_AGENT_PID:-}" ]; then ssh-agent -k; fi

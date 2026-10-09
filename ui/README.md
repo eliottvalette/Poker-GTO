@@ -61,3 +61,24 @@ switch the UI's policy source. Remote policy publication still requires an expli
 Storage contract and server-only upload credentials; the browser publishable key
 is not an administrative upload credential. Optional third-party agent skills were
 not installed.
+
+## Dependency security maintenance (2026-10-09)
+
+Next.js and its ESLint configuration are aligned at 15.5.27. The lockfile updates
+patched transitive dependencies, including tar, sharp, minimatch and source-map-js.
+Two targeted overrides retain fixes that would otherwise resolve to vulnerable
+versions: Next.js's PostCSS uses 8.5.29; brace-expansion 1.x uses 1.1.21. Remove an
+override only after its parent dependency resolves a patched version itself.
+
+`npm ci` reproduces this dependency tree. `npm audit --omit=dev` reports zero
+vulnerabilities. The complete audit still reports five high-severity package entries
+from one unpatched advisory, [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm):
+`eslint-config-next -> @next/eslint-plugin-next -> fast-glob -> micromatch -> braces`.
+All entries are development dependencies. This is not a clean full audit; no alert
+has been suppressed. The advisory lists no patched braces release. Do not pass
+untrusted glob patterns to lint tooling. Recheck upstream before updating; npm's
+suggested forced downgrade to eslint-config-next 14 is not applied.
+
+Validation includes the static production build, ESLint, and the browser regression
+suite. The suite's dynamic action-module import uses an explicit `.js` extension as
+required by its Node16 module resolution.

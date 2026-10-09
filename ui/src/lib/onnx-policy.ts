@@ -1,4 +1,5 @@
 import { ACTION_IDS } from "./poker/actions";
+import { fetchPolicyCatalog, policyArtifactBase } from "./policy-catalog";
 import { EVENTS, HISTORY_WIDTH, NUMERIC_NAMES, POSITIONS, STATE_VERSION,
   validateObservation, type Observation } from "./poker/observation";
 
@@ -152,12 +153,9 @@ export async function loadAveragePolicy(model: ArrayBuffer, rawManifest: unknown
 
 /** Load the immutable ONNX bundles selected by migrate.py's atomic catalog. */
 export async function loadPublishedPolicies(publishedCatalog?: unknown, assetOrigin?: string): Promise<Record<number, LoadedAveragePolicy>> {
-  const asset = (path: string) => new URL(path, assetOrigin ?? globalThis.location.origin).href;
   let catalog = publishedCatalog as { version: number; exports: Record<string, { bundle_id: string; iteration: number }> };
   if (publishedCatalog === undefined) {
-    const response = await fetch(asset("/policy/index.json"), { cache: "no-store" });
-    if (!response.ok) throw new Error(`Published policy catalog unavailable: HTTP ${response.status}; export policies with migrate.py`);
-    catalog = await response.json();
+    catalog = await fetchPolicyCatalog(assetOrigin);
   }
   if (!catalog || catalog.version !== 1 || !catalog.exports || typeof catalog.exports !== "object" || Array.isArray(catalog.exports)
       || Object.keys(catalog.exports).some(track => track !== "3max" && track !== "hu")) {
@@ -172,8 +170,8 @@ export async function loadPublishedPolicies(publishedCatalog?: unknown, assetOri
           || !Number.isInteger(entry.iteration) || entry.iteration < 1) {
         throw new Error(`Published ${track} policy is invalid; export this track again with migrate.py`);
       }
-      const base = `/policy/releases/${entry.bundle_id}/average_${track}`;
-      const [weights, manifest] = await Promise.all([fetch(asset(`${base}.onnx`)), fetch(asset(`${base}.json`))]);
+      const base = policyArtifactBase(track, entry.bundle_id, assetOrigin);
+      const [weights, manifest] = await Promise.all([fetch(`${base}.onnx`, { signal: AbortSignal.timeout(30000) }), fetch(`${base}.json`, { signal: AbortSignal.timeout(15000) })]);
       if (!weights.ok || !manifest.ok) throw new Error(`Published ${track} bundle unavailable: model HTTP ${weights.status}, manifest HTTP ${manifest.status}`);
       loaded[count] = await loadAveragePolicy(await weights.arrayBuffer(), await manifest.json(), assetOrigin);
       if (!equalArray(loaded[count].manifest.supported_player_counts, [count]) || loaded[count].manifest.iteration !== entry.iteration) {

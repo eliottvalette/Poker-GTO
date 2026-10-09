@@ -1,0 +1,11 @@
+[Unit]
+Description=Retry poker policy delivery every minute (%i)
+
+[Timer]
+OnBootSec=60
+OnUnitInactiveSec=60
+RandomizedDelaySec=5
+Unit=gto-publish@%i.service
+
+[Install]
+WantedBy=timers.target

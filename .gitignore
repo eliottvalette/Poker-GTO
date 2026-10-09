@@ -23,3 +23,6 @@ policy/releases/
 policy/.publication.lock
 ui/public/policy/
 policy/.compute.lock
+
+# Server-only publication credentials
+/deploy/vps/.env.local

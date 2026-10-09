@@ -5,14 +5,14 @@ import { updateRanges, observerMarginals, type BeliefTransition } from "./belief
 import { behaviorProbabilities } from "./behavior";
 import { observe } from "./observation";
 import { ACTION_IDS } from "./actions";
-import type { LoadedAveragePolicy } from "../onnx-policy";
+import { PolicyBank } from "../policy-bank";
 import type { HandState } from "./engine";
 
-let published: Promise<Record<number,LoadedAveragePolicy>> | undefined;
+const published = new PolicyBank();
+let checkedAt = -Infinity;
 const predictionCache = new Map<string,number[]>();
 async function predictionsFor(state:HandState, rows:Ranges[number]):Promise<Record<string,number[]>> {
-  if(!published) published=import("../onnx-policy").then(module=>module.loadPublishedPolicies());
-  const model=(await published)[Object.keys(state.players).length];
+  const model=published.models[Object.keys(state.players).length];
   if(!model) throw new Error("Published opponent policy unavailable for this player count");
   const result:Record<string,number[]>={};
   for(const row of rows) {
@@ -36,6 +36,10 @@ self.onmessage = async (event: MessageEvent<{ requestId?: number; state: HandTra
     const started = performance.now(), data = event.data;
     const profiles = data.profiles ?? Object.fromEntries(Object.keys(data.state.players).map(p => [p, "uniform"]));
     const likelihoodProfiles = data.likelihoodProfiles ?? profiles;
+    if (Object.values(likelihoodProfiles).includes("published") && Date.now()-checkedAt > 60000) {
+      if (await published.refresh()) predictionCache.clear();
+      checkedAt = Date.now();
+    }
     let ranges=data.ranges;
     for(const transition of data.transitions ?? []) {
       const before=restoreHand(transition.before), profile=likelihoodProfiles[before.current_player!];

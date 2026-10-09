@@ -1,0 +1,7 @@
+# Torch is installed separately from the official CPU wheel index.
+numpy==2.2.6
+onnx==1.23.1
+onnxruntime==1.23.2
+treys==0.1.8
+tqdm==4.67.1
+psutil==7.0.0

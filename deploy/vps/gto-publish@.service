@@ -1,0 +1,19 @@
+[Unit]
+Description=Publish validated poker policy (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=gto
+WorkingDirectory=/opt/gto/current
+Environment=PYTHONPATH=/opt/gto/current
+Environment=GTO_TRACK=%i
+Environment=GTO_DATA_DIR=/var/lib/gto/%i
+EnvironmentFile=/etc/gto/publication.env
+ExecStart=/opt/gto/venv/bin/python /opt/gto/current/deploy/vps/publish.py
+TimeoutStartSec=180
+MemoryMax=256M
+NoNewPrivileges=true
+PrivateTmp=true
+LogNamespace=gto

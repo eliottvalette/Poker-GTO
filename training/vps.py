@@ -76,7 +76,8 @@ def export_live(runner: TrainingRunner, *, keep: int = 2) -> Path:
 
 def run_continuous(track: str, output_dir: Path, *, source_checkpoint: Path | None = None,
                    workers: int = 1, export_seconds: float = 3600,
-                   total_seconds: float | None = None, storage: RuntimeStorage = RuntimeStorage()) -> None:
+                   total_seconds: float | None = None, storage: RuntimeStorage = RuntimeStorage(),
+                   ready: Callable[[], None] | None = None) -> None:
     """Run until interrupted; optional total_seconds bounds diagnostics. No network publication."""
     from training.workflow import exclusive_lock
     if not math.isfinite(export_seconds) or export_seconds <= 0:
@@ -101,6 +102,8 @@ def run_continuous(track: str, output_dir: Path, *, source_checkpoint: Path | No
         runner = prepare_runner(track, source, output_dir, workers=workers, storage=storage)
         if pointer.exists() and runner.iteration != selected['iteration']:
             raise ValueError(f'Resume pointer iteration does not match checkpoint: {pointer}')
+        if ready:
+            ready()
         started = time.monotonic()
         while total_seconds is None or time.monotonic()-started < total_seconds:
             seconds = export_seconds if total_seconds is None else min(export_seconds, total_seconds-(time.monotonic()-started))

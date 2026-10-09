@@ -28,6 +28,9 @@ export default function Page() {
       <CollapsedNavigationTrigger />
       <main className="space-y-4 px-4 py-3">
         {loading && <div role="status" className="text-sm text-muted-foreground">Loading published policies…</div>}
+        {!loading && Object.keys(models).length > 0 && <div role="status" className="text-xs text-muted-foreground">
+          Policies · {([[2, "HU"], [3, "3-max"]] as const).filter(([count]) => models[count]).map(([count, label]) => `${label} ${models[count].manifest.iteration}`).join(" · ")}
+        </div>}
         {error && <div role="alert" className="text-sm text-destructive">{error}</div>}
         {mainTab === "overview" && <PolicyOverview policies={models} />}
         {mainTab === "case" && <PolicyAnalysis policies={models} />}

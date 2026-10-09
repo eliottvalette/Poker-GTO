@@ -24,7 +24,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.542.0",
-    "next": "15.5.9",
+    "next": "15.5.27",
     "onnxruntime-web": "1.30.0",
     "pako": "^2.1.0",
     "react": "19.1.0",
@@ -39,9 +39,15 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.5.2",
+    "eslint-config-next": "15.5.27",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.7",
     "typescript": "^5"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.29"
+    },
+    "brace-expansion@^1.1.0": "1.1.21"
   }
 }

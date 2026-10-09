@@ -5,7 +5,9 @@ StartLimitIntervalSec=600
 StartLimitBurst=3
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+TimeoutStartSec=180
 User=gto
 WorkingDirectory=/opt/gto/current
 Environment=PYTHONPATH=/opt/gto/current
