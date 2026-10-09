@@ -1,0 +1,37 @@
+[Unit]
+Description=Poker CPU training (%i)
+After=network.target
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=gto
+WorkingDirectory=/opt/gto/current
+Environment=PYTHONPATH=/opt/gto/current
+Environment=PYTHONUNBUFFERED=1
+Environment=OMP_NUM_THREADS=1
+Environment=MKL_NUM_THREADS=1
+Environment=GTO_TRACK=%i
+Environment=GTO_DATA_DIR=/var/lib/gto/%i
+Environment=GTO_WORKERS=1
+Environment=TMPDIR=/var/lib/gto/%i/tmp
+EnvironmentFile=-/etc/gto/%i.env
+StateDirectory=gto/%i
+ExecStartPre=/usr/bin/mkdir -p /var/lib/gto/%i/tmp
+ExecStart=/opt/gto/venv/bin/python /opt/gto/current/deploy/vps/train.py
+Restart=on-failure
+RestartSec=30
+KillSignal=SIGINT
+KillMode=mixed
+TimeoutStopSec=300
+MemoryAccounting=true
+MemoryHigh=2800M
+MemoryMax=3200M
+TasksMax=64
+LogNamespace=gto
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,8 @@
 """Transactional two-track training, deterministic resume, explicit artifacts and evaluation."""
 from __future__ import annotations
 from concurrent.futures import ProcessPoolExecutor
+from dataclasses import asdict
+from training.runtime_storage import RuntimeStorage, archive_metric, metric_count, rotate_checkpoints
 import copy
 import json
 import hashlib
@@ -50,6 +52,7 @@ class TrainingRunner:
         self.solvers = {}
         self.samplers = {}
         self.metrics: list[dict] = []
+        self.runtime_storage: RuntimeStorage | None = None
         self.metadata = {**source_metadata(), "network_fit": "fresh_from_reservoir_each_iteration",
                          "device": "cpu", "utility_units": "initial_big_blind_chips"}
         if 'fit_schedule' in self.config:
@@ -63,6 +66,20 @@ class TrainingRunner:
                 self.samplers[name] = RootSampler(count, config["seed"] + count * 1000, config[name]["root_sampling"])
         self.probes = {name: fixed_roots(len(solver.players)) for name, solver in self.solvers.items()}
 
+    def enable_bounded_storage(self, policy: RuntimeStorage = RuntimeStorage()) -> None:
+        """Archive imported diagnostics before bounding RAM; no learning-state changes."""
+        for row in self.metrics:
+            archive_metric(self.output_dir / "diagnostics", row, policy)
+        self.runtime_storage = policy
+        self.metrics = self.metrics[-policy.metrics_keep:]
+        for solver in self.solvers.values():
+            solver.metrics = solver.metrics[-policy.metrics_keep:]
+        # Root coverage is diagnostic only; journal future per-iteration counters.
+        from training.metrics import Coverage
+        for sampler in self.samplers.values():
+            sampler.coverage = Coverage()
+        self.metadata['diagnostics_scope'] = 'bounded_recent_metrics_and_per_iteration_root_coverage'
+
     @property
     def output_dir(self) -> Path:
         path = Path(self.config["output_dir"])
@@ -73,6 +90,10 @@ class TrainingRunner:
         # root sampler RNG/coverage at the last complete iteration.
         staged_solvers = {name: solver.fork() for name, solver in self.solvers.items()}
         staged_samplers = copy.deepcopy(self.samplers)
+        if self.runtime_storage:
+            from training.metrics import Coverage
+            for sampler in staged_samplers.values():
+                sampler.coverage = Coverage()
         row = {"iteration": self.iteration + 1, "tracks": {}, "checkpoint_version": CONTRACT["checkpoint"],
                "config_hash": config_hash(self.config),
                "traversal_budget": {key: self.config[key] for key in ("max_nodes", "max_depth")}}
@@ -122,6 +143,10 @@ class TrainingRunner:
             candidate.solvers, candidate.samplers = staged_solvers, staged_samplers
             candidate.iteration = row["iteration"]
             candidate.metrics = [*self.metrics, row]
+            if self.runtime_storage:
+                candidate.metrics = candidate.metrics[-self.runtime_storage.metrics_keep:]
+                for solver in candidate.solvers.values():
+                    solver.metrics = solver.metrics[-self.runtime_storage.metrics_keep:]
             if candidate.iteration % config["checkpoint_every"] == 0:
                 path = self.output_dir / "checkpoints" / f"iteration_{candidate.iteration:06d}.pt"
                 row["checkpoint_path"] = str(path)
@@ -139,6 +164,8 @@ class TrainingRunner:
         return row
 
     def _write_metrics(self) -> None:
+        if self.runtime_storage and self.metrics:
+            archive_metric(self.output_dir / "diagnostics", self.metrics[-1], self.runtime_storage)
         atomic_bytes(self.output_dir / "metrics.jsonl", "".join(json.dumps(row, allow_nan=False) + "\n" for row in self.metrics).encode())
         for name in self.solvers:
             coverage = {"iteration": self.iteration, "roots": self.samplers[name].coverage.as_dict(),
@@ -148,8 +175,10 @@ class TrainingRunner:
             atomic_bytes(self.output_dir / name / "metrics.jsonl", "".join(json.dumps(row, allow_nan=False) + "\n" for row in rows).encode())
 
     def save_checkpoint(self, path: str | Path) -> None:
+        relative = Path(path).resolve().relative_to(self.output_dir.resolve()) if self.runtime_storage else None
         raw = {"contract": CONTRACT, "config": self.config, "config_hash": config_hash(self.config),
                "iteration": self.iteration, "metadata": self.metadata, "metrics": self.metrics,
+               "runtime_storage": asdict(self.runtime_storage) if self.runtime_storage else None,
                "torch_rng": torch.get_rng_state(), "python_rng": random.getstate(), "tracks": {}}
         for name, solver in self.solvers.items():
             sampler = self.samplers[name]
@@ -163,6 +192,10 @@ class TrainingRunner:
                 "stratum_index": sampler.stratum_index, "root_coverage": sampler.coverage.as_dict(),
                 "tournament": pack_tournament(sampler.tournament)}
         write_checkpoint(Path(path), raw)
+        if self.runtime_storage:
+            atomic_bytes(self.output_dir / 'resume.json', (json.dumps({'path': str(relative), 'iteration': self.iteration})+'\n').encode())
+            if Path(path).parent == self.output_dir / "checkpoints":
+                rotate_checkpoints(Path(path).parent, self.runtime_storage.checkpoints_keep)
 
     @classmethod
     def load_checkpoint(cls, path: str | Path, config: dict | None = None, *,
@@ -193,14 +226,15 @@ class TrainingRunner:
             budget_change = change if guards else None
             execution_change = change if execution else None
         runner = cls(raw["config"])
-        if set(raw["tracks"]) != set(runner.solvers) or type(raw["iteration"]) is not int or raw["iteration"] < 0 or len(raw["metrics"]) != raw["iteration"]:
+        if set(raw["tracks"]) != set(runner.solvers) or type(raw["iteration"]) is not int or raw["iteration"] < 0 or len(raw["metrics"]) != metric_count(raw):
             raise ValueError(f"Inconsistent checkpoint tracks/iteration at {path}")
+        runner.runtime_storage = RuntimeStorage(**raw["runtime_storage"]) if raw.get("runtime_storage") else None
         runner.iteration, runner.metadata, runner.metrics = raw["iteration"], raw["metadata"], raw["metrics"]
         with torch.random.fork_rng(devices=[]):
             for name, track in raw["tracks"].items():
                 solver, sampler = runner.solvers[name], runner.samplers[name]
                 if (track["traversal_mode"] != (runner.config["traversal_mode"] if runner.iteration else None)
-                        or track["seed"] != solver.seed or len(track["metrics"]) != runner.iteration):
+                        or track["seed"] != solver.seed or len(track["metrics"]) != metric_count(raw)):
                     raise ValueError(f"Inconsistent checkpoint mode/seed/metrics at {path}: {name}")
                 if track["version"] != runner.iteration:
                     raise ValueError(f"Inconsistent checkpoint model/replay version at {path}: {name}")

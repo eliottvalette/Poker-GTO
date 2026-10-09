@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, fields
 import hashlib
 import io
+import json
+import zipfile
 import os
 from pathlib import Path
 import tempfile
@@ -16,6 +18,7 @@ from ml.model import MODEL_ARCHITECTURE
 from poker_game_expresso import ActionEvent, BlindLevel, HandPlayer, HandState
 from tournament import TournamentState
 from training.root_sampler import ROOT_SAMPLER_VERSION
+from training.runtime_storage import metric_count
 
 CHECKPOINT_VERSION = 4
 _SAMPLE_FIELDS = tuple(f.name for f in fields(TrainingSample) if f.name != 'state')
@@ -41,20 +44,49 @@ def atomic_bytes(path: Path, payload: bytes) -> None:
 
 
 def write_checkpoint(path: Path, raw: dict) -> None:
-    inner = io.BytesIO()
-    torch.save(raw, inner)
-    payload = inner.getvalue()
-    outer = io.BytesIO()
-    torch.save({"sha256": hashlib.sha256(payload).hexdigest(), "payload": payload}, outer)
-    atomic_bytes(path, outer.getvalue())
+    """Stream a checksummed envelope through disk instead of multiple RAM buffers."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=path.parent, prefix=".checkpoint-") as temporary:
+        payload = Path(temporary) / "payload.pt"
+        torch.save(raw, payload)
+        checksum = hashlib.sha256()
+        with payload.open("rb") as file:
+            for block in iter(lambda: file.read(1024 * 1024), b""):
+                checksum.update(block)
+        envelope = Path(temporary) / "envelope.pt"
+        with zipfile.ZipFile(envelope, "w", compression=zipfile.ZIP_STORED) as archive:
+            archive.write(payload, "payload.pt")
+            archive.writestr("checkpoint.json", json.dumps({"format": "streamed-checkpoint-v1", "sha256": checksum.hexdigest()}))
+        with envelope.open("rb") as file:
+            os.fsync(file.fileno())
+        os.replace(envelope, path)
 
 
 def read_checkpoint(path: Path) -> dict:
     try:
-        envelope = torch.load(path, map_location="cpu", weights_only=True)
-        if set(envelope) != {"sha256", "payload"} or hashlib.sha256(envelope["payload"]).hexdigest() != envelope["sha256"]:
-            raise ValueError("Checksum mismatch")
-        raw = torch.load(io.BytesIO(envelope["payload"]), map_location="cpu", weights_only=True)
+        with zipfile.ZipFile(path) as archive:
+            streamed = "checkpoint.json" in archive.namelist()
+            if streamed:
+                if set(archive.namelist()) != {"checkpoint.json", "payload.pt"}:
+                    raise ValueError("Unexpected checkpoint envelope members")
+                manifest = json.loads(archive.read("checkpoint.json"))
+                if set(manifest) != {"format", "sha256"} or manifest["format"] != "streamed-checkpoint-v1":
+                    raise ValueError("Invalid streamed checkpoint manifest")
+                # Disk-backed staging also bounds the reader's serialized-byte overhead.
+                with tempfile.TemporaryFile() as payload, archive.open("payload.pt") as source:
+                    checksum = hashlib.sha256()
+                    for block in iter(lambda: source.read(1024 * 1024), b""):
+                        checksum.update(block)
+                        payload.write(block)
+                    if checksum.hexdigest() != manifest["sha256"]:
+                        raise ValueError("Checksum mismatch")
+                    payload.seek(0)
+                    raw = torch.load(payload, map_location="cpu", weights_only=True)
+        if not streamed:
+            envelope = torch.load(path, map_location="cpu", weights_only=True)
+            if set(envelope) != {"sha256", "payload"} or hashlib.sha256(envelope["payload"]).hexdigest() != envelope["sha256"]:
+                raise ValueError("Checksum mismatch")
+            raw = torch.load(io.BytesIO(envelope["payload"]), map_location="cpu", weights_only=True)
         if raw.get("contract") != CONTRACT:
             raise ValueError(f"Incompatible checkpoint schema: {raw.get('contract')}")
         return raw
@@ -159,12 +191,12 @@ def _checkpoint_average_payload(source: Path, track_name: str) -> dict:
         raise ValueError(f"Checkpoint configuration hash mismatch at {source}")
     iteration = raw["iteration"]
     if (set(raw["tracks"]) != {track_name} or type(iteration) is not int or iteration < 1
-            or len(raw["metrics"]) != iteration
+            or len(raw["metrics"]) != metric_count(raw)
             or {name for name in counts if config[name]["enabled"]} != {track_name}):
         raise ValueError(f"No trained dedicated {track_name} policy in {source}")
     track = raw["tracks"][track_name]
     count = counts[track_name]
-    if (track["version"] != iteration or len(track["metrics"]) != iteration
+    if (track["version"] != iteration or len(track["metrics"]) != metric_count(raw)
             or track["seed"] != config["seed"] + count
             or track["traversal_mode"] != config["traversal_mode"]
             or track["average_weights"] is None):
