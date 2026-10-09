@@ -24,11 +24,18 @@ jobs:
       - run: |
           pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
           pip install -r deploy/vps/requirements.txt
-      - run: PYTHONPATH=.:tests python -m unittest test_vps_training test_publication
+      - run: PYTHONPATH=.:tests python -m unittest test_vps_training test_publication test_vps_deployment test_deployment_provenance
       - run: npm ci && npm run lint && npm run build
         working-directory: ui
       - run: node tests/run_browser_tests.mjs
-      - run: git archive --format=tar.gz --output=training.tar.gz HEAD
+      - run: |
+          python -c "from pathlib import Path; from training.runner import write_source_manifest; write_source_manifest(Path('.'), Path('deployment-source.json'))"
+          git archive --format=tar --output=training.tar HEAD
+          tar -rf training.tar deployment-source.json
+          gzip training.tar
+          mkdir -p "$RUNNER_TEMP/gto-source-check"
+          tar -xzf training.tar.gz -C "$RUNNER_TEMP/gto-source-check"
+          python -c "import os; from pathlib import Path; from training.runner import source_metadata; print(source_metadata(Path(os.environ['RUNNER_TEMP']) / 'gto-source-check'))"
       - uses: actions/upload-artifact@v4
         with:
           name: training-source
@@ -39,14 +46,6 @@ jobs:
     if: vars.GTO_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: training
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - track: hu
-            host: 46.224.1.152
-          - track: 3max
-            host: 46.62.239.78
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -71,21 +70,21 @@ jobs:
           rm ~/.ssh/deploy_key "$RUNNER_TEMP/askpass"
       - name: Deliver tested revision and activate
         env:
-          TARGET_HOST: ${{ matrix.host }}
-          TRACK: ${{ matrix.track }}
+          TARGET_HOST: 51.81.202.115
+          TARGET_USER: ubuntu
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           set -euo pipefail
           test -n "$SUPABASE_SECRET_KEY" || { echo 'Missing SUPABASE_SECRET_KEY repository secret' >&2; exit 1; }
           umask 077
           printf 'SUPABASE_URL=https://vcyctuntcwrrcizvadwh.supabase.co\nSUPABASE_POLICY_BUCKET=poker-policies\nSUPABASE_SECRET_KEY=%s\n' "$SUPABASE_SECRET_KEY" > "$RUNNER_TEMP/publication.env"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "root@$TARGET_HOST" 'mkdir -p /opt/gto/incoming'
-          scp -p -o BatchMode=yes -o StrictHostKeyChecking=yes "$RUNNER_TEMP/publication.env" "root@$TARGET_HOST:/opt/gto/incoming/publication.env"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TARGET_USER@$TARGET_HOST" 'install -d -m 0700 ~/gto-incoming'
+          scp -p -o BatchMode=yes -o StrictHostKeyChecking=yes "$RUNNER_TEMP/publication.env" "$TARGET_USER@$TARGET_HOST:gto-incoming/publication.env"
           rm "$RUNNER_TEMP/publication.env"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "root@$TARGET_HOST" 'install -d -m 0750 /etc/gto; install -m 0600 /opt/gto/incoming/publication.env /etc/gto/publication.env; rm /opt/gto/incoming/publication.env'
-          scp -o BatchMode=yes -o StrictHostKeyChecking=yes training.tar.gz "root@$TARGET_HOST:/opt/gto/incoming/$GITHUB_SHA.tar.gz"
-          scp -o BatchMode=yes -o StrictHostKeyChecking=yes deploy/vps/install.sh "root@$TARGET_HOST:/opt/gto/incoming/install.sh"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "root@$TARGET_HOST" "bash /opt/gto/incoming/install.sh '$GITHUB_SHA' '$TRACK'"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TARGET_USER@$TARGET_HOST" 'set -eu; sudo -n install -d -m 0750 /etc/gto; sudo -n install -m 0600 ~/gto-incoming/publication.env /etc/gto/publication.env; rm ~/gto-incoming/publication.env'
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes training.tar.gz "$TARGET_USER@$TARGET_HOST:gto-incoming/$GITHUB_SHA.tar.gz"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes deploy/vps/install.sh "$TARGET_USER@$TARGET_HOST:gto-incoming/install.sh"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TARGET_USER@$TARGET_HOST" "set -eu; sudo -n install -d -m 0750 /opt/gto/incoming; sudo -n install -m 0600 ~/gto-incoming/$GITHUB_SHA.tar.gz /opt/gto/incoming/$GITHUB_SHA.tar.gz; sudo -n bash ~/gto-incoming/install.sh '$GITHUB_SHA' both; rm ~/gto-incoming/$GITHUB_SHA.tar.gz ~/gto-incoming/install.sh"
       - name: Stop SSH agent
         if: always()
         run: if [ -n "${SSH_AGENT_PID:-}" ]; then ssh-agent -k; fi

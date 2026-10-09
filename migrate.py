@@ -7,9 +7,8 @@ from training.workflow import candidate_checkpoint, prepare_migration
 def main() -> None:
     print("+-----------------------------------------------------+")
     print("| Poker policies                                      |")
-    print("| 1  Activate checkpoint as the reference policy      |")
-    print("| 2  Export and activate 3-max policy for UI           |")
-    print("| 3  Export and activate HU policy for UI              |")
+    print("| 1  Export and activate 3-max policy for UI           |")
+    print("| 2  Export and activate HU policy for UI              |")
     print("| 0  Exit                                             |")
     print("+-----------------------------------------------------+")
     for track in ("3max", "hu"):
@@ -18,17 +17,10 @@ def main() -> None:
     choice = input("Selection: ").strip()
     if choice == "0":
         return
-    actions = {"1": "activate", "2": "export", "3": "export"}
-    if choice not in actions:
+    options = {"1": ("3max",), "2": ("hu",)}
+    if choice not in options:
         raise ValueError(f"Invalid menu selection: {choice!r}")
-    tracks = ("3max",) if choice == "2" else ("hu",)
-    if choice == "1":
-        selected = input("Activate [3] 3-max, [H] HU, [B] both: ").strip().upper()
-        options = {"3": ("3max",), "H": ("hu",), "B": ("3max", "hu")}
-        if selected not in options:
-            raise ValueError(f"Invalid track selection: {selected!r}")
-        tracks = options[selected]
-    prepared = prepare_migration(actions[choice], tracks, progress=lambda message: print(message, flush=True))
+    prepared = prepare_migration("export", options[choice], progress=lambda message: print(message, flush=True))
     try:
         print("\nPrepared and validated:")
         for row in prepared.summary:

@@ -21,13 +21,54 @@ from training.evaluation import fixed_roots, fixed_drift, evaluate_solver, model
 from training.root_sampler import RootSampler
 
 
-def source_commit() -> str | None:
-    result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, check=False)
+def deployment_metadata(repository: Path) -> dict:
+    """Validate source provenance when running a deployment archive without Git."""
+    manifest = repository / 'deployment-source.json'
+    if not manifest.is_file():
+        raise FileNotFoundError(f'Archive requires deployment provenance: {manifest}')
+    raw = json.loads(manifest.read_text())
+    if raw.get('version') != 1 or not isinstance(raw.get('files'), list) or not isinstance(raw.get('metadata'), dict):
+        raise ValueError(f'Invalid deployment provenance: {manifest}')
+    metadata = raw['metadata']
+    if (set(metadata) != {'source_git_commit', 'source_git_dirty', 'source_code_sha256'}
+            or not isinstance(metadata['source_git_commit'], str)
+            or len(metadata['source_git_commit']) != 40
+            or type(metadata['source_git_dirty']) is not bool):
+        raise ValueError(f'Invalid source metadata: {manifest}')
+    digest = hashlib.sha256()
+    for name in raw['files']:
+        if not isinstance(name, str) or Path(name).is_absolute() or '..' in Path(name).parts:
+            raise ValueError(f'Invalid source path in {manifest}')
+        path = repository / name
+        path.resolve().relative_to(repository.resolve())
+        digest.update(name.encode())
+        digest.update(path.read_bytes())
+    if digest.hexdigest() != metadata['source_code_sha256']:
+        raise ValueError(f'Deployment source checksum mismatch: {manifest}')
+    return metadata
+
+
+def write_source_manifest(repository: Path, destination: Path) -> None:
+    """Seal the source metadata before packaging a tested checkout for deployment."""
+    metadata = source_metadata(repository)
+    listing = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd=repository)
+    files = [name for name in sorted(set(listing.decode().split('\0')) - {''})
+             if (Path(name).suffix in ('.py', '.ts', '.tsx') or name.startswith('configs/'))]
+    destination.write_text(json.dumps({'version': 1, 'metadata': metadata, 'files': files}, indent=2) + '\n')
+
+
+def source_commit(repository: Path | None = None) -> str | None:
+    repository = repository or Path(__file__).resolve().parents[1]
+    if not (repository / '.git').exists():
+        return deployment_metadata(repository)['source_git_commit']
+    result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repository, capture_output=True, text=True, check=False)
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def source_metadata() -> dict:
-    repository = Path(__file__).resolve().parents[1]
+def source_metadata(repository: Path | None = None) -> dict:
+    repository = repository or Path(__file__).resolve().parents[1]
+    if not (repository / '.git').exists():
+        return deployment_metadata(repository)
     status = subprocess.run(["git", "status", "--porcelain"], cwd=repository, capture_output=True, text=True, check=True)
     listing = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
                              cwd=repository, capture_output=True, check=True)
@@ -38,7 +79,7 @@ def source_metadata() -> dict:
             continue
         digest.update(name.encode())
         digest.update(path.read_bytes() if path.exists() else b"deleted")
-    return {"source_git_commit": source_commit(), "source_git_dirty": bool(status.stdout),
+    return {"source_git_commit": source_commit(repository), "source_git_dirty": bool(status.stdout),
             "source_code_sha256": digest.hexdigest()}
 
 

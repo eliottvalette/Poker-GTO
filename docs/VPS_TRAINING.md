@@ -1,6 +1,10 @@
 # Bounded VPS training
 
-Status: local implementation and bounded validation complete; actual CX23 validation pending SSH access. Replay capacities and learning settings are preserved.
+Status: local implementation and bounded validation complete; deployment now targets
+one OVH VPS (51.81.202.115, Ubuntu 24.04, 4 vCPUs, 8 GB RAM, 75 GB disk) for both
+tracks. SSH/sudo and Linux memory validation are complete; both services are running. Historical CX23/macOS measurements below
+are retained as evidence, not measurements of the new server. Replay capacities
+and learning settings are preserved.
 
 | Requirement | Status | Owner / next action |
 |---|---|---|
@@ -10,7 +14,7 @@ Status: local implementation and bounded validation complete; actual CX23 valida
 | Measure load / iteration / save memory including workers | DONE locally | training/vps_benchmark.py; measurements below |
 | Export from live models on an hourly cadence | DONE | training/vps.py; shortened interval integration test and real ONNX exports |
 | Deterministic resume / unchanged replay semantics | DONE | tests/test_vps_training.py; exact worker-comparison model hashes |
-| Actual CX23 validation | BLOCKED | SSH access blocked; next action: repeat cold benchmark on each server once unblocked |
+| Actual Linux VPS validation | DONE on OVH | Four cold worker trials and joint production lifecycle; results below |
 
 No long-running training or deployment is started by diagnostics. Existing checkpoints
 are immutable inputs. Diagnostics use isolated output directories. SSH probes on
@@ -79,8 +83,7 @@ if __name__ == '__main__':
 ```
 
 `deploy/vps/train.py` reads `GTO_TRACK`, `GTO_DATA_DIR`, optional
-`GTO_SOURCE_CHECKPOINT`, and `GTO_WORKERS`. The systemd template is prepared but not
-installed. It expects `/opt/gto/current`, `/opt/gto/venv`, and an unprivileged `gto`
+`GTO_SOURCE_CHECKPOINT`, and `GTO_WORKERS`. The systemd template is installed on OVH for both tracks. It expects `/opt/gto/current`, `/opt/gto/venv`, and an unprivileged `gto`
 user. SIGINT requests a checkpoint of the last completed iteration. Normal service
 logs and errors remain visible. The provisional 2,800 MiB soft / 3,200 MiB hard
 service memory bounds must be checked against Linux measurements before 24/7 use.
@@ -88,8 +91,8 @@ The service stages temporary checkpoint reads under its data directory (`TMPDIR`
 which must be on the persistent disk rather than a RAM-backed filesystem.
 
 The Python environment must provide the project's CPU dependencies, including
-PyTorch, NumPy, ONNX and ONNX Runtime. `psutil` is required only for profiling; no
-packages or remote environments were installed by this change.
+PyTorch, NumPy, ONNX and ONNX Runtime. `psutil` is required only for profiling; the original
+local trials did not install remote environments. The OVH deployment below does.
 
 ### Reproduce bounded benchmarks
 
@@ -156,9 +159,9 @@ PYTHONPATH=.:tests .venv/bin/python -m unittest test_vps_training test_training_
 The first test invocation using package-qualified names failed to import existing shared
 test helpers; the reproduction command explicitly includes `tests` on `PYTHONPATH`.
 
-Remaining deployment work: unblock SSH, install the prepared service and dependencies,
-transfer locally converted checkpoints, run the same cold benchmarks with Linux cgroup
-measurements, then start continuous training. Hourly exports are picked up by the independent publisher; Supabase delivery and
+The original deployment backlog (SSH access, dependencies, compact checkpoint transfer,
+Linux cgroup measurements and continuous service start) is now completed on OVH,
+as recorded below. Hourly exports are picked up by the independent publisher; Supabase delivery and
 browser refresh are now implemented and tested as recorded in `docs/LIVE_PIPELINE.md`.
 
 ### Additional 3-max A+B fitting check
@@ -174,3 +177,86 @@ Exact A/B weight hashes match again. Peak sampled aggregate RSS is **2.20 GiB**
 with two workers; retain one worker pending actual VPS measurements. Raw evidence:
 `runs/vps-benchmark/fit-b/3max-comparison.json`. These trials do not establish
 long-duration leak freedom or a hard worst-case bound on future game trees.
+
+## OVH deployment validation (2026-10-09)
+
+Target: `51.81.202.115`, Ubuntu 24.04 x86_64, 4 exposed Haswell-class vCPUs,
+7,751 MiB reported RAM, 72 GiB root filesystem. Passwordless SSH and sudo are
+verified. A restricted, dedicated GitHub deployment key is installed; the private
+key is stored only in the GitHub Actions secret. Automatic deployment is gated until the updated single-host workflow reaches main
+and the joint production lifecycle passes. GitHub Actions retains delivery evidence.
+
+Latest local training seeds were compacted without changing replay capacities:
+HU approximately 298.9 MiB and 3-max 289.8 MiB, under `runs/vps-import/`.
+Original checkpoints remain unchanged. Each cold benchmark permits one iteration,
+300 seconds, one PyTorch thread, and a 3,200 MiB cgroup memory ceiling. Diagnostic
+outputs are separate from production checkpoints.
+
+The first Linux load exposed a deployment defect: `source_metadata()` required
+`.git` although releases are delivered as archives. `deployment-source.json` now
+records source identity and validates the packaged source digest without Git.
+Missing or modified provenance fails explicitly. GitHub packaging includes this
+manifest; the initial manual deployment is a hashed working-tree snapshot with
+its base commit and per-file hashes, not represented as an existing Git commit.
+The failed first trial did not modify the production seed.
+
+Validation after this repair: 13 publication/storage/deployment/provenance tests
+passed in 17.318 seconds; 21 runner/workflow tests passed in 30.532 seconds.
+Workflow YAML and embedded shell syntax were checked using existing tooling.
+
+### OVH cold worker comparison
+
+Each row runs one full iteration from the same seed per track (HU 188, 3-max 117).
+This measures one workload, not a throughput confidence interval or poker quality.
+
+| Track | Workers | Load s | Iteration s | Save s | Export s | Peak summed RSS GiB |
+|---|---:|---:|---:|---:|---:|---:|
+| 3max | 1 | 27.31 | 92.90 | 7.32 | 0.74 | 1.20 |
+| 3max | 2 | 25.91 | 59.62 | 7.06 | 0.73 | 1.50 |
+| hu | 1 | 27.26 | 166.94 | 7.58 | 0.53 | 1.23 |
+| hu | 2 | 27.23 | 104.97 | 7.40 | 0.52 | 1.56 |
+
+A/B model hashes match exactly between worker counts for both tracks. Two workers
+reduce iteration latency by 37.1% HU and 35.8% 3-max in these trials. Both
+server overrides select two workers and one PyTorch thread. The service
+memory ceiling remains 3,200 MiB per track. Cgroup peaks reported by systemd
+were approximately 1.4/2.0 GiB HU and 1.3/1.9 GiB 3-max for one/two workers.
+Sampled RSS can miss brief allocations: parent lifetime RSS high-water marks
+reached approximately 1.8 GiB during saving. Shared pages can inflate summed RSS.
+
+Reports: `runs/vps-ovh-validation/worker-comparison.json` locally and
+`/var/lib/gto/benchmarks/*-provenance-fixed/report.json` on the VPS.
+
+The first service installation also exposed a permissions defect: the shared
+code parent was root-only (0750), preventing the unprivileged trainer from
+executing Python. Installation now creates `/opt/gto/releases` as 0755 and
+keeps `/etc/gto` restricted separately. No checkpoint was altered by this failure.
+
+### Joint production lifecycle
+
+Both services completed an iteration simultaneously with two workers each and one
+PyTorch thread: HU 188→189 in 110.36 seconds (118,355 nodes), 3-max 117→118 in
+68.09 seconds (85,517 nodes). The sampled combined current cgroup memory immediately
+before stopping was approximately 2.57 GiB; each service retains its 3,200 MiB hard
+ceiling. Four exposed vCPUs support this bounded workload without changing replay
+or fit budgets. This is not a multi-day leak or throughput stability claim.
+
+A clean systemd SIGINT stop saved and exported both policies from memory. Both
+publisher services succeeded and public Storage pointers were verified:
+
+- HU 189: `3db279d439ad3c3f7560b9df8fabbe68809ef7fec826f1f637ca83b493ed465a`.
+- 3-max 118: `ee375600b0e969ea033eb4417e2b931730c17ae1d89e3eee1842225c2b0fb707`.
+
+Both training services restarted successfully, and both publication timers are
+active. Exports recur approximately hourly at completed-iteration boundaries;
+publication checks run every minute. The initial source is the documented working-
+tree snapshot `d68703ee546f0bb17983626481e646c17d04c1de`; subsequent GitHub deployments
+use the tested commit SHA and validated archive provenance.
+
+Operational checks:
+
+```sh
+ssh ubuntu@51.81.202.115
+sudo systemctl status gto-training@hu gto-training@3max
+sudo journalctl --namespace=gto -u gto-training@hu -u gto-training@3max -f
+```

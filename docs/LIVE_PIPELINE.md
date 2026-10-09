@@ -1,23 +1,23 @@
 # Continuous training and policy delivery
 
 Status: implementation operational locally and against real Supabase Storage.
-VPS installation is blocked on SSH availability; the updated Vercel configuration
-must reach the linked Git branch before the public website uses it.
+Both continuous trainers and publication timers are installed on OVH. Vercel reports successful
+production deployment for commit 6f1b8ef, including the public Storage configuration.
 
 | Requirement | Status | Evidence |
 |---|---|---|
 | Public object storage, private publication credentials | DONE | Dedicated poker-policies bucket; real public reads succeed; browser-key upload denied |
 | Hourly exports without checkpoint reload | DONE | training/vps.py; VPS and publication regression tests |
-| Independent retryable uploader and bounded remote retention | DONE locally | gto-publish service/timer; interrupted-upload, retry and retention tests |
+| Independent retryable uploader and bounded remote retention | RUNNING | gto-publish service/timer; interrupted-upload, retry and retention tests |
 | UI/worker refresh, hash validation, bounded ONNX session lifetime | DONE | policy-catalog.ts, policy-bank.ts; browser tests and real Chrome smoke |
-| Automatic tested code deployment and compatible resume | IMPLEMENTED, VPS validation pending | GitHub Actions, install.sh, check_resume.py; shell syntax and local resume tests |
-| Real export/upload/download pipeline | DONE | HU 109 / 3-max 117 uploaded; public downloads match local artifacts |
-| Vercel automatic configuration | PREPARED | ui/vercel.json supplies public build settings; existing Git integration retained |
-| Real VPS memory validation and service installation | BLOCKED | SSH blocked; one-worker default retained |
+| Automatic tested code deployment and compatible resume | IMPLEMENTED | GitHub Actions, coordinated install/rollback tests; delivery runs recorded in GitHub Actions |
+| Real export/upload/download pipeline | DONE | OVH services published HU 189 / 3-max 118; public pointers verified |
+| Vercel automatic configuration | DEPLOYED | Successful Vercel status for 6f1b8ef; public build settings in ui/vercel.json |
+| Real VPS memory validation and service installation | DONE | Four cold trials, joint production iteration, clean stop/export/publication/resume; two workers per track |
 
 ## Data flow
 
-1. One dedicated trainer per VPS resumes its full local checkpoint. It exports a
+1. Two dedicated trainers on the OVH VPS each resume their full local checkpoint. Each exports a
    validated ONNX/JSON bundle approximately hourly, after a whole iteration. This
    does not reload the replay. Local retention remains bounded.
 2. A separate systemd timer checks the completed export every minute. It uploads
@@ -110,18 +110,25 @@ the automatic code update mechanism; no uncontrolled `git pull` runs inside a li
 training directory. Deployments are serialized and do not cancel an in-progress
 checkpoint save.
 
-`GTO_DEPLOY_ENABLED=false` is configured on GitHub while the VPS are unavailable.
-Before setting it to `true`, configure these repository/environment secrets:
-- `VPS_SSH_KEY`: SSH private deployment key.
-- `VPS_SSH_PASSPHRASE`: its passphrase, if encrypted.
-- `VPS_KNOWN_HOSTS`: verified host keys for both VPS, obtained through a trusted
+`GTO_DEPLOY_ENABLED` gates automatic delivery and is enabled only after the initial
+production lifecycle check. Required repository/environment secrets:
+- `VPS_SSH_KEY`: configured dedicated SSH deployment key, verified with sudo on OVH.
+- `VPS_SSH_PASSPHRASE`: optional; the dedicated CI key does not require it.
+- `VPS_KNOWN_HOSTS`: verified host key for the OVH VPS, obtained through a trusted
   channel. Host checking is mandatory; CI does not trust opportunistic keyscan.
 - `SUPABASE_SECRET_KEY`: already configured; copied to root-only
   `/etc/gto/publication.env` during deployment.
 
-HU target: `46.224.1.152`; 3-max target: `46.62.239.78`. SSH uses root for installing
-services and dependencies, then training/publication run as the unprivileged `gto`
-user. Install prerequisites are standard Ubuntu Python/venv and CA certificates.
+Both tracks target `51.81.202.115` (`vps-f81a15d3.vps.ovh.us`), an Ubuntu 24.04
+VPS with 4 vCPUs, 8 GB RAM and 75 GB disk. The prepared SSH username is `ubuntu`
+(verified), with noninteractive sudo for
+installing services and dependencies. Training/publication run as unprivileged
+`gto`. The deployment invokes `install.sh <SHA> both` once; it stops both tracks
+before changing shared code, checks their checkpoints sequentially, and restores
+both previously running services if either fails. Publication starts only once both
+trainers have restored. Single-track deployments are rejected when the other
+track already has data on that host. Install prerequisites are standard Ubuntu
+Python/venv and CA certificates.
 Torch is installed from the official CPU wheel index; other dependencies are pinned
 in `deploy/vps/requirements.txt`.
 
@@ -146,11 +153,14 @@ systemctl status gto-training@hu gto-publish@hu.timer
 journalctl --namespace=gto -u gto-training@hu -u gto-publish@hu -n 100
 ```
 
-No VPS install, continuous run, or forced Git push was performed during local setup.
+Initial OVH installation and continuous training were validated on 2026-10-09.
+See `docs/VPS_TRAINING.md` for measurements and the production lifecycle check.
 
 ## Validation results
 
 - Eight Python publication/VPS tests passed (14.562 seconds).
+- Three additional coordinated-deployment tests passed (2.321 seconds), including
+  preflight/startup failure rollback and rejection of partial shared-host updates.
 - 152 browser regression tests passed.
 - Static build passed with the Supabase configuration; lint/type checking included.
 - Real Storage provisioning, both model uploads and public read-back passed.
@@ -162,3 +172,7 @@ No VPS install, continuous run, or forced Git push was performed during local se
   Storage, both dedicated analysis workers responded successfully, unchanged
   refreshes avoided model downloads, and a simulated pointer failure surfaced
   explicitly before recovery. No browser errors were recorded.
+- Real production Chrome smoke against `https://gto-bot.vercel.app` passed after
+  OVH published HU 189 / 3-max 118: both remote ONNX models loaded, both analysis
+  worker fixtures succeeded, unchanged refresh avoided downloads, and simulated
+  pointer failure/recovery preserved validated models without browser errors.
