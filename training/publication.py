@@ -132,6 +132,19 @@ class SupabaseStorage:
             self.request('DELETE', f'object/{self.bucket}', encoded({'prefixes': keys}),
                          headers={'Content-Type': 'application/json'})
 
+    def verify_anonymous_write_denied(self, publishable_key: str) -> None:
+        """Check that the browser credential cannot publish or overwrite policies."""
+        key = '__anonymous_access_probe__.json'
+        try:
+            self.request('POST', f'object/{self.bucket}/{key}', b'{}', public=True,
+                         headers={'apikey': publishable_key, 'Content-Type': 'application/json'})
+        except StorageError as error:
+            if error.status not in (401, 403):
+                raise
+        else:
+            self.remove([key])
+            raise ValueError('Anonymous upload is allowed; review Storage RLS before training publication')
+
 
 def validate_pointer(raw: dict, track: str) -> dict:
     if (raw.get('version') != 1 or raw.get('track') != track or not SHA.fullmatch(raw.get('release_id', ''))

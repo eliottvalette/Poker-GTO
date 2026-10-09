@@ -50,3 +50,17 @@ test("Supabase pointers are independent, public, and route each track to immutab
     await assert.rejects(fetchPolicyCatalog(),/HTTP 503/);
   } finally { globalThis.fetch=original;process.env=previous; }
 });
+
+test("updating HU does not reload the unchanged 3-max policy", async () => {
+  let hu=1;const loaded:string[][]=[];let released=0;
+  const bank=new PolicyBank(async()=>({version:1,exports:{hu:{bundle_id:String(hu),iteration:hu},'3max':{bundle_id:'fixed',iteration:1}}}),
+    async catalog=>{
+      loaded.push(Object.keys(catalog.exports).sort());
+      return Object.fromEntries(Object.entries(catalog.exports).map(([track,entry])=>[track==='hu'?2:3,{
+        manifest:{iteration:entry.iteration} as PolicyManifest,async query(){return {CALL:1};},async release(){released++;},
+      }]));
+    });
+  await bank.refresh();hu=2;await bank.refresh();
+  assert.deepEqual(loaded,[['3max','hu'],['hu']]);assert.equal(released,1);
+  await bank.close();assert.equal(released,3);
+});

@@ -73,9 +73,16 @@ jobs:
         env:
           TARGET_HOST: ${{ matrix.host }}
           TRACK: ${{ matrix.track }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           set -euo pipefail
+          test -n "$SUPABASE_SECRET_KEY" || { echo 'Missing SUPABASE_SECRET_KEY repository secret' >&2; exit 1; }
+          umask 077
+          printf 'SUPABASE_URL=https://vcyctuntcwrrcizvadwh.supabase.co\nSUPABASE_POLICY_BUCKET=poker-policies\nSUPABASE_SECRET_KEY=%s\n' "$SUPABASE_SECRET_KEY" > "$RUNNER_TEMP/publication.env"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "root@$TARGET_HOST" 'mkdir -p /opt/gto/incoming'
+          scp -p -o BatchMode=yes -o StrictHostKeyChecking=yes "$RUNNER_TEMP/publication.env" "root@$TARGET_HOST:/opt/gto/incoming/publication.env"
+          rm "$RUNNER_TEMP/publication.env"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "root@$TARGET_HOST" 'install -d -m 0750 /etc/gto; install -m 0600 /opt/gto/incoming/publication.env /etc/gto/publication.env; rm /opt/gto/incoming/publication.env'
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes training.tar.gz "root@$TARGET_HOST:/opt/gto/incoming/$GITHUB_SHA.tar.gz"
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes deploy/vps/install.sh "root@$TARGET_HOST:/opt/gto/incoming/install.sh"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "root@$TARGET_HOST" "bash /opt/gto/incoming/install.sh '$GITHUB_SHA' '$TRACK'"

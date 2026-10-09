@@ -7,6 +7,7 @@ type Entry = { model: LoadedAveragePolicy; users: number; retired: boolean; rele
 export class PolicyBank {
   private current: Record<number, Entry> = {};
   private fingerprint = "";
+  private lastCatalog: PolicyCatalog | undefined;
   private pending: Promise<boolean> | null = null;
   private closed = false;
   readonly models: Record<number, LoadedAveragePolicy> = {};
@@ -32,32 +33,40 @@ export class PolicyBank {
     const catalog = await this.catalog();
     const fingerprint = JSON.stringify(catalog);
     if (fingerprint === this.fingerprint) return false;
-    const loaded = await this.load(catalog);
+    const changed = Object.fromEntries(Object.entries(catalog.exports).filter(([track, entry]) =>
+      JSON.stringify(entry) !== JSON.stringify(this.lastCatalog?.exports[track])));
+    const loaded = await this.load({ ...catalog, exports: changed });
     if (this.closed) { await Promise.all(Object.values(loaded).map(model => model.release())); return false; }
     const previous = this.current;
-    this.current = Object.fromEntries(Object.entries(loaded).map(([count, model]) => [count, { model, users: 0, retired: false, released: false }]));
-    for (const count of Object.keys(loaded).map(Number)) {
+    this.current = { ...previous, ...Object.fromEntries(Object.entries(loaded).map(([count, model]) => [count, { model, users: 0, retired: false, released: false }])) };
+    for (const count of Object.keys(this.current).map(Number)) {
+      // Track removals must not retain an invisible model indefinitely.
+      if (!((count === 2 ? "hu" : "3max") in catalog.exports)) delete this.current[count];
+    }
+    for (const count of Object.keys(this.current).map(Number)) {
       if (this.models[count]) continue;
-      const bank = this;
+      const getEntry = () => this.current[count];
+      const query: LoadedAveragePolicy["query"] = async observation => {
+        const entry = getEntry();
+        if (this.closed || !entry) throw new Error(`Policy unavailable for ${count} players`);
+        entry.users++;
+        try { return await entry.model.query(observation); }
+        finally { entry.users--; if (entry.retired) await this.retire(entry); }
+      };
       this.models[count] = {
         get manifest() {
-          const entry = bank.current[count];
+          const entry = getEntry();
           if (!entry) throw new Error(`Policy unavailable for ${count} players`);
           return entry.model.manifest;
         },
-        async query(observation) {
-          const entry = bank.current[count];
-          if (bank.closed || !entry) throw new Error(`Policy unavailable for ${count} players`);
-          entry.users++;
-          try { return await entry.model.query(observation); }
-          finally { entry.users--; if (entry.retired) await bank.retire(entry); }
-        },
+        query,
         async release() { throw new Error("Shared policies are owned by PolicyBank"); },
       };
     }
-    for (const count of Object.keys(this.models).map(Number)) if (!loaded[count]) delete this.models[count];
+    for (const count of Object.keys(this.models).map(Number)) if (!this.current[count]) delete this.models[count];
     this.fingerprint = fingerprint;
-    await Promise.all(Object.values(previous).map(entry => this.retire(entry)));
+    this.lastCatalog = catalog;
+    await Promise.all(Object.entries(previous).filter(([count, entry]) => this.current[Number(count)] !== entry).map(([, entry]) => this.retire(entry)));
     return true;
   }
 

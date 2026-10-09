@@ -48,8 +48,8 @@ checkpoints, so a restart need not discard a whole hourly session.
 
 Exports validate ONNX CPU parity before selecting the completed immutable bundle.
 An export failure leaves the previous pointer valid and surfaces an error. The
-continuous process saves its completed iteration before exporting. No remote upload
-or Supabase publication is implemented by this module.
+continuous process saves its completed iteration before exporting. Remote publication is handled independently by `training/publication.py` and its
+systemd timer; see `docs/LIVE_PIPELINE.md`. Network failures do not stop training.
 
 ### One-time import on a machine with sufficient RAM
 
@@ -158,8 +158,8 @@ test helpers; the reproduction command explicitly includes `tests` on `PYTHONPAT
 
 Remaining deployment work: unblock SSH, install the prepared service and dependencies,
 transfer locally converted checkpoints, run the same cold benchmarks with Linux cgroup
-measurements, then start continuous training. Hourly exports are local bundles only;
-remote policy publication and browser fetching are separate integration work.
+measurements, then start continuous training. Hourly exports are picked up by the independent publisher; Supabase delivery and
+browser refresh are now implemented and tested as recorded in `docs/LIVE_PIPELINE.md`.
 
 ### Additional 3-max A+B fitting check
 

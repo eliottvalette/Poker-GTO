@@ -55,12 +55,13 @@ static runtime; browser operations use `@supabase/supabase-js` directly. See the
 [Next.js static export restrictions](https://nextjs.org/docs/app/guides/static-exports#unsupported-features)
 and [Supabase client options](https://supabase.com/docs/reference/javascript/initializing).
 
-This prepares client connectivity only. It does not create a `todos` table, replace
-the poker homepage, provision Storage buckets/policies, upload training exports or
-switch the UI's policy source. Remote policy publication still requires an explicit
-Storage contract and server-only upload credentials; the browser publishable key
-is not an administrative upload credential. Optional third-party agent skills were
-not installed.
+Policy delivery uses Supabase Storage, with public ONNX/JSON artifacts and private
+server-only publication credentials. `NEXT_PUBLIC_POLICY_SOURCE=supabase` selects
+remote policies; `local` explicitly selects the existing static catalog. There is
+no silent fallback between sources. The UI and worker poll remote versions and
+validate model hashes. See [the live pipeline runbook](../docs/LIVE_PIPELINE.md).
+`vercel.json` supplies public build settings for the existing Vercel Git deployment.
+No secret/service-role key belongs in that file or in the browser environment.
 
 ## Dependency security maintenance (2026-10-09)
 
