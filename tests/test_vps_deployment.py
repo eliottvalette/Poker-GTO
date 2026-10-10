@@ -85,6 +85,8 @@ elif name == 'runuser':
         last_start = max(log.index(f'systemctl enable --now gto-training@{t}.service') for t in ('hu', '3max'))
         for track in ('hu', '3max'):
             self.assertGreater(log.index(f'systemctl enable --now gto-publish@{track}.timer'), last_start)
+        self.assertLess(log.index('systemctl stop gto-evaluate.timer gto-evaluate.service'), preflight)
+        self.assertGreater(log.index('systemctl enable --now gto-evaluate.timer'), last_start)
 
     def test_failure_restores_both_tracks_without_publishing_candidate(self) -> None:
         for failure in ('preflight', 'gto-training@3max.service'):
@@ -92,6 +94,7 @@ elif name == 'runuser':
                 result, log, selected = self.run_deployment(fail=failure)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(selected, PREVIOUS)
+                self.assertIn('systemctl start gto-evaluate.timer', log)
                 for track in ('hu', '3max'):
                     self.assertIn(f'systemctl start gto-training@{track}.service', log)
                     self.assertNotIn(f'systemctl enable --now gto-publish@{track}.timer', log)

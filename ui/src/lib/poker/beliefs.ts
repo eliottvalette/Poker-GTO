@@ -24,6 +24,14 @@ export function handClassMasses(rows: Ranges[number]): Record<string, number> {
   }
   return result;
 }
+export function rankClassMasses(classes: Record<string, number>): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const [label, mass] of Object.entries(classes)) {
+    const ranks = label.slice(0, 2);
+    result[ranks] = (result[ranks] ?? 0) + mass;
+  }
+  return result;
+}
 export function updateRanges(before: HandState, after: HandState, ranges: Ranges,
                              action: SolverAction, profile: string, interpolate = false, predictions?: Record<string, number[]>): Ranges {
   const actor = before.current_player!;

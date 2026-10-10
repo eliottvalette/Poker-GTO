@@ -1,0 +1,24 @@
+[Unit]
+Description=Evaluate published HU and 3-max policies
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=gto
+WorkingDirectory=/opt/gto/current
+Environment=PYTHONPATH=/opt/gto/current
+Environment=GTO_EVALUATION_DIR=/var/lib/gto/evaluation
+Environment=OMP_NUM_THREADS=1
+Environment=OPENBLAS_NUM_THREADS=1
+EnvironmentFile=/etc/gto/publication.env
+ExecStart=/opt/gto/venv/bin/python /opt/gto/current/deploy/vps/evaluate.py
+TimeoutStartSec=1100
+MemoryMax=512M
+CPUQuota=100%
+CPUWeight=20
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+LogNamespace=gto
+

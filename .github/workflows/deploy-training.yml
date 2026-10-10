@@ -24,7 +24,7 @@ jobs:
       - run: |
           pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
           pip install -r deploy/vps/requirements.txt
-      - run: PYTHONPATH=.:tests python -m unittest test_vps_training test_publication test_vps_deployment test_deployment_provenance
+      - run: PYTHONPATH=.:tests python -m unittest test_vps_training test_publication test_vps_deployment test_deployment_provenance test_hourly_evaluation test_onnx_export
       - run: npm ci && npm run lint && npm run build
         working-directory: ui
       - run: node tests/run_browser_tests.mjs

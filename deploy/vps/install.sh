@@ -24,6 +24,8 @@ for existing in hu 3max; do
 done
 active_training=()
 active_timers=()
+evaluation_active=false
+if systemctl is-active --quiet gto-evaluate.timer; then evaluation_active=true; fi
 for selected in "${tracks[@]}"; do
   if systemctl is-active --quiet "gto-training@$selected.service"; then active_training+=("$selected"); fi
   if systemctl is-active --quiet "gto-publish@$selected.timer"; then active_timers+=("$selected"); fi
@@ -33,6 +35,7 @@ restore() {
   trap - EXIT
   if [[ $status -ne 0 ]]; then
     echo 'Deployment failed; preserving checkpoints and restoring prior code' >&2
+    systemctl stop gto-evaluate.timer gto-evaluate.service || true
     for selected in "${tracks[@]}"; do
       systemctl stop "gto-publish@$selected.timer" "gto-publish@$selected.service" || true
       systemctl stop "gto-training@$selected.service" || true
@@ -42,11 +45,13 @@ restore() {
       mv -Tf /opt/gto/current.pending "$current"
       for selected in "${active_training[@]}"; do systemctl start "gto-training@$selected.service"; done
       for selected in "${active_timers[@]}"; do systemctl start "gto-publish@$selected.timer"; done
+      if [[ "$evaluation_active" == true ]]; then systemctl start gto-evaluate.timer; fi
     fi
   fi
   exit "$status"
 }
 trap restore EXIT
+systemctl stop gto-evaluate.timer gto-evaluate.service 2>/dev/null || true
 for selected in "${tracks[@]}"; do
   systemctl stop "gto-publish@$selected.timer" 2>/dev/null || true
   systemctl stop "gto-publish@$selected.service" 2>/dev/null || true
@@ -62,6 +67,7 @@ done
 apt-get update -qq
 apt-get install -y python3 python3-venv ca-certificates
 id gto >/dev/null 2>&1 || useradd --system --create-home --home-dir /var/lib/gto --shell /usr/sbin/nologin gto
+install -d -o gto -g gto /var/lib/gto/evaluation
 for selected in "${tracks[@]}"; do
   data=/var/lib/gto/$selected
   install -d -o gto -g gto "$data" "$data/tmp"
@@ -85,7 +91,7 @@ for selected in "${tracks[@]}"; do
   runuser -u gto -- env PYTHONPATH="$release" TMPDIR="$data/tmp" GTO_DATA_DIR="$data" GTO_TRACK="$selected" \
     "$release/.venv/bin/python" deploy/vps/check_resume.py
 done
-install -m 0644 deploy/vps/gto-training@.service deploy/vps/gto-publish@.service deploy/vps/gto-publish@.timer /etc/systemd/system/
+install -m 0644 deploy/vps/gto-training@.service deploy/vps/gto-publish@.service deploy/vps/gto-publish@.timer deploy/vps/gto-evaluate.service deploy/vps/gto-evaluate.timer /etc/systemd/system/
 install -m 0644 deploy/vps/journald-gto.conf /etc/systemd/journald@gto.conf
 ln -sfn "$release" /opt/gto/current.pending
 mv -Tf /opt/gto/current.pending "$current"
@@ -98,6 +104,7 @@ sleep 5
 for selected in "${tracks[@]}"; do systemctl is-active --quiet "gto-training@$selected.service"; done
 # Publication starts only after every training has restored successfully.
 for selected in "${tracks[@]}"; do systemctl enable --now "gto-publish@$selected.timer"; done
+systemctl enable --now gto-evaluate.timer
 # Retain current and previous code environments, independent of training data.
 for old in /opt/gto/releases/*; do
   [[ -d "$old" && "${old##*/}" =~ ^[a-f0-9]{40}$ ]] || continue

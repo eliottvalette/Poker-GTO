@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for new exported policies to evaluate
+
+[Timer]
+OnBootSec=120
+OnUnitInactiveSec=300
+RandomizedDelaySec=15
+Unit=gto-evaluate.service
+
+[Install]
+WantedBy=timers.target

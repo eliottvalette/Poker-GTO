@@ -3,6 +3,7 @@ import { useState } from "react";
 import TestTable from "@/components/TestTable";
 import PolicyOverview from "@/components/PolicyOverview";
 import PolicyAnalysis from "@/components/PolicyAnalysis";
+import TrainingProgress from "@/components/TrainingProgress";
 import { usePublishedPolicies } from "@/lib/use-published-policies";
 import { Button } from "@/components/ui/button";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
@@ -14,13 +15,13 @@ function CollapsedNavigationTrigger() {
 }
 
 export default function Page() {
-  const [mainTab, setMainTab] = useState<"overview" | "case" | "test">("test");
+  const [mainTab, setMainTab] = useState<"overview" | "case" | "test" | "training">("test");
   const { models, error, loading } = usePublishedPolicies();
   return <SidebarProvider>
     <Sidebar variant="floating" className="p-3">
       <SidebarHeader className="border-b border-border p-4"><div className="flex items-center gap-2"><SidebarTrigger /><h1 className="text-lg font-semibold">GTO Viewer</h1></div></SidebarHeader>
       <SidebarContent className="space-y-3 p-4">
-        {([["overview", "Overview"], ["case", "Specific spot"], ["test", "Test Live"]] as const).map(([tab, label]) =>
+        {([["overview", "Overview"], ["case", "Specific spot"], ["test", "Test Live"], ["training", "Training"]] as const).map(([tab, label]) =>
           <Button key={tab} variant={mainTab === tab ? "default" : "secondary"} onClick={() => setMainTab(tab)}>{label}</Button>)}
       </SidebarContent>
     </Sidebar>
@@ -34,6 +35,7 @@ export default function Page() {
         {error && <div role="alert" className="text-sm text-destructive">{error}</div>}
         {mainTab === "overview" && <PolicyOverview policies={models} />}
         {mainTab === "case" && <PolicyAnalysis policies={models} />}
+        {mainTab === "training" && <TrainingProgress published={{ hu: models[2]?.manifest.iteration, "3max": models[3]?.manifest.iteration }} />}
         <div hidden={mainTab !== "test"}><TestTable policies={models} /></div>
       </main>
     </SidebarInset>

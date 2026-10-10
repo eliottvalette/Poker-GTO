@@ -2,10 +2,21 @@ import { rangeDisplay, rangeColor } from "../ui/src/lib/poker/range-display";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { observerMarginals, handClassMasses, recoverHandStart, replayBeliefs, updateRanges, type BeliefTransition } from "../ui/src/lib/poker/beliefs";
+import { observerMarginals, handClassMasses, rankClassMasses, recoverHandStart, replayBeliefs, updateRanges, type BeliefTransition } from "../ui/src/lib/poker/beliefs";
 import { behaviorProbabilities } from "../ui/src/lib/poker/behavior";
 import { observe } from "../ui/src/lib/poker/observation";
 import { restoreHand, analyzeHybrid, type Ranges, HYBRID_BUDGETS } from "../ui/src/lib/poker/hybrid";
+
+test("Rank groups sum suited and offsuit posterior mass without changing pair mass", () => {
+  const exact = handClassMasses([
+    { cards: [48, 40], probability: .2 },
+    { cards: [48, 41], probability: .3 },
+    { cards: [49, 51], probability: .5 },
+  ]);
+  assert.deepEqual(rankClassMasses(exact), { AQ: .5, AA: .5 });
+  assert.equal(exact.AQs, .2);
+  assert.equal(exact.AQo, .3);
+});
 
 for (const count of [2,3]) test(`Complete ${count}-player public posterior Python/browser parity`, () => {
   const fixture = JSON.parse(readFileSync(`tests/fixtures/phase2-hand-${count}.json`,"utf8")) as {
