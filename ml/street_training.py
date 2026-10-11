@@ -18,8 +18,14 @@ def validate_street_config(config: dict) -> None:
             raise ValueError(f"Missing street configuration for {kind}")
         for name, schedule in config[kind].items():
             required = {"capacity", "byte_budget", "every", "min_new_samples", "max_updates"}
-            if set(schedule) != required or any(type(v) is not int or v < 1 for v in schedule.values()):
+            optional = {'context_capacities'} if name == 'PREFLOP' else set()
+            if (set(schedule) - optional != required
+                    or any(type(schedule[k]) is not int or schedule[k] < 1 for k in required)):
                 raise ValueError(f"Invalid {kind}/{name} schedule: {schedule}")
+            if 'context_capacities' in schedule:
+                from ml.context_replay import expanded_capacities
+                if sum(expanded_capacities(schedule['context_capacities']).values()) != schedule['capacity']:
+                    raise ValueError('Context capacities must sum to preflop capacity')
 
 
 def grouped_partition(sample, seed: int) -> str:
@@ -79,6 +85,12 @@ def fit_specialists(model, memory, states: dict, schedules: dict, *, version: in
                              "trajectories": len({s.trajectory_id for s in population.samples}),
                              "public_root_groups": len({s.root_group for s in population.samples}),
                              "partition_sizes": row["partition_sizes"]}
+        from ml.fixed_validation import partition_coverage, fixed_metrics
+        state['coverage']['splits'] = partition_coverage(partitions)
+        if 'updates_completed' in row:
+            row['fixed_validation'] = fixed_metrics(model.specialists[street], state, partitions,
+                                                    seed+index, version, model.kind)
+            state['last_fit_metrics'] = copy.deepcopy(row)
         metrics[street] = row
     return model.eval(), states, metrics
 
@@ -108,3 +120,19 @@ def validate_specialist_states(solver) -> None:
                     if any(values[k].shape != parameter.shape or not torch.isfinite(values[k]).all()
                            for k in ("exp_avg","exp_avg_sq")) or int(values["step"]) != state["updates"]:
                         raise ValueError(f"Invalid optimizer moments/step for {kind}/{street}")
+            if 'validation_bank' in state:
+                from ml.memory import TrainingSample
+                from features.neural import NeuralObservation
+                bank = state['validation_bank']
+                if (bank.get('version') != 1 or not 1 <= bank.get('source_iteration',0) <= solver.version
+                        or set(bank.get('splits',{})) != {'validation','test'}):
+                    raise ValueError('Invalid frozen validation bank')
+                for split, rows in bank['splits'].items():
+                    if not 64 <= len(rows) <= 128:
+                        raise ValueError('Invalid frozen validation bank size')
+                    for packed in rows:
+                        sample = TrainingSample(**{**packed,'state':NeuralObservation(**packed['state'])})
+                        sample.validate()
+                        if (sample.kind != kind or sample.state.street != index
+                                or grouped_partition(sample,solver.seed) != split):
+                            raise ValueError('Frozen validation bank leaks training roots or foreign samples')

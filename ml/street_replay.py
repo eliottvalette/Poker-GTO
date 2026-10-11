@@ -8,12 +8,17 @@ from ml.train import weight_quality
 
 class StreetReplay:
     def __init__(self, capacities: dict[str, int], byte_budgets: dict[str, int],
-                 kind: str, seed: int):
+                 kind: str, seed: int, preflop_contexts: dict | None = None):
         if set(capacities) != set(STREETS) or set(byte_budgets) != set(STREETS):
             raise ValueError("Explicit capacities and byte budgets required for all four streets")
         self.memories = {name: ReservoirMemory(capacities[name], seed + index, kind,
                                               "hand_chip_delta", byte_budgets[name])
                          for index, name in enumerate(STREETS)}
+        if preflop_contexts is not None:
+            from ml.context_replay import ContextReplay
+            if sum(preflop_contexts.values()) != capacities['PREFLOP']:
+                raise ValueError('Context capacities must sum to the preflop capacity')
+            self.memories['PREFLOP'] = ContextReplay(preflop_contexts, byte_budgets['PREFLOP'], kind, seed)
 
     def add(self, sample: TrainingSample) -> None:
         if sample.state.street not in range(4) or not sample.trajectory_id or not sample.root_group:
@@ -55,13 +60,15 @@ class StreetReplay:
     def samples(self):
         # This aggregate is for diagnostics. Each street fit uses its own raw
         # reservoir: constant within-street inclusion cancels in its mean loss.
-        return [replace(s, weight=s.weight / min(1., m.capacity / m.seen))
+        from ml.context_replay import ContextReplay
+        return [replace(s, weight=s.weight / (1. if isinstance(m, ContextReplay) else min(1., m.capacity / m.seen)))
                 for m in self.memories.values() for s in m.samples]
 
     def diagnostics(self):
         return {name: {"generated": m.seen, "retained": len(m.samples),
                        "capacity": m.capacity, "bytes": m.used_bytes,
-                       "inclusion_probability": min(1., m.capacity / m.seen) if m.seen else None,
+                       "inclusion_probability": None if hasattr(m, 'memories') else min(1., m.capacity / m.seen) if m.seen else None,
+                       **({'contexts':m.diagnostics()} if hasattr(m, 'memories') else {}),
                        "independent_trajectories": len({s.trajectory_id for s in m.samples}),
                        "public_root_groups": len({s.root_group for s in m.samples}),
                        **(weight_quality(m.samples) if m.samples else {})}

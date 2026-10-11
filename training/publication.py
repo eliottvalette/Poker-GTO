@@ -156,10 +156,12 @@ def validate_pointer(raw: dict, track: str) -> dict:
 
 
 def publish_bundle(storage: SupabaseStorage, track: str, bundle: Path, *, keep: int = 24,
-                   migrate_shared_release: str | None = None) -> dict:
+                   migrate_shared_release: str | None = None, channel: str = 'current') -> dict:
     """One writer per track; pointer commits only after public read-back of every artifact."""
     if track not in TRACKS or type(keep) is not int or keep < 2:
         raise ValueError('Valid dedicated track and at least two retained releases required')
+    if channel not in ('current', 'candidate'):
+        raise ValueError('Unknown publication channel')
     seal = json.loads((bundle/'bundle.json').read_text())
     live = seal.get('kind') == 'live_training_export' and seal.get('tracks') == [track]
     migrated = seal.get('kind') == 'onnx_export' and track in seal.get('sources', {})
@@ -193,7 +195,7 @@ def publish_bundle(storage: SupabaseStorage, track: str, bundle: Path, *, keep: 
         raise ValueError('Export track or iteration mismatch')
     iteration = manifest['iteration']
     release = hashlib.sha256(encoded({name: hashlib.sha256(data).hexdigest() for name, data in files.items()})).hexdigest()
-    key = f'{track}/current.json'
+    key = f'{track}/{channel}.json'
     try:
         previous = validate_pointer(json.loads(storage.get(key)), track)
     except StorageError as error:
@@ -245,6 +247,13 @@ def prune_remote(storage: SupabaseStorage, track: str, pointer: dict, *, grace_h
     """Keep current/history plus a grace period for in-flight clients and partial uploads."""
     validate_pointer(pointer, track)
     retained = {pointer['release_id'], *pointer['history']}
+    for channel in ('current','candidate'):
+        try:
+            other = validate_pointer(json.loads(storage.get(f'{track}/{channel}.json')),track)
+            retained.update([other['release_id'], *other['history']])
+        except StorageError as error:
+            if error.status != 404:
+                raise
     cutoff = datetime.now(timezone.utc)-timedelta(hours=grace_hours)
     for item in storage.list(f'{track}/releases'):
         release = item.get('name', '')
@@ -259,7 +268,7 @@ def prune_remote(storage: SupabaseStorage, track: str, pointer: dict, *, grace_h
             storage.remove([f"{prefix}/{row['name']}" for row in files])
 
 
-def publish_pending(storage: SupabaseStorage, track: str, data_dir: Path) -> dict | None:
+def publish_pending(storage: SupabaseStorage, track: str, data_dir: Path, *, channel: str = 'current') -> dict | None:
     """Called by a timer; missing initial export is an explicit waiting state."""
     import fcntl
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -283,7 +292,7 @@ def publish_pending(storage: SupabaseStorage, track: str, data_dir: Path) -> dic
                 raise ValueError('Publication migration authorization does not match this training run')
             migration = approval['shared_release_id']
         pointer = publish_bundle(storage, track, data_dir/'exports'/directory,
-                                 migrate_shared_release=migration)
+                                 migrate_shared_release=migration, channel=channel)
         if authorization.exists():
             authorization.rename(data_dir / 'publication-migration-completed.json')
         prune_remote(storage, track, pointer)

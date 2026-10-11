@@ -61,7 +61,16 @@ def export_live(runner: TrainingRunner, *, keep: int = 2) -> Path:
                 solver.export_average(average, run_id=runner.metadata.get("run_id"))
                 export_average_policy(average, temporary / f'average_{track}.onnx',
                                       temporary / f'average_{track}.json', observe(runner.probes[track][0][1]))
-            seal_bundle(temporary, metadata)
+            from types import SimpleNamespace
+            from training.street_experiments import river_reference
+            from ml.deep_cfr import FrozenStrategy
+            references = {}
+            for track, solver in runner.solvers.items():
+                if solver.street_config is not None:
+                    references[track] = {
+                        'advantage_strategy':river_reference(SimpleNamespace(probabilities=FrozenStrategy(solver.snapshot())),len(solver.players)),
+                        'average_strategy':river_reference(solver.average_model,len(solver.players))}
+            seal_bundle(temporary, {**metadata, 'algorithmic_validation':references})
             temporary.rename(destination)
         finally:
             if temporary.exists():

@@ -313,6 +313,8 @@ class TrainingRunner:
                             raise ValueError("Street checkpoint requires partitioned replay")
                         for street, entry in solver.street_config[memory.kind].items():
                             part = memory.memories[street]
+                            if getattr(part, 'capacities', None) != entry.get('context_capacities'):
+                                raise ValueError(f'Context replay allocation mismatch: {name}/{street}')
                             if part.capacity != entry["capacity"] or part.byte_budget != entry["byte_budget"]:
                                 raise ValueError(f"Street replay allocation mismatch: {name}/{street}")
                     if memory.capacity != capacity or memory.byte_budget != budget:

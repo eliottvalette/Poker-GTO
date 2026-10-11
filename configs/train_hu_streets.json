@@ -18,7 +18,7 @@
   "root_sampler_version": 2,
   "feature_schema_version": 4,
   "model_schema_version": "cards8_numeric32_historyGRU32_head64_features4",
-  "output_dir": "runs/hu-streets",
+  "output_dir": "runs/hu-contexts",
   "evaluation_max_nodes": 20000,
   "3max": {
     "enabled": false,
@@ -110,7 +110,15 @@
         "byte_budget": 214748363,
         "every": 1,
         "min_new_samples": 128,
-        "max_updates": 64
+        "max_updates": 64,
+        "context_capacities": {
+          "first_open": 8000,
+          "facing_open": 4000,
+          "facing_3bet": 2000,
+          "facing_4bet_or_more": 1500,
+          "facing_jam": 2000,
+          "other": 2500
+        }
       },
       "FLOP": {
         "capacity": 10000,
@@ -140,7 +148,15 @@
         "byte_budget": 214748363,
         "every": 3,
         "min_new_samples": 128,
-        "max_updates": 64
+        "max_updates": 64,
+        "context_capacities": {
+          "first_open": 8000,
+          "facing_open": 4000,
+          "facing_3bet": 2000,
+          "facing_4bet_or_more": 1500,
+          "facing_jam": 2000,
+          "other": 2500
+        }
       },
       "FLOP": {
         "capacity": 10000,

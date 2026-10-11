@@ -171,6 +171,30 @@ class HourlyEvaluationTests(unittest.TestCase):
             with patch('training.evaluation_history.evaluate_policy', side_effect=AssertionError('Must not rerun completed evaluation')):
                 self.assertIsNone(evaluate_published(store, 'hu', root))
 
+    def test_candidate_is_evaluated_before_active_policy_changes(self):
+        from training.promotion import assess_candidate
+        model, manifest, _ = self.artifacts[2]
+        store = MemoryStorage()
+        active = {'version':1,'track':'hu','release_id':'a'*64,'iteration':900,
+                  'history':[],'published_at':datetime.now(timezone.utc).isoformat()}
+        candidate = {**active,'release_id':'b'*64,'iteration':3}
+        for pointer in (active,candidate):
+            prefix = f"hu/releases/{pointer['release_id']}"
+            store.objects[prefix+'/average_hu.onnx']=model
+            store.objects[prefix+'/average_hu.json']=encoded({**manifest,'iteration':pointer['iteration']})
+        store.objects['hu/current.json']=encoded(active)
+        store.objects['hu/candidate.json']=encoded(candidate)
+        with tempfile.TemporaryDirectory() as tmp:
+            report=evaluate_published(store,'hu',Path(tmp),EvaluationBudget(groups=2),channel='candidate')
+            self.assertEqual(report['activation']['status'],'not_accepted')
+            self.assertEqual(json.loads(store.get('hu/current.json')),active)
+        policy=OnnxPolicy(model,manifest,2)
+        measured={'status':'complete','difference':{'mean':10.,'interval':[1.,19.]}}
+        with patch('training.promotion.evaluate_policy',return_value=(measured,[])):
+            self.assertEqual(assess_candidate(store,'hu',candidate,policy,EvaluationBudget(groups=2))['status'],'accepted')
+        self.assertEqual(json.loads(store.get('hu/current.json'))['release_id'],candidate['release_id'])
+        self.assertEqual(assess_candidate(store,'hu',candidate,policy,EvaluationBudget(groups=2))['status'],'active')
+
     def test_evaluator_import_does_not_load_torch_or_training_replay(self):
         result = subprocess.run([sys.executable, '-c',
             'import training.evaluation_history, sys; assert "torch" not in sys.modules; assert "training.checkpoint" not in sys.modules'],

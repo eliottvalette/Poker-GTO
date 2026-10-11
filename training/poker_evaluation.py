@@ -22,6 +22,7 @@ REGIONS = ('shallow', 'medium', 'asymmetric')
 
 @dataclass(frozen=True)
 class EvaluationBudget:
+    seed_offset: int = 0
     groups: int = 128
     cpu_seconds: float = 120
     wall_seconds: float = 480
@@ -29,7 +30,8 @@ class EvaluationBudget:
     river_nodes: int = 20000
 
     def __post_init__(self) -> None:
-        if (type(self.groups) is not int or not 1 <= self.groups <= 256
+        if (type(self.seed_offset) is not int or self.seed_offset < 0
+                or type(self.groups) is not int or not 1 <= self.groups <= 256
                 or not math.isfinite(self.cpu_seconds) or self.cpu_seconds <= 0
                 or not math.isfinite(self.wall_seconds) or self.wall_seconds <= 0
                 or self.decisions_per_hand < 1 or self.river_nodes < 1):
@@ -97,7 +99,7 @@ def evaluate_policy(candidate, reference, count: int,
             for profile_index, profile in enumerate(PROFILES):
                 opponent = UniformLegalPolicy() if profile == 'uniform' else ProfilePolicy(profile)
                 for region_index, region in enumerate(REGIONS):
-                    seed = 910000 + group * 1009 + profile_index * 53 + region_index * 7
+                    seed = 910000 + budget.seed_offset + group * 1009 + profile_index * 53 + region_index * 7
                     stacks = [6.] * count if region == 'shallow' else [25.] * count if region == 'medium' else [35., 8., 18.][:count]
                     root = HandState.start(dict(enumerate(stacks)), group % count, random.Random(seed))
                     scores = [[], []]

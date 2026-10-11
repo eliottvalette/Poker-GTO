@@ -276,7 +276,8 @@ class DeepCFRSolver:
                     raise ValueError(f"Street {kind} allocations must match track total capacity and byte budget")
                 memory = StreetReplay({k: v["capacity"] for k,v in entries.items()},
                                       {k: v["byte_budget"] for k,v in entries.items()}, kind,
-                                      seed + (10 if kind == "strategy" else 0))
+                                      seed + (10 if kind == "strategy" else 0),
+                                      preflop_contexts=entries['PREFLOP'].get('context_capacities'))
                 setattr(self, "advantage_memory" if kind == "advantage" else "strategy_memory", memory)
             with torch.random.fork_rng(devices=[]):
                 torch.manual_seed(seed)
@@ -532,7 +533,7 @@ def street_average_payload(weights: dict, iteration: int, player_count: int,
             "objective": "hand_chip_delta", "iteration": iteration,
             "training_metadata": {"traversal_mode": traversal_mode},
             "supported_player_counts": [player_count], "weights": weights,
-            "specialists": {name: {key: value for key,value in state.items() if key != "optimizer"}
+            "specialists": {name: {key: value for key,value in state.items() if key not in ("optimizer", "validation_bank")}
                             for name,state in states.items()}}
 
 

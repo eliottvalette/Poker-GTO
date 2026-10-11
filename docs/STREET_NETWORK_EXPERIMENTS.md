@@ -166,3 +166,64 @@ Evidence index: `runs/street-network-migration/evidence-index.json` contains sou
 - Real OVH cycle 1: HU 512 traversals / 53,758 nodes / 27.76 s (generation 19.59 s, fit 4.52 s); 3-max 384 traversals / 121,510 nodes / 27.27 s (generation 20.10 s, fit 4.21 s). Each track performed 256 A optimizer updates and zero B updates, consistent with the independent schedules.
 - Early service memory: HU approximately 354 MiB, 3-max approximately 637 MiB; zero restarts. These are startup observations, not full-replay peak-RAM claims.
 - First hourly new-policy results are pending; these operational measurements do not demonstrate poker strength. Old checkpoints and old reference evaluation are retained.
+
+## Published manifest refresh regression — 2026-10-11
+
+The run-lineage export added `run_id` and `layout` to each v4 network manifest without updating the browser's exact-key validator. Python publication and evaluation accepted the artifacts, but browser refresh rejected all eight street routes before inference. The prior browser tests did not exercise newly exported manifests.
+
+The browser now accepts and validates these explicitly optional metadata fields, preserves compatibility with manifests without lineage, and rejects unknown fields, missing required fields, invalid run IDs, unsupported layouts and mixed-run street catalogs. Required state/action/feature contracts, model hashes and CPU parity thresholds remain enforced. Field-set failures identify missing and unexpected keys.
+
+`tests/fixtures/published_street_manifests.json` preserves public Supabase catalogs from HU iteration 118 and 3-max iteration 136 (run IDs and checkpoint hashes included). Regression tests validate every route, legacy manifests and invalid mutations. All 158 browser tests and the production static build pass. This repair changes browser validation only; it does not restart training or modify published weights.
+
+Real Chrome verification against public Supabase succeeded: HU #118 and 3-max #136 loaded, both Overview matrices rendered 169 classes, and both preflop ONNX artifacts executed without a policy alert. The first smoke attempt used a narrow viewport that hid navigation; the corrected desktop viewport passed.
+
+## Production validation audit — 2026-10-11, 06:06–06:14 UTC snapshot
+
+Read-only audit; no training, sampler, weighting, promotion or deployment changes. Services briefly stopped during an external deployment and were subsequently both active with zero automatic restarts. The saved old-run directories remain intact.
+
+Evidence: `runs/street-validation-audit/{hu-history,3max-history,opening-matrices}.json`. Public storage changed during inspection: hourly performance below concerns HU #118 / 3-max #136; the later direct opening probes concern published HU #125 / 3-max #144. Do not treat them as the same model snapshots.
+
+| Hourly policy | Pool BB/100 (approx. 95% interval) | Difference from pinned initial shared reference |
+|---|---|---|
+| HU #118 | 5.22 [-16.30, 26.74] | -38.14 [-65.78, -10.50] |
+| 3-max #136 | 66.84 [41.36, 92.31] | 25.41 [-2.09, 52.91] |
+
+Each evaluation has 128 independent deal groups. Reported 6,144 HU / 9,216 3-max hands include both candidate and reference, seats and profiles; they are not that many independent observations. Same seeds are reused hourly. Four synthetic profiles × three stack distributions provide a controlled benchmark, not general poker validation. No online hybrid search or tournament objective is measured. The river response test covers four private deals and one responding seat (36 HU / 100 3-max nodes), not full-game exploitability. Its gain was 0.2401 BB in HU and 0.7110 BB in 3-max; this is not comparable to the aggregate BB/100 metric.
+
+### Supervision retained at HU #125 and 3-max #144
+
+Each A/B memory is full: 20,000 PF records and 10,000 on each later street. HU generated 875,692 A / 1,628,711 B records; 3-max generated 424,769 A / 2,407,234 B records. These totals do not imply sufficient conditional opening coverage.
+
+| Track/dataset | Opening records | Classes represented | AA | KK | AKs |
+|---|---:|---:|---:|---:|---:|
+| HU A | 1,814 | 169 | 6 | 7 | 6 |
+| HU B | 916 | 167 | 1 | 2 | 1 |
+| 3-max A | 916 | 161 | 9 | 2 | 4 |
+| 3-max B | 474 | 140 | 2 | 0 | 2 |
+
+Counts are the whole retained population across positions/stacks/iterations, not the training partition or one fixed root. Thus even these tiny counts overstate supervision available for a particular decision. Street partitioning protects preflop from postflop eviction but does not protect first-opening contexts within preflop.
+
+| B specialist | HU validation KL / weight ESS (last fit #123) | 3-max validation KL / weight ESS (#144) |
+|---|---|---|
+| Preflop | 0.380 / 1,785 | 0.259 / 280 |
+| Flop | 0.416 / 858 | 0.415 / 126 |
+| Turn | 0.334 / 901 | 0.476 / 64 |
+| River | 0.304 / 863 | 0.576 / 42 |
+
+3-max river B trains on 8,059 records but its training weight ESS is only 216. River training KL is 0.345 versus validation 0.576; the discrepancy is a concern, but low validation ESS limits generalization conclusions. Enumeration starting at river does not remove sampling-weight concentration accumulated earlier in the prefix. No clipping or collector modification was applied.
+
+HU A train/validation MSE: PF 281/463, flop 251/361, turn 266/346, river 254/356. 3-max: 374/327, 319/283, 267/235, 233/234. These are weighted errors against sampled regret labels, not action-EV error against an independently solved reference. Without target variance/zero-predictor comparisons, the raw losses cannot establish useful regret accuracy. The production hourly evaluator does not compute A's all-nonpositive rate or the held-out replay test-partition loss; the offline experimental functions are separate.
+
+### Direct published-policy probes
+
+All 1,326 exact holdings per track were queried at the same unopened 25-BB root, including reversed card order (maximum discrepancy zero). HU #125 fold percentages: AA 0.10, KK 0.65, AKs 18.26, 22 39.70, 72o 58.52, 32o 89.55. 3-max #144: AA 0.24, KK 0.42, AKs 0.76, 22 68.42, 72o 82.96, 32o 77.20. These show holding discrimination. HU AKs fold 18.26%, 3-max 72o jam 10.35%, and 3-max 32o jam 12.39% remain diagnostic concerns, not proven equilibrium errors without a matched reference.
+
+### Validation gaps and next priorities
+
+1. Technical export checks establish finite/legal outputs, complete street coverage and CPU ONNX parity; they do not reject a strategically inferior policy. Hourly evaluation occurs after publication and is not an automatic promotion gate.
+2. Measure retained conditional opening coverage in train/validation/test, then correct context allocation with explicit distribution semantics and exact estimator checks. More generic preflop records or epochs alone do not address missing contexts.
+3. Validate A on independent fixed-continuation/exact local action values, including a zero-regret baseline and all-nonpositive frequency; validate B against historical weighted targets separately.
+4. Monitor 3-max ESS by street and split, and investigate prefix sampling/allocation before increasing fit effort. Report uncertainty rather than claiming reliable held-out generalization from ESS 42.
+5. Maintain the stable hourly suite, but add untouched seeds/opponents and matched action-EV references before asserting general improvement. The positive 3-max mean alone does not establish superiority to the pinned reference.
+
+Conclusion: implementation and export interoperability work; holding discrimination is present; strategic validation is not established. Conditional supervision remains inadequate and 3-max strategy weight concentration remains material.

@@ -99,7 +99,7 @@ export default function TrainingProgress({ published = {} }: { published?: Parti
     </div>
     {loading && <p role="status" className="text-sm text-muted-foreground">Loading evaluations…</p>}
     {error && <p role="alert" className="text-sm text-destructive">{error}{history ? " Showing the last loaded results." : ""}</p>}
-    {activeSeries === series[0] && published[track] !== undefined && latest && published[track]! > latest.iteration && <p role="status" className="text-sm text-muted-foreground">Published policy #{published[track]} · latest evaluation #{latest.iteration}</p>}
+    {activeSeries === series[0] && published[track] !== undefined && latest && !latest.activation && published[track]! > latest.iteration && <p role="status" className="text-sm text-muted-foreground">Published policy #{published[track]} · latest evaluation #{latest.iteration}</p>}
     {activeSeries === series[0] && latest && Date.now() - Date.parse(latest.evaluated_at) > 3 * 3600000 && <p role="status" className="text-sm text-amber-500">No new evaluation for over 3 hours. Check the evaluation service if training is still running.</p>}
     {!loading && !error && !latest && <div className="rounded-xl border p-8 text-sm text-muted-foreground">No evaluations in this period. Results appear after the VPS evaluates a published model.</div>}
     {current && <>
@@ -115,7 +115,7 @@ export default function TrainingProgress({ published = {} }: { published?: Parti
           <strong className="text-2xl font-medium tabular-nums">{current.is_reference && metric === "difference" ? "Baseline" : `${number(current[metric].mean)} BB/100`}</strong>
           {!(current.is_reference && metric === "difference") && <span className="text-xs text-muted-foreground">95% interval {interval(current[metric])}</span>}
         </div>
-        <span className="text-xs text-muted-foreground">Iteration {current.iteration} · {new Date(current.evaluated_at).toLocaleString()}</span>
+        <span className="text-xs text-muted-foreground">{current.activation ? current.activation.status === 'not_accepted' ? 'Candidate · ' : 'Accepted candidate · ' : ''}Iteration {current.iteration} · {new Date(current.evaluated_at).toLocaleString()}{current.activation && published[track] !== undefined ? ` · Active #${published[track]}` : ''}</span>
       </div>
       {current.status === "failed" && <p role="alert" className="text-sm text-destructive">Evaluation failed. {current.warnings.join(" ")}</p>}
       {current.status === "budget_limited" && <p role="status" className="text-sm text-amber-500">Partial evaluation: compute budget reached.</p>}

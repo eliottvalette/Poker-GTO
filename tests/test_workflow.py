@@ -46,7 +46,7 @@ class WorkflowTests(unittest.TestCase):
             source = workflow.candidate_checkpoint(track)
             runner = TrainingRunner.load_checkpoint(source)
             expected = self.root / f'expected_{track}.pt'
-            runner.solvers[track].export_average(expected)
+            runner.solvers[track].export_average(expected, run_id=runner.metadata['run_id'])
             messages = []
             with patch.object(TrainingRunner, 'load_checkpoint', side_effect=AssertionError('Replay restore forbidden')):
                 prepared = workflow.prepare_migration('export', (track,), progress=messages.append)

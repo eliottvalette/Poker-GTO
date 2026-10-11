@@ -31,6 +31,11 @@ def diagnostic_config(output: Path, count: int, seed: int, *, updates: int = 32,
                             traversals_per_player=traversals)
     for kind in ('advantage','strategy'):
         for entry in config['street_networks'][kind].values():
+            if 'context_capacities' in entry:
+                total = sum(entry['context_capacities'].values())
+                allocation = {k:2000*v//total for k,v in entry['context_capacities'].items()}
+                allocation['first_open'] += 2000-sum(allocation.values())
+                entry['context_capacities'] = allocation
             entry.update(capacity=2000, byte_budget=16*1024**2, every=1,
                          min_new_samples=8, max_updates=updates)
     return config

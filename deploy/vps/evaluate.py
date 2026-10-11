@@ -11,7 +11,7 @@ if __name__ == '__main__':
     failures = []
     for track in ('hu', '3max'):
         try:
-            report = evaluate_published(storage, track, Path(os.environ['GTO_EVALUATION_DIR']) / track)
+            report = evaluate_published(storage, track, Path(os.environ['GTO_EVALUATION_DIR']) / track, channel='candidate')
             if report and report['status'] == 'failed':
                 failures.append(f'{track}: {report["warnings"][-1]}')
         except Exception as error:
