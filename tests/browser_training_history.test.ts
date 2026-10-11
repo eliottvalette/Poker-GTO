@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
-import { evaluationLabel, fetchTrainingHistory, historyWindow, parseTrainingHistory } from "../ui/src/lib/training-history";
+import { evaluationLabel, fetchTrainingHistory, historyWindow, parseTrainingHistory, trainingSeries } from "../ui/src/lib/training-history";
 
 const estimate = { n: 2, mean: 0, m2: 0, se: 0, interval: [0, 0] };
 const run = {
@@ -58,4 +58,18 @@ test("history fetch distinguishes not-yet-evaluated from HTTP failures", async (
       ? Response.json({ ...index, sha256: "d".repeat(64) }) : new Response(new Uint8Array(compressed));
     await assert.rejects(fetchTrainingHistory("hu"), /changed while loading/);
   } finally { globalThis.fetch = fetchBefore; process.env = envBefore; }
+});
+
+test("curves separate run restarts, architecture changes and references without deleting history", async () => {
+  const original = parseTrainingHistory(history, "hu").runs[0];
+  const first = { ...original, run_id: "d".repeat(32), architecture: "independent_streets_v1", iteration: 1,
+    release_id: "d".repeat(64), evaluated_at: "2026-10-10T20:00:00Z" };
+  const next = { ...first, iteration: 2, release_id: "e".repeat(64), evaluated_at: "2026-10-10T21:00:00Z" };
+  const restarted = { ...first, run_id: "f".repeat(32), release_id: "f".repeat(64), evaluated_at: "2026-10-10T22:00:00Z" };
+  const groups = trainingSeries([next, original, restarted, first]);
+  assert.deepEqual(groups.map(g => g.runs.map(r => r.iteration)), [[1], [1, 2], [10]]);
+  assert.equal(groups[0].label, "Street specialists");
+  assert.equal(groups[2].label, "Untracked history");
+  assert.equal(trainingSeries([first, { ...next, architecture: "shared_per_player_count" }]).length, 2);
+  assert.equal(trainingSeries([first, { ...next, reference: { ...next.reference, model_sha256: "f".repeat(64) } }]).length, 2);
 });

@@ -480,22 +480,26 @@ class DeepCFRSolver:
         self.metrics.append(metrics)
         return metrics
 
-    def export_average(self, path: str | Path) -> None:
+    def export_average(self, path: str | Path, *, run_id: str | None = None) -> None:
         if self.average_model is None:
             raise ValueError("Average-policy network is unavailable before successful training")
         if self.street_config is not None:
             if not bool(self.average_model.trained.all()):
                 missing = [s for i,s in enumerate(STREETS) if not self.average_model.trained[i]]
                 raise ValueError(f"Cannot export cold Average specialists: {missing}")
-            torch.save(street_average_payload(self.average_model.state_dict(), self.version,
-                       len(self.players), self.traversal_mode, self.specialist_states["strategy"]), path)
+            payload = street_average_payload(self.average_model.state_dict(), self.version,
+                       len(self.players), self.traversal_mode, self.specialist_states["strategy"])
+            payload["run_id"] = run_id
+            torch.save(payload, path)
             return
-        torch.save(average_policy_payload(
+        payload = average_policy_payload(
             weights=self.average_model.state_dict(), iteration=self.version,
             objective=self.objective, player_count=len(self.players),
             traversal_mode=self.traversal_mode, metrics=self.metrics,
             supported_player_counts=sorted({round(s.state.numeric[NUMERIC_NAMES.index("player_count")] * 3)
-                                            for s in self.strategy_memory.samples})), path)
+                                            for s in self.strategy_memory.samples}))
+        payload["run_id"] = run_id
+        torch.save(payload, path)
 
 
 def average_policy_payload(*, weights: dict, iteration: int, objective: str,
@@ -544,6 +548,9 @@ class NeuralAveragePolicy:
                 or not raw.get("supported_player_counts")
                 or any(n not in (2, 3) for n in raw["supported_player_counts"])):
             raise ValueError(f"Incompatible average-policy checkpoint: {path}")
+        self.run_id = raw.get("run_id")
+        if self.run_id is not None and (not isinstance(self.run_id, str) or len(self.run_id) != 32 or any(c not in "0123456789abcdef" for c in self.run_id)):
+            raise ValueError("Invalid training run identifier")
         self.objective = raw["objective"]
         self.iteration = raw["iteration"]
         self.traversal_mode = raw["training_metadata"]["traversal_mode"]

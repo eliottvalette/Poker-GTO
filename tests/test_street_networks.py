@@ -32,6 +32,22 @@ def street_config(directory, count=2):
 
 
 class StreetNetworkTests(unittest.TestCase):
+    def test_fresh_production_runs_have_distinct_persistent_identities(self):
+        from training.vps import initialize_street_run
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            hu = initialize_street_run('hu', root/'hu')
+            three = initialize_street_run('3max', root/'3max', workers=2)
+            self.assertNotEqual(hu['run_id'], three['run_id'])
+            for track, identity in [('hu',hu), ('3max',three)]:
+                runner = TrainingRunner.load_checkpoint(root/track/'checkpoint.pt')
+                self.assertEqual(runner.metadata['run_id'], identity['run_id'])
+                self.assertEqual(runner.iteration, 0)
+                self.assertFalse(runner.solvers[track].average_model.trained.any())
+                self.assertEqual(len(runner.solvers[track].average_model.specialists),4)
+                with self.assertRaises(FileExistsError):
+                    initialize_street_run(track, root/track)
+
     @classmethod
     def setUpClass(cls):
         torch.set_num_threads(1)
@@ -62,6 +78,7 @@ class StreetNetworkTests(unittest.TestCase):
             path = Path(directory)/'checkpoint.pt'
             runner.save_checkpoint(path)
             resumed = TrainingRunner.load_checkpoint(path)
+            self.assertEqual(resumed.metadata['run_id'], runner.metadata['run_id'])
             runner.run_iteration()
             resumed.run_iteration()
             for kind in ('advantage', 'average'):
@@ -89,12 +106,13 @@ class StreetNetworkTests(unittest.TestCase):
                 runner.run_iteration()
                 solver = next(iter(runner.solvers.values()))
                 path = directory/'average.pt'
-                solver.export_average(path)
+                solver.export_average(path, run_id=runner.metadata['run_id'])
                 track = 'hu' if count == 2 else '3max'
                 bundle = directory/'bundle'; bundle.mkdir()
                 catalog = export_average_policy(path, bundle/f'average_{track}.onnx', bundle/f'average_{track}.json',
                                                 observe(runner.probes[next(iter(runner.solvers))][0][1]))
                 policy = StreetOnnxPolicy(catalog, count, lambda name: (bundle/name).read_bytes())
+                self.assertEqual(catalog['run_id'], runner.metadata['run_id'])
                 self.assertEqual(len(policy.sessions),0)
                 for _,hand in fixed_roots(count):
                     obs = observe(hand)
@@ -134,7 +152,20 @@ class StreetNetworkTests(unittest.TestCase):
                     publish_bundle(migration_storage,track,bundle)
                 with self.assertRaisesRegex(ValueError, 'exact current'):
                     publish_bundle(migration_storage,track,bundle,migrate_shared_release='f'*64)
-                migrated = publish_bundle(migration_storage,track,bundle,migrate_shared_release=old_pointer['release_id'])
+                from training.publication import publish_pending
+                pending = directory/'production'; (pending/'exports').mkdir(parents=True)
+                import shutil
+                shutil.copytree(bundle,pending/'exports'/'iteration_000001')
+                (pending/'exports'/'current.json').write_text(json.dumps({'directory':'iteration_000001'}))
+                approval = {'track':track,'run_id':runner.metadata['run_id'],
+                            'shared_release_id':old_pointer['release_id']}
+                (pending/'publication-migration.json').write_text(json.dumps({**approval, 'run_id':'f'*32}))
+                with self.assertRaisesRegex(ValueError, 'does not match'):
+                    publish_pending(migration_storage,track,pending)
+                (pending/'publication-migration.json').write_text(json.dumps(approval))
+                migrated = publish_pending(migration_storage,track,pending)
+                self.assertTrue((pending/'publication-migration-completed.json').exists())
+                self.assertEqual(publish_pending(migration_storage,track,pending),migrated)
                 self.assertEqual(migrated['schema_migration_from'],old_pointer['release_id'])
                 self.assertEqual(migrated['iteration'],1)
                 compared = evaluate_published(migration_storage,track,directory/'migrated-history',EvaluationBudget(groups=1))
@@ -147,6 +178,7 @@ class StreetNetworkTests(unittest.TestCase):
                 export_checkpoint_average(directory/'checkpoint.pt',directory/'extracted.pt',track)
                 from ml.deep_cfr import NeuralAveragePolicy
                 extracted=NeuralAveragePolicy(directory/'extracted.pt')
+                self.assertEqual(extracted.run_id, runner.metadata['run_id'])
                 self.assertTrue(all(torch.equal(v, extracted.model.state_dict()[k])
                                     for k,v in solver.average_model.state_dict().items()))
 

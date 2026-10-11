@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { fetchTrainingHistory, historyWindow, type EvaluationRun, type Estimate, type Period, type TrainingHistory } from "@/lib/training-history";
+import { fetchTrainingHistory, historyWindow, trainingSeries, type EvaluationRun, type Estimate, type Period, type TrainingHistory } from "@/lib/training-history";
 
 function number(value: number | null, digits = 1) { return value === null ? "—" : value.toFixed(digits); }
 function interval(value: Estimate) { return value.interval ? `${number(value.interval[0])} to ${number(value.interval[1])}` : "Not enough independent groups"; }
@@ -55,10 +55,11 @@ export default function TrainingProgress({ published = {} }: { published?: Parti
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
   const [selected, setSelected] = useState("");
+  const [selectedSeries, setSelectedSeries] = useState("");
   useEffect(() => {
     let alive = true;
     let request: AbortController | null = null;
-    setHistory(null); setSelected(""); setLoading(true); setError(null);
+    setHistory(null); setSelected(""); setSelectedSeries(""); setLoading(true); setError(null);
     async function load() {
       request?.abort();
       request = new AbortController();
@@ -74,15 +75,23 @@ export default function TrainingProgress({ published = {} }: { published?: Parti
     const timer = setInterval(() => { if (!document.hidden) void load(); }, 300000);
     return () => { alive = false; clearInterval(timer); request?.abort(); };
   }, [track, revision]);
-  const runs = useMemo(() => historyWindow(history?.runs ?? [], period), [history, period]);
+  const series = useMemo(() => trainingSeries(history?.runs ?? []), [history]);
+  const activeSeries = series.find(group => group.id === selectedSeries) ?? series[0];
+  const runs = useMemo(() => historyWindow(activeSeries?.runs ?? [], period), [activeSeries, period]);
   const latest = runs.at(-1);
-  const comparable = runs.filter(r => r.suite === latest?.suite && r.reference.model_sha256 === latest?.reference.model_sha256);
-  const current = comparable.find(r => r.release_id === selected) ?? comparable.at(-1);
+  const current = runs.find(r => r.release_id === selected) ?? latest;
+
 
   return <section className="mx-auto max-w-6xl space-y-5 py-3">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-xl font-semibold">Training</h2>
       <div className="flex flex-wrap gap-2">
+        {series.length > 1 && <select aria-label="Training run" className="rounded-md border bg-background px-2 text-sm"
+          value={activeSeries?.id ?? ""} onChange={event => { setSelectedSeries(event.target.value); setSelected(""); }}>
+          {series.map((group, index) => <option key={group.id} value={group.id}>
+            {index === 0 ? "Current · " : ""}{group.label} · {new Date(group.runs[0].evaluated_at).toLocaleString()}
+          </option>)}
+        </select>}
         {(["hu", "3max"] as const).map(t => <Button key={t} variant={track === t ? "default" : "secondary"} onClick={() => setTrack(t)}>{t === "hu" ? "HU" : "3-Max"}</Button>)}
         {(["24h", "7d", "30d"] as const).map(p => <Button key={p} variant={period === p ? "default" : "outline"} onClick={() => setPeriod(p)}>{p}</Button>)}
         <Button variant="outline" onClick={() => setRevision(v => v + 1)}>Refresh</Button>
@@ -90,8 +99,8 @@ export default function TrainingProgress({ published = {} }: { published?: Parti
     </div>
     {loading && <p role="status" className="text-sm text-muted-foreground">Loading evaluations…</p>}
     {error && <p role="alert" className="text-sm text-destructive">{error}{history ? " Showing the last loaded results." : ""}</p>}
-    {published[track] !== undefined && latest && published[track]! > latest.iteration && <p role="status" className="text-sm text-muted-foreground">Published policy #{published[track]} · latest evaluation #{latest.iteration}</p>}
-    {latest && Date.now() - Date.parse(latest.evaluated_at) > 3 * 3600000 && <p role="status" className="text-sm text-amber-500">No new evaluation for over 3 hours. Check the evaluation service if training is still running.</p>}
+    {activeSeries === series[0] && published[track] !== undefined && latest && published[track]! > latest.iteration && <p role="status" className="text-sm text-muted-foreground">Published policy #{published[track]} · latest evaluation #{latest.iteration}</p>}
+    {activeSeries === series[0] && latest && Date.now() - Date.parse(latest.evaluated_at) > 3 * 3600000 && <p role="status" className="text-sm text-amber-500">No new evaluation for over 3 hours. Check the evaluation service if training is still running.</p>}
     {!loading && !error && !latest && <div className="rounded-xl border p-8 text-sm text-muted-foreground">No evaluations in this period. Results appear after the VPS evaluates a published model.</div>}
     {current && <>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
@@ -99,7 +108,7 @@ export default function TrainingProgress({ published = {} }: { published?: Parti
           <Button size="sm" variant={metric === "difference" ? "secondary" : "ghost"} onClick={() => setMetric("difference")}>vs reference</Button>
           <Button size="sm" variant={metric === "gain" ? "secondary" : "ghost"} onClick={() => setMetric("gain")}>vs opponent pool</Button>
         </div>
-        <span className="text-xs text-muted-foreground">Policy EV · BB/100{metric === "difference" ? ` · baseline #${current.reference.iteration}` : " · synthetic opponents"}</span>
+        <span className="text-xs text-muted-foreground">{activeSeries?.label} · BB/100{metric === "difference" ? ` · baseline #${current.reference.iteration}` : " · synthetic opponents"}</span>
       </div>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="flex flex-wrap items-baseline gap-3">
@@ -110,8 +119,8 @@ export default function TrainingProgress({ published = {} }: { published?: Parti
       </div>
       {current.status === "failed" && <p role="alert" className="text-sm text-destructive">Evaluation failed. {current.warnings.join(" ")}</p>}
       {current.status === "budget_limited" && <p role="status" className="text-sm text-amber-500">Partial evaluation: compute budget reached.</p>}
-      <HistoryChart runs={comparable} metric={metric} selected={current.release_id} select={setSelected} />
-      {comparable.length < runs.length && <p className="text-xs text-muted-foreground">Incompatible evaluation versions excluded.</p>}
+      <HistoryChart runs={runs} metric={metric} selected={current.release_id} select={setSelected} />
+
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <caption className="pb-3 text-left text-xs text-muted-foreground">{metric === "difference" ? `Change vs #${current.reference.iteration}` : "Win rate"} by opponent and stack · BB/100 · 95% intervals</caption>

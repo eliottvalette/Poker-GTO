@@ -273,7 +273,19 @@ def publish_pending(storage: SupabaseStorage, track: str, data_dir: Path) -> dic
         directory = selection['directory']
         if not re.fullmatch(r'iteration_[0-9]+', directory):
             raise ValueError('Invalid local export selection')
-        pointer = publish_bundle(storage, track, data_dir/'exports'/directory)
+        authorization = data_dir / 'publication-migration.json'
+        migration = None
+        if authorization.exists():
+            approval = json.loads(authorization.read_text())
+            manifest = json.loads((data_dir/'exports'/directory/f'average_{track}.json').read_text())
+            if (approval.get('track') != track or not approval.get('run_id')
+                    or approval['run_id'] != manifest.get('run_id')):
+                raise ValueError('Publication migration authorization does not match this training run')
+            migration = approval['shared_release_id']
+        pointer = publish_bundle(storage, track, data_dir/'exports'/directory,
+                                 migrate_shared_release=migration)
+        if authorization.exists():
+            authorization.rename(data_dir / 'publication-migration-completed.json')
         prune_remote(storage, track, pointer)
         print(f'[{track}] published iteration {pointer["iteration"]}, release {pointer["release_id"]}', flush=True)
         return pointer

@@ -100,7 +100,7 @@ def export_average_policy(checkpoint: str | Path, model_path: str | Path, manife
         if not np.isfinite(actual).all() or not np.allclose(actual, expected, rtol=1e-5, atol=1e-6):
             raise ValueError(f"ONNX average-policy parity failed: expected={expected.tolist()}, actual={actual.tolist()}")
         errors.append(float(np.abs(actual - expected).max()))
-    manifest = {"version": EXPORT_VERSION, "action_schema_version": ACTION_SCHEMA_VERSION, "feature_schema_version": policy.model.feature_version,
+    manifest = {"version": EXPORT_VERSION, "run_id": policy.run_id, "layout": "shared_per_player_count", "action_schema_version": ACTION_SCHEMA_VERSION, "feature_schema_version": policy.model.feature_version,
                 "suit_normalization": "private_order_minimum" if policy.model.feature_version >= 3 else "first_observable_occurrence", "seat_normalization": "hero_then_clockwise_positions", "traversal_mode": policy.traversal_mode, "state_version": STATE_VERSION, "architecture": model_architecture(policy.model.feature_version),
                 "model_sha256": hashlib.sha256(model_bytes).hexdigest(), "objective": policy.objective,
                 "iteration": policy.iteration, "supported_player_counts": list(policy.supported_player_counts),
@@ -143,7 +143,7 @@ def export_street_policy(policy, checkpoint, model_path: Path, manifest_path: Pa
                              "action_schema": manifest["action_schema_version"], "model_hash": manifest["model_sha256"],
                              "model_file": f"{name}.onnx", "manifest": manifest,
                              "coverage": policy.specialist_metadata[street]}
-        catalog = {"version": 5, "layout": "independent_streets_v1", "iteration": policy.iteration,
+        catalog = {"version": 5, "run_id": policy.run_id, "layout": "independent_streets_v1", "iteration": policy.iteration,
                    "supported_player_counts": [count], "routes": routes}
         for route in routes.values():
             atomic_bytes(manifest_path.parent/route["model_file"], (staging/route["model_file"]).read_bytes())

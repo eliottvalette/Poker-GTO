@@ -96,7 +96,8 @@ class TrainingRunner:
         self.samplers = {}
         self.metrics: list[dict] = []
         self.runtime_storage: RuntimeStorage | None = None
-        self.metadata = {**source_metadata(), "network_fit": "fresh_from_reservoir_each_iteration",
+        import uuid
+        self.metadata = {"run_id": uuid.uuid4().hex, **source_metadata(), "network_fit": "fresh_from_reservoir_each_iteration",
                          "device": "cpu", "utility_units": "initial_big_blind_chips"}
         if 'fit_schedule' in self.config:
             self.metadata['network_fit'] = dict(self.config['fit_schedule'])
@@ -415,7 +416,7 @@ class TrainingRunner:
             descriptor, temporary = tempfile.mkstemp(dir=directory, suffix=".pt")
             os.close(descriptor)
             try:
-                solver.export_average(temporary)
+                solver.export_average(temporary, run_id=self.metadata.get("run_id"))
                 atomic_bytes(path, Path(temporary).read_bytes())
             finally:
                 os.unlink(temporary)

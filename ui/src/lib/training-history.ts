@@ -2,6 +2,7 @@ import { policyStorageBase } from "./policy-catalog";
 
 export type Estimate = { n: number; mean: number | null; m2: number; se: number | null; interval: [number, number] | null };
 export type EvaluationRun = {
+  run_id?: string | null; architecture?: string;
   suite: string; release_id: string; model_sha256: string; iteration: number;
   evaluated_at: string; published_at: string; status: "complete" | "budget_limited" | "failed";
   is_reference: boolean; reference: { iteration: number; model_sha256: string; suite: string };
@@ -35,6 +36,8 @@ export function parseTrainingHistory(value: unknown, track: "hu" | "3max"): Trai
   const ids = new Set();
   for (const r of value.runs) {
     if (!object(r) || !hash(r.release_id) || ids.has(r.release_id) || !hash(r.model_sha256)
+        || (r.run_id !== undefined && r.run_id !== null && (typeof r.run_id !== "string" || !/^[a-f0-9]{32}$/.test(r.run_id)))
+        || (r.architecture !== undefined && !["shared_per_player_count", "independent_streets_v1"].includes(String(r.architecture)))
         || typeof r.suite !== "string" || !Number.isInteger(r.iteration) || Number(r.iteration) < 1
         || !date(r.evaluated_at) || !date(r.published_at) || !["complete", "budget_limited", "failed"].includes(String(r.status))
         || typeof r.is_reference !== "boolean" || !object(r.reference) || !hash(r.reference.model_sha256)
@@ -57,6 +60,20 @@ export function historyWindow(runs: EvaluationRun[], period: Period, now = Date.
   const span = ({ "24h": 1, "7d": 7, "30d": 30 }[period]) * 86400000;
   return runs.filter(r => Date.parse(r.evaluated_at) >= now - span && Date.parse(r.evaluated_at) <= now)
     .sort((a, b) => Date.parse(a.evaluated_at) - Date.parse(b.evaluated_at));
+}
+
+export type TrainingSeries = { id: string; label: string; runs: EvaluationRun[] };
+
+export function trainingSeries(runs: EvaluationRun[]): TrainingSeries[] {
+  const groups = new Map<string, TrainingSeries>();
+  for (const run of [...runs].sort((a, b) => Date.parse(a.evaluated_at) - Date.parse(b.evaluated_at))) {
+    const architecture = run.architecture ?? "unknown";
+    const id = JSON.stringify([run.run_id ?? "untracked", architecture, run.suite, run.reference.model_sha256]);
+    if (!groups.has(id)) groups.set(id, { id, runs: [], label: !run.run_id ? "Untracked history"
+      : architecture === "independent_streets_v1" ? "Street specialists" : "Shared model" });
+    groups.get(id)!.runs.push(run);
+  }
+  return [...groups.values()].sort((a, b) => Date.parse(b.runs.at(-1)!.evaluated_at) - Date.parse(a.runs.at(-1)!.evaluated_at));
 }
 
 export function evaluationLabel(run: EvaluationRun): string {

@@ -2,7 +2,7 @@
 
 Implementation: COMPLETE. Bounded training: completed for all sixteen specialists and two seeds. Strategic validation: NOT ESTABLISHED; experimental weights are not accepted production policies.
 
-No OVH process, active checkpoint, published policy, Supabase object or deployment was changed. Existing unrelated local UI/audit changes are preserved. All experiment outputs live under `runs/street-network-migration/` and are unpublished.
+The initial implementation and bounded experiments did not modify OVH or publish experimental weights. Production activation is recorded below; experimental outputs under `runs/street-network-migration/` remain unpublished.
 
 ## Requirements and acceptance ledger
 
@@ -27,7 +27,7 @@ DONE below means implemented and exercised, including unsuccessful quality measu
 | Regression and reproduction | DONE | tests/test_street_networks.py, tests/street_browser_smoke.mjs, examples/street_network_demo.py | Full Python/browser suites and static builds; importable bounded example and browser fixture server |
 | Final model-quality reconciliation | DONE | STREET_NETWORK_EXPERIMENTS.md | Every model: implemented, bounded-trained, not strategically validated. Explicit failed preflop/turn results and next measured budget |
 
-Next executable engineering action: review the retained quality failures and launch an explicitly chosen new-run budget if desired. No production launch or model promotion is pending implicitly.
+Next executable engineering action: verify the first hourly production export and evaluation of each new run. Strategic quality remains unvalidated; inspect independent evaluation trends and per-street supervision before changing budgets.
 
 ## Architecture and authority
 
@@ -122,3 +122,15 @@ This localhost fixture server maps only local experimental policy bundles; it do
 The migration is implemented; poker strength is not established. Seed-101 HU A folds AA about 72.7%, while B folds AA about 5.5%; this discrepancy exposes an unstable current regret model despite a less extreme historical average. 3-max weak-hand over-aggression and low retained strategy ESS remain. Tiny opening datasets contain missing AA/KK/AKs supervision. Some postflop conditional EVs improve, others regress. The exact small river fixtures do not certify general equilibrium quality.
 
 All sixteen models are therefore experimental. The next substantial budget and acceptance checks are in STREET_NETWORK_EXPERIMENTS.md. No large training, automatic acceptance, production export, commit, push or deployment was performed.
+
+## Production activation and history lineage — 2026-10-11 UTC
+
+Status: production training ACTIVE; first hourly street publication/evaluation PENDING.
+
+- OVH `51.81.202.115` cleanly stopped both shared trainings at HU 1420 / 3-max 1706. Their directories were preserved as `/var/lib/gto/hu-shared-pre-streets` and `/var/lib/gto/3max-shared-pre-streets`.
+- Fresh schema-v5 checkpoints now occupy the canonical `/var/lib/gto/hu` and `/var/lib/gto/3max` paths, keeping subsequent deployments and systemd services compatible. No experimental or old trained weights were imported.
+- HU run `ead963eb06c04a2189d63bbb80693b12`: 1 worker. 3-max run `b0c9c206e123424cacc5c2642d839ed2`: 2 workers. Both use one PyTorch thread and the dedicated street configurations.
+- Tested working-tree source release: `f357efd8adcb6d5f27e71014b2235f983d88dbd1` (content-addressed deployment, based on commit `aad0e866c6f7dad7b482543770a29c63ca58649a`, explicitly dirty source metadata). No Git commit/push or Vercel deployment was performed.
+- The first live export occurs after approximately one hour plus the current iteration. Publication timers remain active. Each run has a one-time authorization bound to its exact run ID and the currently published shared release. Cold B specialists cannot be exported. The old published policies remain available until validated export succeeds.
+- Run IDs survive checkpoint resume, extracted/live exports and hourly reports. UI curves separate run ID, architecture, evaluation suite and pinned reference; legacy history is retained as untracked history, never backdated or reclassified as specialist training. UI changes require the normal Vercel delivery after pushing.
+- `initialize_street_run` rejects existing directories; `publish_pending` rejects migration authorization for a different run. Completion receipts preserve the migration provenance. The publisher still rejects old shared writers after switching to street models.

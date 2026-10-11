@@ -228,8 +228,10 @@ def _checkpoint_average_payload(source: Path, track_name: str) -> dict:
         model.load_state_dict(track["average_weights"], strict=True)
         if not bool(model.trained.all()):
             raise ValueError("Cannot export cold street specialists")
-        return street_average_payload(track["average_weights"], iteration, count,
+        payload = street_average_payload(track["average_weights"], iteration, count,
                                       track["traversal_mode"], track["specialist_states"]["strategy"])
+        payload["run_id"] = raw["metadata"].get("run_id")
+        return payload
     memory = track["strategy_memory"]
     if "allocation" in memory:
         if memory["allocation"] != "opening-protected-v1" or set(memory["strata"]) != {"opening", "other"}:
@@ -258,6 +260,7 @@ def _checkpoint_average_payload(source: Path, track_name: str) -> dict:
     payload = average_policy_payload(weights=track["average_weights"], iteration=iteration,
         objective="hand_chip_delta", player_count=count, traversal_mode=track["traversal_mode"],
         metrics=track["metrics"], supported_player_counts=[count])
+    payload["run_id"] = raw["metadata"].get("run_id")
     return payload
 
 

@@ -157,3 +157,12 @@ Require generated and retained coverage by context, independent train/test roots
 Supabase continues to retain bounded releases and compact hourly results; detailed per-street replay, optimizer and coverage data stay local. A later deployment must explicitly start the new schema in a new run directory and preserve the currently active shared checkpoint.
 
 Evidence index: `runs/street-network-migration/evidence-index.json` contains source and report hashes. Detailed local evidence occupies approximately 1.9 GB, including multiple immutable experimental checkpoints; it is ignored by Git and is not sent to Supabase. Final regression logs are retained alongside the reports.
+
+## Production switch validation — 2026-10-11 UTC
+
+- 157 browser tests passed, including separate curves for fresh runs, architecture changes and reference changes without deleting history.
+- 9 street integration tests, 1 fresh-run initialization test, 4 publication tests, 7 VPS tests and 7 hourly-evaluation tests passed. These cover persistent run identity, all eight B export routes, explicit schema transition and retry, and fresh checkpoint initialization without weights.
+- Production Next.js static build passed outside the sandbox. The sandbox build failed on Turbopack process/port permissions; no application build defect was observed.
+- Real OVH cycle 1: HU 512 traversals / 53,758 nodes / 27.76 s (generation 19.59 s, fit 4.52 s); 3-max 384 traversals / 121,510 nodes / 27.27 s (generation 20.10 s, fit 4.21 s). Each track performed 256 A optimizer updates and zero B updates, consistent with the independent schedules.
+- Early service memory: HU approximately 354 MiB, 3-max approximately 637 MiB; zero restarts. These are startup observations, not full-replay peak-RAM claims.
+- First hourly new-policy results are pending; these operational measurements do not demonstrate poker strength. Old checkpoints and old reference evaluation are retained.

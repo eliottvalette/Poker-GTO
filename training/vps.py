@@ -58,7 +58,7 @@ def export_live(runner: TrainingRunner, *, keep: int = 2) -> Path:
         try:
             for track, solver in runner.solvers.items():
                 average = temporary / f'average_{track}.pt'
-                solver.export_average(average)
+                solver.export_average(average, run_id=runner.metadata.get("run_id"))
                 export_average_policy(average, temporary / f'average_{track}.onnx',
                                       temporary / f'average_{track}.json', observe(runner.probes[track][0][1]))
             seal_bundle(temporary, metadata)
@@ -124,3 +124,20 @@ def prepare_vps_checkpoint(track: str, source: Path, output_dir: Path) -> Path:
     destination = output_dir / 'checkpoint.pt'
     runner.save_checkpoint(destination)
     return destination
+
+
+def initialize_street_run(track: str, output_dir: Path, *, workers: int = 1) -> dict:
+    """Initialize an explicitly new production run without importing experimental weights."""
+    from training.config import load_config
+    if track not in ('hu', '3max') or workers not in (1, 2):
+        raise ValueError('VPS track must be hu/3max with one or two workers')
+    if output_dir.exists():
+        raise FileExistsError(f'New street run requires an unused directory: {output_dir}')
+    config = load_config(Path(__file__).resolve().parents[1] / 'configs' / f'train_{track}_streets.json')
+    config.update(output_dir=str(output_dir.resolve()), workers=workers, trainer_threads=1)
+    torch.set_num_threads(1)
+    runner = TrainingRunner(config)
+    runner.enable_bounded_storage(RuntimeStorage())
+    runner.save_checkpoint(output_dir / 'checkpoint.pt')
+    return {'track': track, 'run_id': runner.metadata['run_id'], 'iteration': runner.iteration,
+            'architecture': 'independent_streets_v1', 'workers': workers}

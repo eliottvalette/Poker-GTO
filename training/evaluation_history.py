@@ -70,6 +70,13 @@ def validate_history(value: dict, track: str) -> dict:
                 or not isinstance(run.get('iteration'), int) or run['iteration'] < 1):
             raise ValueError('Invalid or duplicate evaluation record')
         date = datetime.fromisoformat(run['evaluated_at'])
+        run_id = run.get('run_id')
+        if run_id is not None and (not isinstance(run_id, str) or len(run_id) != 32
+                                   or any(c not in '0123456789abcdef' for c in run_id)):
+            raise ValueError('Invalid evaluation training run identifier')
+        if ('architecture' in run and run['architecture'] not in
+                ('shared_per_player_count', 'independent_streets_v1')):
+            raise ValueError('Invalid evaluation architecture')
         if date.tzinfo is None:
             raise ValueError('Evaluation timestamps must include a timezone')
         ids.add(run['release_id'])
@@ -183,7 +190,9 @@ def _evaluate(storage: SupabaseStorage, track: str, directory: Path, budget: Eva
             raise ValueError('Pinned reference checksum mismatch')
         baseline = OnnxPolicy(ref_model, ref_manifest, TRACKS[track])
     report, traces = evaluate_policy(candidate, baseline, TRACKS[track], budget)
-    report.update(release_id=pointer['release_id'], model_sha256=model_hash,
+    report.update(run_id=manifest.get('run_id'),
+                  architecture=manifest.get('layout', 'shared_per_player_count'),
+                  release_id=pointer['release_id'], model_sha256=model_hash,
                   iteration=pointer['iteration'], published_at=pointer['published_at'],
                   evaluated_at=datetime.now(timezone.utc).isoformat(), reference=reference,
                   is_reference=model_hash == reference['model_sha256'])
