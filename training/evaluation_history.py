@@ -144,32 +144,49 @@ def _evaluate(storage: SupabaseStorage, track: str, directory: Path, budget: Eva
             publish_history(storage, track, history, write=False)
         return None
     prefix = f'{track}/releases/{pointer["release_id"]}/average_{track}'
-    model = storage.get(prefix + '.onnx')
     manifest = json.loads(storage.get(prefix + '.json'))
     if manifest.get('iteration') != pointer['iteration']:
         raise ValueError('Evaluation publication iteration mismatch')
-    candidate = OnnxPolicy(model, manifest, TRACKS[track])
+    from ml.onnx_policy import StreetOnnxPolicy
+    specialized = manifest.get('version') == 5
+    if specialized:
+        base = prefix.rsplit('/', 1)[0]
+        candidate = StreetOnnxPolicy(manifest, TRACKS[track], lambda name: storage.get(f'{base}/{name}'))
+        model_hash = hashlib.sha256(encoded(manifest)).hexdigest()
+    else:
+        model = storage.get(prefix + '.onnx')
+        candidate = OnnxPolicy(model, manifest, TRACKS[track])
+        model_hash = manifest['model_sha256']
     reference_key = f'evaluation/{track}/{SUITE}/reference.json'
     reference = read_json(storage, reference_key)
+    ref_prefix = f'evaluation/{track}/{SUITE}/reference'
     if reference is None:
-        reference = {'release_id': pointer['release_id'], 'model_sha256': manifest['model_sha256'],
+        reference = {'release_id': pointer['release_id'], 'model_sha256': model_hash,
                      'iteration': pointer['iteration'], 'suite': SUITE}
-        ref_prefix = f'evaluation/{track}/{SUITE}/reference'
-        storage.ensure(ref_prefix + '.onnx', model)
+        if specialized:
+            for route in manifest['routes'].values():
+                storage.ensure(f'{ref_prefix}/{route["model_file"]}', storage.get(f'{base}/{route["model_file"]}'))
+        else:
+            storage.ensure(ref_prefix + '.onnx', model)
         storage.ensure(ref_prefix + '.manifest.json', encoded(manifest))
         storage.ensure(reference_key, encoded(reference))
     if reference.get('suite') != SUITE or not SHA.fullmatch(reference.get('model_sha256', '')):
         raise ValueError('Invalid pinned evaluation reference')
-    ref_prefix = f'evaluation/{track}/{SUITE}/reference'
-    ref_model = storage.get(ref_prefix + '.onnx')
-    if hashlib.sha256(ref_model).hexdigest() != reference['model_sha256']:
-        raise ValueError('Pinned reference checksum mismatch')
-    baseline = OnnxPolicy(ref_model, json.loads(storage.get(ref_prefix + '.manifest.json')), TRACKS[track])
+    ref_manifest = json.loads(storage.get(ref_prefix + '.manifest.json'))
+    if ref_manifest.get('version') == 5:
+        if hashlib.sha256(encoded(ref_manifest)).hexdigest() != reference['model_sha256']:
+            raise ValueError('Pinned street reference checksum mismatch')
+        baseline = StreetOnnxPolicy(ref_manifest, TRACKS[track], lambda name: storage.get(f'{ref_prefix}/{name}'))
+    else:
+        ref_model = storage.get(ref_prefix + '.onnx')
+        if hashlib.sha256(ref_model).hexdigest() != reference['model_sha256']:
+            raise ValueError('Pinned reference checksum mismatch')
+        baseline = OnnxPolicy(ref_model, ref_manifest, TRACKS[track])
     report, traces = evaluate_policy(candidate, baseline, TRACKS[track], budget)
-    report.update(release_id=pointer['release_id'], model_sha256=manifest['model_sha256'],
+    report.update(release_id=pointer['release_id'], model_sha256=model_hash,
                   iteration=pointer['iteration'], published_at=pointer['published_at'],
                   evaluated_at=datetime.now(timezone.utc).isoformat(), reference=reference,
-                  is_reference=manifest['model_sha256'] == reference['model_sha256'])
+                  is_reference=model_hash == reference['model_sha256'])
     source = Path(__file__).resolve().parents[1] / 'deployment-source.json'
     report['source_commit'] = json.loads(source.read_text())['metadata']['source_git_commit'] if source.exists() else None
     write_trace(directory / f'{pointer["release_id"]}.json.gz', {'report': report, 'groups': traces})

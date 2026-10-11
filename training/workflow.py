@@ -38,7 +38,7 @@ def digest(path: Path) -> str:
 def config_for(track: str) -> dict:
     if track not in TRACKS:
         raise ValueError(f"Unknown training track: {track}; expected {tuple(TRACKS)}")
-    return load_config(REPOSITORY / "configs" / f"train_{track}.json")
+    return load_config(REPOSITORY / "configs" / f"train_{track}_streets.json")
 
 
 def candidate_checkpoint(track: str) -> Path:
@@ -139,6 +139,8 @@ def train_track(track: str, seconds: float, *, resume_active: bool = False) -> d
             print(f"[{track}] execution settings: {change['before']} -> {change['after']}; "
                   "models, replay and RNG restored; change recorded in checkpoint metadata", flush=True)
         print(f"[{track}] checkpoint={checkpoint}; workers={config['workers']}; traversals/iteration={TRACKS[track] * config[track]['traversals_per_player']}", flush=True)
+        if "street_networks" in config and runner.runtime_storage is None:
+            runner.enable_bounded_storage()
         result = runner.run_for(seconds, checkpoint)
         print(f"[{track}] saved iteration {runner.iteration} at {checkpoint}", flush=True)
         return result

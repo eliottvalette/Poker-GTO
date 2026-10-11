@@ -17,14 +17,14 @@ async function predictionsFor(state:HandState, rows:Ranges[number]):Promise<Reco
   const result:Record<string,number[]>={};
   for(const row of rows) {
     const view=state.clone(); view.actor.cards=row.cards;
-    const observation=observe(view), key=JSON.stringify([model.manifest.model_sha256,observation]);
+    const observation=observe(view), key=JSON.stringify([model.manifest.iteration,model.manifest.model_sha256,observation]);
     let probabilities=predictionCache.get(key);
     if(!probabilities) {
       const output=await model.query(observation); probabilities=ACTION_IDS.map(a=>output[a]);
       if(predictionCache.size>=20000) predictionCache.delete(predictionCache.keys().next().value!);
       predictionCache.set(key,probabilities);
     }
-    result[row.cards.join()]=probabilities;
+    result[[...row.cards].sort((a,b)=>a-b).join()]=probabilities;
   }
   return result;
 }

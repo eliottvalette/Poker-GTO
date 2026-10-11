@@ -22,6 +22,19 @@ def opening_hand_class(obs: Observation | NeuralObservation) -> str | None:
     return ranks[high] + ranks[low] + ("" if high == low else "s" if obs.cards[0] % 4 == obs.cards[1] % 4 else "o")
 
 
+def decision_context(obs: Observation | NeuralObservation) -> str:
+    values = dict(zip(NEURAL_NUMERIC_NAMES, obs.numeric))
+    holding = opening_hand_class(obs)
+    raises = sum(round(row[4] * 6) == EVENTS.index("RAISE")
+                 for row in obs.history if round(row[1] * 3) == obs.street)
+    context = ("first_open" if raises == 0 and holding is not None else
+               "facing_open" if obs.street == 0 and raises == 1 else
+               "facing_3bet" if obs.street == 0 and raises == 2 else
+               "facing_4bet_or_more" if obs.street == 0 and raises >= 3 else
+               "facing_bet" if values["to_call"] > 0 else "checked_to")
+    return context
+
+
 class Coverage:
     def __init__(self) -> None:
         self.counts: dict[str, Counter] = {}
@@ -53,6 +66,11 @@ class Coverage:
         minimum = min(effective)
         bin_name = "shallow" if minimum < 8 else "medium" if minimum < 20 else "deep"
         stack_values = [values[f"initial_{i}"] for i in range(round(values["player_count"] * 3))]
+        if obs.street:
+            board = [c for c in obs.cards[2:] if c != 52]
+            pair = len({c // 4 for c in board}) != len(board)
+            max_suit = max(Counter(c % 4 for c in board).values())
+            self.counts.setdefault(f"{source}_board_texture", Counter())[f"{obs.street}:paired={pair}:max_suit={max_suit}"] += 1
         labels = {"source": source, "players": round(values["player_count"] * 3), "street": obs.street,
                   "position": POSITIONS[round(values["hero_position"] * 2)], "blind_level": int(values["blind_level_index"]),
                   "effective_stack_bin": bin_name, "stack_ratio_class": "asymmetric" if max(stack_values) / min(stack_values) >= 4 else "balanced",
@@ -60,6 +78,13 @@ class Coverage:
                   "pot_current_bb": round(pot * 25, 1), "spr": round(minimum / (pot * 25), 1),
                   "call_pot": round(values["to_call"] / pot, 2), "legal_actions": sum(obs.legal_mask),
                   "history_length": len(obs.history)}
+        context = decision_context(obs)
+        self.counts.setdefault(f"{source}_decision_context", Counter())[f"{obs.street}:{context}"] += 1
+        self.counts.setdefault(f"{source}_street_stack", Counter())[f"{obs.street}:{bin_name}"] += 1
+        if minimum < 8:
+            self.counts.setdefault(f"{source}_decision_context", Counter())[f"{obs.street}:short_stack"] += 1
+        if values["to_call"] >= values["stack_0"] and values["to_call"] > 0:
+            self.counts.setdefault(f"{source}_decision_context", Counter())[f"{obs.street}:jam_fold"] += 1
         for name, value in labels.items():
             self.counts.setdefault(name, Counter())[str(value)] += 1
         if holding is not None:

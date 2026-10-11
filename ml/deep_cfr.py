@@ -22,6 +22,7 @@ from features.neural import NEURAL_NUMERIC_NAMES as NUMERIC_NAMES
 from ml.memory import DEFAULT_BYTE_BUDGET, TRAVERSAL_MODES, ReservoirMemory, TrainingSample, sample_bytes
 from ml.model import MODEL_ARCHITECTURE, AdvantageNetwork, AveragePolicyNetwork, encode_batch, model_architecture
 from ml.train import fit
+from ml.model import StreetNetworks, STREET_LAYOUT, STREETS
 
 _TraversalResult = TypeVar("_TraversalResult")
 
@@ -41,8 +42,12 @@ class ModelSnapshot:
     advantage_weights: dict[str, torch.Tensor] | None
     uniform_initial: bool
     player_count: int
+    layout: str = "shared_per_player_count"
+    collector_enumerate_from_street: int | None = None
 
     def validate(self) -> None:
+        if self.layout not in ("shared_per_player_count", STREET_LAYOUT):
+            raise ValueError(f"Unsupported snapshot layout: {self.layout}")
         if self.objective != "hand_chip_delta":
             raise ValueError(f"Only per-hand chip-delta learning is supported, received snapshot objective={self.objective}")
         if self.uniform_initial != (self.version == 0):
@@ -101,17 +106,23 @@ class FrozenStrategy:
         self.snapshot = snapshot
         self.model = None
         if not snapshot.uniform_initial:
-            self.model = AdvantageNetwork()
+            self.model = StreetNetworks("advantage") if snapshot.layout == STREET_LAYOUT else AdvantageNetwork()
             self.model.load_state_dict(snapshot.advantage_weights, strict=True)
             self.model.eval()
 
     def __call__(self, obs: Observation | NeuralObservation) -> tuple[float, ...]:
+        count = round(obs.numeric[NUMERIC_NAMES.index("player_count")] * 3)
+        if count != self.snapshot.player_count:
+            raise ValueError(f"Frozen strategy track mismatch: expected {self.snapshot.player_count}, received {count}")
         if obs.objective != self.snapshot.objective:
             raise ValueError(f"Snapshot objective {self.snapshot.objective} != root {obs.objective}")
         if self.snapshot.uniform_initial:
             return regret_matching([0.0] * len(ACTION_IDS), obs.legal_mask)
+        if obs.street not in range(4):
+            raise ValueError(f"Invalid public street: {obs.street}")
+        model = self.model.specialists[STREETS[obs.street]] if isinstance(self.model, StreetNetworks) else self.model
         with torch.no_grad():
-            values = tuple(self.model(encode_batch([obs]))[0].tolist())
+            values = tuple(model(encode_batch([obs]))[0].tolist())
         return regret_matching(values, obs.legal_mask)
 
 
@@ -138,6 +149,19 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask,
     if frozen_strategy is not None and frozen_strategy.snapshot is not snapshot:
         raise ValueError("Frozen inference strategy does not belong to the requested snapshot")
     strategy = FrozenStrategy(snapshot) if frozen_strategy is None else frozen_strategy
+    import hashlib
+    import json
+    from features.cards import canonical_suits
+    seats = list(root.players)
+    offset = seats.index(root.button)
+    seats = seats[offset:] + seats[:offset]
+    identity = {seat: index for index, seat in enumerate(seats)}
+    public_root = {"board": canonical_suits(tuple(root.board))[0], "street": root.street,
+                   "history": [(identity[e.player_id], e.action, e.amount_to) for e in root.history],
+                   "stacks": [root.initial_stacks[p] for p in seats],
+                   "blinds": (root.blinds.small, root.blinds.big)}
+    root_group = hashlib.sha256(json.dumps(public_root, sort_keys=True).encode()).hexdigest()
+    trajectory_id = f"{snapshot.player_count}:{snapshot.version}:{task.task_id}:{task.seed}"
     advantages, strategies = [], []
     generated_bytes = 0
     from training.metrics import Coverage
@@ -152,7 +176,7 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask,
         def append(obs, target, weight):
             nonlocal generated_bytes
             sample = TrainingSample(snapshot.version + 1, obs.hero, obs, target,
-                                    weight, kind, snapshot.version, task.traversal_mode)
+                                    weight, kind, snapshot.version, task.traversal_mode, trajectory_id, root_group)
             sample.validate()
             exact_cards = tuple(obs.cards[:2]) if isinstance(obs, Observation) else raw_cards.get(id(obs))
             coverage.record(sample.state, kind, exact_cards=exact_cards, iteration=sample.iteration, weight=sample.weight)
@@ -199,7 +223,9 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask,
             continue
         walk = Traversal(strategy, rng, task.max_nodes, task.max_depth, observer=recording_observer)
         checked_traversal(f"strategy_enumerate_{opponent}", lambda: walk.average_partial(
-            task.root, task.player, opponent, lambda obs, target, weight: strategy_sink(obs, target, weight / 2)))
+            task.root, task.player, opponent, lambda obs, target, weight: strategy_sink(obs, target, weight / 2),
+            **({"enumerate_from_street": snapshot.collector_enumerate_from_street}
+               if snapshot.collector_enumerate_from_street is not None else {})))
         nodes += walk.nodes
         max_depth_seen = max(max_depth_seen, walk.max_depth_seen)
     return finish(GeneratedSamples(task.task_id, snapshot.version, advantages, strategies, nodes, value,
@@ -209,7 +235,7 @@ def generate_samples(snapshot: ModelSnapshot, task: TraversalTask,
 class DeepCFRSolver:
     def __init__(self, players: tuple[int, ...], objective: str = "hand_chip_delta", seed: int = 0,
                  advantage_capacity: int | None = None, strategy_capacity: int = 10000,
-                 memory_byte_budget: int = DEFAULT_BYTE_BUDGET, advantage_byte_budget: int | None = None, replay_opening_fraction: float | None = None):
+                 memory_byte_budget: int = DEFAULT_BYTE_BUDGET, advantage_byte_budget: int | None = None, replay_opening_fraction: float | None = None, street_networks: dict | None = None):
         if len(players) not in (2, 3) or len(set(players)) != len(players):
             raise ValueError(f"Expected distinct 2/3 player IDs: {players}")
         if objective != "hand_chip_delta":
@@ -235,6 +261,27 @@ class DeepCFRSolver:
         self.average_model: AveragePolicyNetwork | None = None
         self.metrics: list[dict] = []
         self.traversal_mode: str | None = None
+        self.street_config = copy.deepcopy(street_networks)
+        self.specialist_states = {"advantage": {}, "strategy": {}}
+        if street_networks is not None:
+            from ml.street_training import validate_street_config
+            from ml.street_replay import StreetReplay
+            validate_street_config(street_networks)
+            if replay_opening_fraction is not None:
+                raise ValueError("Street replay requires its explicit allocation, not legacy opening protection")
+            for kind, capacity, budget in (("advantage", advantage_capacity, advantage_byte_budget),
+                                           ("strategy", strategy_capacity, memory_byte_budget)):
+                entries = street_networks[kind]
+                if sum(v["capacity"] for v in entries.values()) != capacity or sum(v["byte_budget"] for v in entries.values()) != budget:
+                    raise ValueError(f"Street {kind} allocations must match track total capacity and byte budget")
+                memory = StreetReplay({k: v["capacity"] for k,v in entries.items()},
+                                      {k: v["byte_budget"] for k,v in entries.items()}, kind,
+                                      seed + (10 if kind == "strategy" else 0))
+                setattr(self, "advantage_memory" if kind == "advantage" else "strategy_memory", memory)
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(seed)
+                self.advantage_model = StreetNetworks("advantage").eval()
+                self.average_model = StreetNetworks("strategy").eval()
 
     def fork(self) -> DeepCFRSolver:
         """Stage an iteration without duplicating read-only models or replay."""
@@ -245,9 +292,11 @@ class DeepCFRSolver:
         return result
 
     def snapshot(self) -> ModelSnapshot:
-        weights = None if self.advantage_model is None else {
+        weights = None if self.advantage_model is None or self.version == 0 else {
             k: v.detach().cpu().clone() for k, v in self.advantage_model.state_dict().items()}
-        return ModelSnapshot(self.version, self.objective, weights, self.version == 0, len(self.players))
+        return ModelSnapshot(self.version, self.objective, weights, self.version == 0, len(self.players),
+                             STREET_LAYOUT if self.street_config else "shared_per_player_count",
+                             self.street_config.get("collector_enumerate_from_street") if self.street_config else None)
 
     def traversal_tasks(self, root_factory: Callable[[random.Random], GameState],
                         traversals_per_player: int, max_nodes: int, max_depth: int,
@@ -325,6 +374,7 @@ class DeepCFRSolver:
                    "values": [r.value for r in results], "traversal_mode": traversal_mode,
                    "epsilon": epsilon if traversal_mode == "outcome_sampling" else None,
                    "traversal_diagnostics": [r.diagnostics for r in results]}
+        metrics["collector_enumerate_from_street"] = snapshot.collector_enumerate_from_street
         metrics["max_depth_seen"] = max(r.max_depth_seen for r in results)
         advantage_samples = advantage_memory.samples
         strategy_samples = strategy_memory.samples
@@ -333,32 +383,56 @@ class DeepCFRSolver:
         cache_encoding = schedule.get('cache_encoding', False)
         metrics['fit_initialization'] = {}
         metrics['fit_component_seconds'] = {}
-        with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(self.seed + (self.version + 1) * 101)
-            warm_a = schedule.get('advantage_initialization', 'fresh') == 'warm' and self.advantage_model is not None
-            advantage = copy.deepcopy(self.advantage_model) if warm_a else AdvantageNetwork()
-            component_started = time.perf_counter()
-            metrics["advantage"] = fit(advantage, advantage_samples, advantage_epochs, batch_size,
-                                       self.seed, learning_rate=learning_rate,
-                                       max_updates=schedule.get('advantage_max_updates'), cache_encoding=cache_encoding)
-            metrics['fit_component_seconds']['advantage'] = time.perf_counter() - component_started
-            metrics['fit_initialization']['advantage'] = 'warm_weights_fresh_optimizer' if warm_a else 'fresh'
-            average = self.average_model
-            if fit_average:
-                torch.manual_seed(self.seed + (self.version + 1) * 101 + 10)
-                warm_b = schedule.get('average_initialization', 'fresh') == 'warm' and average is not None
-                average = copy.deepcopy(average) if warm_b else AveragePolicyNetwork()
+        specialist_states = self.specialist_states
+        if self.street_config is not None:
+            from ml.street_training import fit_specialists
+            advantage, a_states, a_metrics = fit_specialists(
+                self.advantage_model, advantage_memory, self.specialist_states["advantage"],
+                self.street_config["advantage"], version=self.version + 1, seed=self.seed,
+                batch_size=batch_size, learning_rate=learning_rate, cache_encoding=cache_encoding)
+            average, b_states, b_metrics = fit_specialists(
+                self.average_model, strategy_memory, self.specialist_states["strategy"],
+                self.street_config["strategy"], version=self.version + 1, seed=self.seed,
+                batch_size=batch_size, learning_rate=learning_rate, cache_encoding=cache_encoding)
+            specialist_states = {"advantage": a_states, "strategy": b_states}
+            metrics["specialists"] = {"advantage": a_metrics, "strategy": b_metrics}
+            for kind, rows in (("advantage", a_metrics), ("average_policy", b_metrics)):
+                metrics[kind] = {"updates_completed": sum(r.get("updates_completed", 0) for r in rows.values()),
+                                 "skipped": all(r.get("skipped", False) for r in rows.values())}
+                metrics["fit_component_seconds"][kind] = sum(r.get("seconds", 0) for r in rows.values())
+                metrics["fit_initialization"][kind] = "persistent_weights_and_adam"
+            metrics["average_model_iteration"] = max(s["model_version"] for s in b_states.values())
+        else:
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(self.seed + (self.version + 1) * 101)
+                warm_a = schedule.get('advantage_initialization', 'fresh') == 'warm' and self.advantage_model is not None
+                advantage = copy.deepcopy(self.advantage_model) if warm_a else AdvantageNetwork()
                 component_started = time.perf_counter()
-                metrics["average_policy"] = fit(average, strategy_samples, average_epochs, batch_size, self.seed + 10,
-                    learning_rate=learning_rate, max_updates=schedule.get('average_max_updates'), cache_encoding=cache_encoding)
-                metrics['fit_component_seconds']['average_policy'] = time.perf_counter() - component_started
-                metrics['fit_initialization']['average_policy'] = 'warm_weights_fresh_optimizer' if warm_b else 'fresh'
-            else:
-                metrics['average_policy'] = {'skipped': True}
-                metrics['fit_component_seconds']['average_policy'] = 0.0
-                metrics['fit_initialization']['average_policy'] = 'unchanged'
-        metrics['average_model_iteration'] = self.version + 1 if fit_average else self.metrics[-1].get('average_model_iteration', self.version)
-        metrics["fit_epochs"] = {"advantage": advantage_epochs, "average_policy": average_epochs if fit_average else 0}
+                metrics["advantage"] = fit(advantage, advantage_samples, advantage_epochs, batch_size,
+                                           self.seed, learning_rate=learning_rate,
+                                           max_updates=schedule.get('advantage_max_updates'), cache_encoding=cache_encoding)
+                metrics['fit_component_seconds']['advantage'] = time.perf_counter() - component_started
+                metrics['fit_initialization']['advantage'] = 'warm_weights_fresh_optimizer' if warm_a else 'fresh'
+                average = self.average_model
+                if fit_average:
+                    torch.manual_seed(self.seed + (self.version + 1) * 101 + 10)
+                    warm_b = schedule.get('average_initialization', 'fresh') == 'warm' and average is not None
+                    average = copy.deepcopy(average) if warm_b else AveragePolicyNetwork()
+                    component_started = time.perf_counter()
+                    metrics["average_policy"] = fit(average, strategy_samples, average_epochs, batch_size, self.seed + 10,
+                        learning_rate=learning_rate, max_updates=schedule.get('average_max_updates'), cache_encoding=cache_encoding)
+                    metrics['fit_component_seconds']['average_policy'] = time.perf_counter() - component_started
+                    metrics['fit_initialization']['average_policy'] = 'warm_weights_fresh_optimizer' if warm_b else 'fresh'
+                else:
+                    metrics['average_policy'] = {'skipped': True}
+                    metrics['fit_component_seconds']['average_policy'] = 0.0
+                    metrics['fit_initialization']['average_policy'] = 'unchanged'
+            metrics['average_model_iteration'] = self.version + 1 if fit_average else self.metrics[-1].get('average_model_iteration', self.version)
+        if self.street_config is None:
+            metrics["fit_epochs"] = {"advantage": advantage_epochs, "average_policy": average_epochs if fit_average else 0}
+        else:
+            metrics["fit_update_caps"] = {kind: {street: settings["max_updates"] for street, settings in self.street_config[kind].items()}
+                                          for kind in ("advantage", "strategy")}
         metrics["fit_seconds"] = time.perf_counter() - fit_started
         metrics["root_seconds"] = root_seconds
         metrics["generation_seconds"] = generation_seconds
@@ -397,6 +471,7 @@ class DeepCFRSolver:
             metrics["policy_change_l1_on_replay_probes"] = float(difference)
         else:
             metrics["policy_change_l1_on_replay_probes"] = None
+        self.specialist_states = specialist_states
         self.advantage_memory, self.strategy_memory = advantage_memory, strategy_memory
         self.advantage_model, self.average_model = advantage, average
         self.rng.setstate(rng.getstate())
@@ -408,6 +483,13 @@ class DeepCFRSolver:
     def export_average(self, path: str | Path) -> None:
         if self.average_model is None:
             raise ValueError("Average-policy network is unavailable before successful training")
+        if self.street_config is not None:
+            if not bool(self.average_model.trained.all()):
+                missing = [s for i,s in enumerate(STREETS) if not self.average_model.trained[i]]
+                raise ValueError(f"Cannot export cold Average specialists: {missing}")
+            torch.save(street_average_payload(self.average_model.state_dict(), self.version,
+                       len(self.players), self.traversal_mode, self.specialist_states["strategy"]), path)
+            return
         torch.save(average_policy_payload(
             weights=self.average_model.state_dict(), iteration=self.version,
             objective=self.objective, player_count=len(self.players),
@@ -438,11 +520,23 @@ def average_policy_payload(*, weights: dict, iteration: int, objective: str,
                     "weights": weights}
 
 
+def street_average_payload(weights: dict, iteration: int, player_count: int,
+                           traversal_mode: str, states: dict) -> dict:
+    return {"version": 6, "layout": STREET_LAYOUT, "feature_schema_version": FEATURE_SCHEMA_VERSION,
+            "state_version": STATE_VERSION, "architecture": MODEL_ARCHITECTURE,
+            "actions": list(ACTION_IDS), "numeric_names": list(NUMERIC_NAMES),
+            "objective": "hand_chip_delta", "iteration": iteration,
+            "training_metadata": {"traversal_mode": traversal_mode},
+            "supported_player_counts": [player_count], "weights": weights,
+            "specialists": {name: {key: value for key,value in state.items() if key != "optimizer"}
+                            for name,state in states.items()}}
+
+
 class NeuralAveragePolicy:
     def __init__(self, path: str | Path):
         raw = torch.load(path, map_location="cpu", weights_only=True)
         feature_version = raw.get("feature_schema_version")
-        if (raw.get("version") != 5 or feature_version not in SUPPORTED_FEATURE_VERSIONS or raw.get("state_version") != STATE_VERSION
+        if (raw.get("version") not in (5, 6) or feature_version not in SUPPORTED_FEATURE_VERSIONS or raw.get("state_version") != STATE_VERSION
                 or raw.get("architecture") != model_architecture(feature_version) or raw.get("actions") != list(ACTION_IDS)
                 or raw.get("numeric_names") != list(numeric_names(feature_version)) or raw.get("iteration", 0) < 1
                 or raw.get("objective") != "hand_chip_delta"
@@ -454,8 +548,16 @@ class NeuralAveragePolicy:
         self.iteration = raw["iteration"]
         self.traversal_mode = raw["training_metadata"]["traversal_mode"]
         self.supported_player_counts = tuple(raw["supported_player_counts"])
-        self.model = AveragePolicyNetwork(feature_version)
+        self.specialist_metadata = raw.get("specialists")
+        if raw["version"] == 6:
+            if raw.get("layout") != STREET_LAYOUT or set(raw.get("specialists", {})) != set(STREETS):
+                raise ValueError("Invalid street policy layout/metadata")
+            self.model = StreetNetworks("strategy", feature_version)
+        else:
+            self.model = AveragePolicyNetwork(feature_version)
         self.model.load_state_dict(raw["weights"], strict=True)
+        if raw["version"] == 6 and not bool(self.model.trained.all()):
+            raise ValueError("Published street policy contains untrained specialists")
         self.model.eval()
 
     def query(self, obs: Observation) -> tuple[float, ...]:

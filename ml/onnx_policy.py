@@ -49,3 +49,50 @@ class OnnxPolicy:
         values = tuple(float(v) / total for v in output[0])
         validate_strategy(values, observation.legal_mask)
         return values
+
+
+def validate_street_catalog(manifest: dict, count: int) -> None:
+    from ml.model import STREETS
+    import re
+    if (manifest.get('version') != 5 or manifest.get('layout') != 'independent_streets_v1'
+            or manifest.get('supported_player_counts') != [count]
+            or set(manifest.get('routes', {})) != set(STREETS)
+            or type(manifest.get('iteration')) is not int or manifest['iteration'] < 1):
+        raise ValueError('Invalid street ONNX catalog')
+    sources, files = set(), set()
+    for street, route in manifest['routes'].items():
+        inner = route.get('manifest', {})
+        if (route.get('street') != street or route.get('player_count') != count
+                or route.get('model_kind') != 'AVERAGE'
+                or type(route.get('model_version')) is not int
+                or not 1 <= route['model_version'] <= manifest['iteration']
+                or not re.fullmatch(r'[a-f0-9]{64}', route.get('checkpoint_source', ''))
+                or not re.fullmatch(r'[a-z0-9_]+\.onnx', route.get('model_file', ''))
+                or route.get('model_hash') != inner.get('model_sha256')
+                or inner.get('supported_player_counts') != [count]
+                or inner.get('iteration') != manifest['iteration']
+                or route.get('feature_schema') != inner.get('feature_schema_version')
+                or route.get('action_schema') != inner.get('action_schema_version')):
+            raise ValueError(f'Invalid street ONNX route: {street}')
+        sources.add(route['checkpoint_source'])
+        files.add(route['model_file'])
+    if len(sources) != 1 or len(files) != 4:
+        raise ValueError('Street routes must reference one checkpoint and four distinct files')
+
+
+class StreetOnnxPolicy:
+    """Lazy CPU sessions, identical public routing to the browser."""
+    def __init__(self, manifest: dict, count: int, load_bytes):
+        validate_street_catalog(manifest, count)
+        self.manifest, self.count, self.load_bytes = manifest, count, load_bytes
+        self.sessions = {}
+
+    def probabilities(self, observation: Observation) -> tuple[float, ...]:
+        from ml.model import STREETS
+        if observation.street not in range(4):
+            raise ValueError('Invalid public street')
+        street = STREETS[observation.street]
+        if street not in self.sessions:
+            route = self.manifest['routes'][street]
+            self.sessions[street] = OnnxPolicy(self.load_bytes(route['model_file']), route['manifest'], self.count)
+        return self.sessions[street].probabilities(observation)

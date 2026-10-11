@@ -29,6 +29,12 @@ CONTRACT = {"checkpoint": CHECKPOINT_VERSION, "advantage_layout": "shared_per_pl
             "external_strategy_collectors": {"hu": "opponent_nodes", "3max": "partial_enumeration"}}
 
 
+STREET_CONTRACT = {**CONTRACT, "checkpoint": 5, "advantage_layout": "independent_streets_v1",
+                   "street_replay": 1, "optimizer_persistence": 1}
+
+def checkpoint_contract(config: dict) -> dict:
+    return STREET_CONTRACT if "street_networks" in config else CONTRACT
+
 def atomic_bytes(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
@@ -87,7 +93,7 @@ def read_checkpoint(path: Path) -> dict:
             if set(envelope) != {"sha256", "payload"} or hashlib.sha256(envelope["payload"]).hexdigest() != envelope["sha256"]:
                 raise ValueError("Checksum mismatch")
             raw = torch.load(io.BytesIO(envelope["payload"]), map_location="cpu", weights_only=True)
-        if raw.get("contract") != CONTRACT:
+        if raw.get("contract") not in (CONTRACT, STREET_CONTRACT) or raw.get("contract") != checkpoint_contract(raw.get("config", {})):
             raise ValueError(f"Incompatible checkpoint schema: {raw.get('contract')}")
         return raw
     except Exception as error:
@@ -96,6 +102,9 @@ def read_checkpoint(path: Path) -> dict:
 
 def pack_memory(memory: ReservoirMemory) -> dict:
     from ml.stratified_memory import ProtectedReplay
+    from ml.street_replay import StreetReplay
+    if isinstance(memory, StreetReplay):
+        return {"allocation": "street-replay-v1", "strata": {name: pack_memory(m) for name,m in memory.memories.items()}}
     if isinstance(memory, ProtectedReplay):
         return {"allocation": "opening-protected-v1", "strata": {
             name: pack_memory(m) for name, m in memory.memories.items()}}
@@ -123,6 +132,17 @@ def _pack_sample(sample: TrainingSample) -> dict:
 
 
 def unpack_memory(raw: dict) -> ReservoirMemory:
+    if raw.get("allocation") == "street-replay-v1":
+        from ml.street_replay import StreetReplay
+        from ml.model import STREETS
+        if set(raw["strata"]) != set(STREETS):
+            raise ValueError("Street checkpoint is missing replay partitions")
+        result = StreetReplay.__new__(StreetReplay)
+        result.memories = {name: unpack_memory(m) for name,m in raw["strata"].items()}
+        for index, name in enumerate(STREETS):
+            if any(s.state.street != index or not s.root_group or not s.trajectory_id for s in result.memories[name].samples):
+                raise ValueError(f"Invalid provenance/street in {name} replay")
+        return result
     if "allocation" in raw:
         from ml.stratified_memory import ProtectedReplay
         if raw["allocation"] != "opening-protected-v1" or set(raw["strata"]) != {"opening", "other"}:
@@ -201,6 +221,15 @@ def _checkpoint_average_payload(source: Path, track_name: str) -> dict:
             or track["traversal_mode"] != config["traversal_mode"]
             or track["average_weights"] is None):
         raise ValueError(f"Inconsistent policy version/metrics/mode/weights at {source}")
+    if raw["contract"] == STREET_CONTRACT:
+        from ml.deep_cfr import street_average_payload
+        from ml.model import StreetNetworks
+        model = StreetNetworks("strategy")
+        model.load_state_dict(track["average_weights"], strict=True)
+        if not bool(model.trained.all()):
+            raise ValueError("Cannot export cold street specialists")
+        return street_average_payload(track["average_weights"], iteration, count,
+                                      track["traversal_mode"], track["specialist_states"]["strategy"])
     memory = track["strategy_memory"]
     if "allocation" in memory:
         if memory["allocation"] != "opening-protected-v1" or set(memory["strata"]) != {"opening", "other"}:

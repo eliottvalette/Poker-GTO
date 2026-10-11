@@ -85,3 +85,48 @@ class AveragePolicyNetwork(nn.Module):
         result = tuple(value / total for value in values)
         validate_strategy(result, observation.legal_mask)
         return result
+
+
+STREETS = ("PREFLOP", "FLOP", "TURN", "RIVER")
+STREET_LAYOUT = "independent_streets_v1"
+
+
+class StreetNetworks(nn.Module):
+    """Independent encoders and heads, dispatched only by public street.
+
+    Cold Advantage heads return zero regrets. Cold Average heads return uniform
+    legal probabilities. Readiness is explicit persisted metadata, not inferred
+    from arbitrary random weights.
+    """
+
+    def __init__(self, kind: str, feature_version: int = FEATURE_SCHEMA_VERSION):
+        super().__init__()
+        if kind not in ("advantage", "strategy"):
+            raise ValueError(f"Invalid specialist kind: {kind}")
+        self.kind = kind
+        self.feature_version = feature_version
+        constructor = AdvantageNetwork if kind == "advantage" else AveragePolicyNetwork
+        self.specialists = nn.ModuleDict({street: constructor(feature_version) for street in STREETS})
+        self.register_buffer("trained", torch.zeros(4, dtype=torch.bool))
+        for model in self.specialists.values():
+            nn.init.zeros_(model.head[-1].weight)
+            nn.init.zeros_(model.head[-1].bias)
+
+    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        streets = batch["street"].reshape(-1)
+        if ((streets < 0) | (streets >= 4)).any():
+            raise ValueError("Street routing requires public street in [0, 3]")
+        output = torch.empty((len(streets), len(ACTION_IDS)), device=streets.device)
+        for index, name in enumerate(STREETS):
+            indices = (streets == index).nonzero(as_tuple=True)[0]
+            if len(indices):
+                part = {key: value.index_select(0, indices) for key, value in batch.items()}
+                output.index_copy_(0, indices, self.specialists[name](part))
+        return output
+
+    def probabilities(self, observation: Observation | NeuralObservation) -> tuple[float, ...]:
+        if self.kind != "strategy":
+            raise ValueError("Only Average specialists expose probabilities")
+        if observation.street not in range(4):
+            raise ValueError(f"Unsupported public street: {observation.street}")
+        return self.specialists[STREETS[observation.street]].probabilities(observation)

@@ -5,7 +5,7 @@ import math
 from collections.abc import Callable
 import torch
 from ml.memory import TrainingSample
-from ml.model import AdvantageNetwork, AveragePolicyNetwork, encode_batch
+from ml.model import AdvantageNetwork, AveragePolicyNetwork, StreetNetworks, encode_batch
 
 
 def _sample_weight(sample: TrainingSample) -> float:
@@ -42,9 +42,9 @@ def _loss_with_weights(model, samples: list[TrainingSample], normalized: list[fl
     if not torch.isfinite(weight).all() or (weight <= 0).any():
         raise ValueError("Loss weights overflowed or underflowed in float32")
     output = model(batch)
-    if isinstance(model, AdvantageNetwork):
+    if isinstance(model, AdvantageNetwork) or isinstance(model, StreetNetworks) and model.kind == "advantage":
         losses = ((output - target).square() * batch["mask"]).sum(1) / batch["mask"].sum(1)
-    elif isinstance(model, AveragePolicyNetwork):
+    elif isinstance(model, AveragePolicyNetwork) or isinstance(model, StreetNetworks) and model.kind == "strategy":
         losses = (target * (target.clamp_min(1e-12).log() - output.clamp_min(1e-12).log())).sum(1)
     else:
         raise ValueError(f"Unsupported model type: {type(model)}")
@@ -119,7 +119,11 @@ def fit(model, samples: list[TrainingSample], epochs: int, batch_size: int, seed
         learning_rate: float = 3e-4, evaluation_fraction: float = 0.2,
         sampling: str = "uniform_shuffle", measurement_epochs: tuple[int, ...] = (),
         on_measurement: Callable[[int, dict[str, float]], None] | None = None,
-        max_updates: int | None = None, cache_encoding: bool = False) -> dict[str, float]:
+        max_updates: int | None = None, cache_encoding: bool = False,
+        optimizer: torch.optim.Optimizer | None = None,
+        explicit_partitions: tuple[list[TrainingSample], list[TrainingSample]] | None = None) -> dict[str, float]:
+    if isinstance(model, StreetNetworks):
+        raise ValueError("Fit independent specialists through fit_specialists; pooled optimization is unsupported")
     if max_updates is not None and (type(max_updates) is not int or max_updates < 1):
         raise ValueError("max_updates must be a positive integer or None")
     if max_updates is not None and measurement_epochs:
@@ -146,11 +150,17 @@ def fit(model, samples: list[TrainingSample], epochs: int, batch_size: int, seed
     rng.shuffle(ordered)
     cut = max(1, min(len(ordered) - 1, round(len(ordered) * evaluation_fraction)))
     evaluation, training = ordered[:cut], ordered[cut:]
+    if explicit_partitions is not None:
+        training, evaluation = map(list, explicit_partitions)
+        if not training or not evaluation or {id(s) for s in training} & {id(s) for s in evaluation}:
+            raise ValueError("Explicit training/validation partitions must be nonempty and disjoint")
     encoded = EncodedReplay(samples, model.feature_version) if cache_encoding else None
     updates = 0
     completed_epochs = 0
     mean_weight = _mean_weight(training)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optimizer if optimizer is not None else torch.optim.Adam(model.parameters(), lr=learning_rate)
+    if {id(p) for group in optimizer.param_groups for p in group["params"]} != {id(p) for p in model.parameters()}:
+        raise ValueError("Optimizer parameters do not belong to this model")
     model.train()
     weights = [_sample_weight(sample) for sample in training]
     scale = max(weights)

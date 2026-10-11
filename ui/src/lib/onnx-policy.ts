@@ -171,9 +171,16 @@ export async function loadPublishedPolicies(publishedCatalog?: unknown, assetOri
         throw new Error(`Published ${track} policy is invalid; export this track again with migrate.py`);
       }
       const base = policyArtifactBase(track, entry.bundle_id, assetOrigin);
-      const [weights, manifest] = await Promise.all([fetch(`${base}.onnx`, { signal: AbortSignal.timeout(30000) }), fetch(`${base}.json`, { signal: AbortSignal.timeout(15000) })]);
-      if (!weights.ok || !manifest.ok) throw new Error(`Published ${track} bundle unavailable: model HTTP ${weights.status}, manifest HTTP ${manifest.status}`);
-      loaded[count] = await loadAveragePolicy(await weights.arrayBuffer(), await manifest.json(), assetOrigin);
+      const manifest = await fetch(`${base}.json`, { signal: AbortSignal.timeout(15000) });
+      if (!manifest.ok) throw new Error(`Published ${track} manifest unavailable: HTTP ${manifest.status}`);
+      const raw = await manifest.json();
+      if (raw.version === 5) {
+        loaded[count] = loadStreetPolicies(raw, base, count, entry.iteration, assetOrigin);
+      } else {
+        const weights = await fetch(`${base}.onnx`, { signal: AbortSignal.timeout(30000) });
+        if (!weights.ok) throw new Error(`Published ${track} model unavailable: HTTP ${weights.status}`);
+        loaded[count] = await loadAveragePolicy(await weights.arrayBuffer(), raw, assetOrigin);
+      }
       if (!equalArray(loaded[count].manifest.supported_player_counts, [count]) || loaded[count].manifest.iteration !== entry.iteration) {
         throw new Error(`Published ${track} policy does not match its catalog entry`);
       }
@@ -183,4 +190,65 @@ export async function loadPublishedPolicies(publishedCatalog?: unknown, assetOri
     await Promise.all(Object.values(loaded).map(policy => policy.release()));
     throw cause;
   }
+}
+
+
+const STREETS = ["PREFLOP", "FLOP", "TURN", "RIVER"] as const;
+type StreetRoute = {
+  player_count: number; street: string; model_kind: string; model_version: number;
+  checkpoint_source: string; feature_schema: number; action_schema: number;
+  model_hash: string; model_file: string; manifest: PolicyManifest;
+};
+
+/** Validate every route before loading any weights; load one session per queried street. */
+export function loadStreetPolicies(raw: {
+  version: number; layout: string; iteration: number; supported_player_counts: number[];
+  routes: Record<string, StreetRoute>;
+}, base: string, count: number, iteration: number, assetOrigin?: string): LoadedAveragePolicy {
+  if (raw.version !== 5 || raw.layout !== "independent_streets_v1" || raw.iteration !== iteration
+      || !equalArray(raw.supported_player_counts, [count]) || !raw.routes
+      || !equalArray(Object.keys(raw.routes).sort(), [...STREETS].sort())) {
+    throw new Error("Invalid street policy catalog");
+  }
+  for (const street of STREETS) {
+    const route = raw.routes[street];
+    const manifest = validatePolicyManifest(route.manifest);
+    if (route.player_count !== count || route.street !== street || route.model_kind !== "AVERAGE"
+        || !Number.isSafeInteger(route.model_version) || route.model_version < 1 || route.model_version > iteration
+        || !/^[a-f0-9]{64}$/.test(route.checkpoint_source) || route.model_hash !== manifest.model_sha256
+        || route.feature_schema !== manifest.feature_schema_version || route.action_schema !== manifest.action_schema_version
+        || manifest.iteration !== iteration || !equalArray(manifest.supported_player_counts, [count])
+        || !/^[a-z0-9_]+\.onnx$/.test(route.model_file)) {
+      throw new Error(`Invalid ${count}-player ${street} model route`);
+    }
+  }
+  if (new Set(STREETS.map(street => raw.routes[street].checkpoint_source)).size !== 1
+      || new Set(STREETS.map(street => raw.routes[street].model_file)).size !== 4) {
+    throw new Error("Street routes must belong to one checkpoint with four distinct artifacts");
+  }
+  const sessions = new Map<string, Promise<LoadedAveragePolicy>>();
+  let released = false;
+  return {
+    manifest: raw.routes.PREFLOP.manifest,
+    async query(observation) {
+      if (released) throw new Error("Street policy has been released");
+      const street = STREETS[observation.street];
+      if (!street) throw new Error(`Invalid public street: ${observation.street}`);
+      if (!sessions.has(street)) {
+        const route = raw.routes[street];
+        sessions.set(street, (async () => {
+          const response = await fetch(new URL(route.model_file, base), { signal: AbortSignal.timeout(30000) });
+          if (!response.ok) throw new Error(`${street} model unavailable: HTTP ${response.status}`);
+          return loadAveragePolicy(await response.arrayBuffer(), route.manifest, assetOrigin);
+        })().catch(error => { sessions.delete(street); throw error; }));
+      }
+      return (await sessions.get(street)!).query(observation);
+    },
+    async release() {
+      if (released) throw new Error("Street policy has already been released");
+      released = true;
+      const pending = await Promise.allSettled(sessions.values());
+      await Promise.all(pending.flatMap(result => result.status === "fulfilled" ? [result.value.release()] : []));
+    },
+  };
 }

@@ -22,7 +22,7 @@ from actions import ACTION_IDS, ACTION_SCHEMA_VERSION
 from infoset import EVENTS, HISTORY_WIDTH, POSITIONS, STATE_VERSION, Observation
 from features.neural import numeric_names
 from ml.deep_cfr import NeuralAveragePolicy
-from ml.model import AveragePolicyNetwork, encode_batch, model_architecture
+from ml.model import AveragePolicyNetwork, StreetNetworks, STREETS, encode_batch, model_architecture
 
 INPUT_NAMES = ("cards", "street", "position", "numeric", "history", "mask")
 EXPORT_VERSION = 4
@@ -72,6 +72,8 @@ def export_average_policy(checkpoint: str | Path, model_path: str | Path, manife
     if model_path.suffix != ".onnx" or manifest_path.suffix != ".json":
         raise ValueError(f"Expected .onnx model and .json manifest paths: {model_path}, {manifest_path}")
     policy = NeuralAveragePolicy(checkpoint)
+    if isinstance(policy.model, StreetNetworks):
+        return export_street_policy(policy, checkpoint, model_path, manifest_path)
     policy.query(example_observation)
     graph = SingleObservationAveragePolicy(policy.model).eval()
     batch = encode_batch([example_observation], policy.model.feature_version)
@@ -112,3 +114,38 @@ def export_average_policy(checkpoint: str | Path, model_path: str | Path, manife
     _atomic_write(model_path, model_bytes)
     _atomic_write(manifest_path, (json.dumps(manifest, indent=2, allow_nan=False) + "\n").encode("utf-8"))
     return manifest
+
+
+def export_street_policy(policy, checkpoint, model_path: Path, manifest_path: Path) -> dict:
+    """Export all four validated routes; the manifest is the bundle commit point."""
+    from training.evaluation import fixed_roots
+    from infoset import observe
+    from training.checkpoint import atomic_bytes
+    count = policy.supported_player_counts[0]
+    roots = {hand.street: observe(hand) for _,hand in fixed_roots(count)}
+    if set(roots) != set(STREETS):
+        raise ValueError("Export needs legal example observations on every street")
+    source_hash = hashlib.sha256(Path(checkpoint).read_bytes()).hexdigest()
+    routes = {}
+    with tempfile.TemporaryDirectory(dir=manifest_path.parent, prefix=".street-export-") as staging:
+        staging = Path(staging)
+        raw = torch.load(checkpoint, map_location="cpu", weights_only=True)
+        for index, street in enumerate(STREETS):
+            name = f"{model_path.stem}_{street.lower()}"
+            single = {k:v for k,v in raw.items() if k not in ("layout", "specialists")}
+            single.update(version=5, weights=policy.model.specialists[street].state_dict())
+            small = staging / f"{name}.pt"
+            torch.save(single, small)
+            manifest = export_average_policy(small, staging/f"{name}.onnx", staging/f"{name}.json", roots[street])
+            routes[street] = {"player_count": count, "street": street, "model_kind": "AVERAGE",
+                             "model_version": policy.specialist_metadata[street]["model_version"],
+                             "checkpoint_source": source_hash, "feature_schema": manifest["feature_schema_version"],
+                             "action_schema": manifest["action_schema_version"], "model_hash": manifest["model_sha256"],
+                             "model_file": f"{name}.onnx", "manifest": manifest,
+                             "coverage": policy.specialist_metadata[street]}
+        catalog = {"version": 5, "layout": "independent_streets_v1", "iteration": policy.iteration,
+                   "supported_player_counts": [count], "routes": routes}
+        for route in routes.values():
+            atomic_bytes(manifest_path.parent/route["model_file"], (staging/route["model_file"]).read_bytes())
+        atomic_bytes(manifest_path, (json.dumps(catalog, indent=2, allow_nan=False)+"\n").encode())
+    return catalog

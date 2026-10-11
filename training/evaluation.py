@@ -98,6 +98,18 @@ def evaluate_solver(solver, roots: list[tuple[str, HandState]], max_nodes: int, 
                     scripted_action(bot, hand, rng).apply(hand)
             utilities.append(hand.utility(hero))
         scripted[bot] = {"hand_chip_deltas": utilities, "mean": sum(utilities) / len(utilities), "scope": "three_fixed_hands_sanity_only"}
+    from ml.model import STREETS
+    from ml.train import weight_quality
+    independent = {}
+    if solver.street_config is not None:
+        for kind, model, samples in (("advantage", solver.advantage_model, [s for rows in heldout_advantages.values() for s in rows]),
+                                      ("strategy", solver.average_model, heldout_strategies)):
+            independent[kind] = {street: {"samples": len(rows),
+                                         "loss": evaluate_loss(model, rows, batch_size) if rows else None,
+                                         **(weight_quality(rows) if rows else {})}
+                                 for i,street in enumerate(STREETS)
+                                 for rows in [[s for s in samples if s.state.street == i]]}
     return {"version": EVALUATION_VERSION, "bounded_best_response": br,
+            **({"independent_by_street": independent} if solver.street_config is not None else {}),
             "independent_advantage_loss": pooled_loss, "independent_advantage_loss_by_player": losses, "independent_average_policy_loss": average_loss,
             "scripted_opponents": scripted}

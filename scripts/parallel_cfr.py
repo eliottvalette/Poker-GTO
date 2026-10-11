@@ -3,6 +3,7 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from contextlib import contextmanager, nullcontext
 from typing import Iterator
 import io
+from dataclasses import fields
 import multiprocessing
 import time
 import torch
@@ -12,9 +13,7 @@ from ml.deep_cfr import ModelSnapshot, TraversalTask, GeneratedSamples, FrozenSt
 
 def _snapshot_bytes(snapshot: ModelSnapshot) -> bytes:
     buffer = io.BytesIO()
-    torch.save({"version": snapshot.version, "objective": snapshot.objective,
-                "advantage_weights": snapshot.advantage_weights,
-                "uniform_initial": snapshot.uniform_initial, "player_count": snapshot.player_count}, buffer)
+    torch.save({field.name: getattr(snapshot, field.name) for field in fields(snapshot)}, buffer)
     return buffer.getvalue()
 
 
@@ -47,7 +46,7 @@ def _worker_generate(payload: bytes, task: TraversalTask) -> GeneratedSamples:
     # A same-number snapshot from another track cannot reuse a stale model.
     if payload != _worker_payload:
         raw = torch.load(io.BytesIO(payload), map_location="cpu", weights_only=True)
-        snapshot = ModelSnapshot(raw["version"], raw["objective"], raw["advantage_weights"], raw["uniform_initial"], raw["player_count"])
+        snapshot = ModelSnapshot(**raw)
         strategy = FrozenStrategy(snapshot)
         _worker_snapshot, _worker_strategy, _worker_payload = snapshot, strategy, payload
     result = generate_samples(_worker_snapshot, task, _worker_strategy)

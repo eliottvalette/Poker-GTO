@@ -169,7 +169,7 @@ class BranchReplay:
         return actions[self.pick(tuple(1 / len(actions) for _ in actions))]
 
 
-def enumerated_expectation(root, collector, policy_factory=varying_policy, orientation=0):
+def enumerated_expectation(root, collector, policy_factory=varying_policy, orientation=0, enumerate_from_street=None):
     rows = {}
     for iteration in (1, 2, 3):
         base_policy = policy_factory(iteration)
@@ -195,7 +195,7 @@ def enumerated_expectation(root, collector, policy_factory=varying_policy, orien
                         walk.average(root, player, sink)
                     elif collector == "partial_enumeration":
                         opponent = [p for p in root.players if p != player][orientation]
-                        walk.average_partial(root, player, opponent, sink)
+                        walk.average_partial(root, player, opponent, sink, enumerate_from_street=enumerate_from_street)
                     else:
                         walk.regrets(root, player, lambda *_: None, strategy_sink=sink)
                 except BranchRequired as branch:

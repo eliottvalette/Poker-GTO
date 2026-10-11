@@ -21,6 +21,19 @@ def validate_config(raw: dict) -> dict:
         expected.add("outcome_epsilon")
     if not isinstance(raw, dict):
         raise ValueError(f"Training config must be a JSON object: {type(raw).__name__}")
+    if "street_networks" in raw:
+        expected.add("street_networks")
+        from ml.street_training import validate_street_config
+        validate_street_config(raw["street_networks"])
+        if "replay_opening_fraction" in raw:
+            raise ValueError("Street allocation replaces legacy replay_opening_fraction")
+        for kind in ("advantage", "strategy"):
+            entries = raw["street_networks"][kind]
+            for track in ("hu", "3max"):
+                capacity = raw[track]["advantage_capacity"] if kind == "advantage" else raw["strategy_capacity"]
+                budget = raw[track]["advantage_byte_budget"] if kind == "advantage" else raw["memory_byte_budget"]
+                if sum(e["capacity"] for e in entries.values()) != capacity or sum(e["byte_budget"] for e in entries.values()) != budget:
+                    raise ValueError(f"Street allocation does not match {track}/{kind} totals")
     if 'generation_batch_size' in raw:
         expected.add('generation_batch_size')
     if 'root_policy' in raw:
@@ -53,7 +66,7 @@ def validate_config(raw: dict) -> dict:
     if (raw["config_version"] != CONFIG_VERSION or raw["root_sampler_version"] != ROOT_SAMPLER_VERSION
             or raw["feature_schema_version"] != FEATURE_SCHEMA_VERSION or raw["model_schema_version"] != MODEL_ARCHITECTURE):
         raise ValueError("Incompatible training config/schema versions")
-    for name in expected - {"3max", "hu", "learning_rate", "traversal_mode", "model_schema_version", "output_dir", "outcome_epsilon", "replay_opening_fraction", "fit_schedule", "root_policy"}:
+    for name in expected - {"3max", "hu", "learning_rate", "traversal_mode", "model_schema_version", "output_dir", "outcome_epsilon", "replay_opening_fraction", "fit_schedule", "root_policy", "street_networks"}:
         if type(raw[name]) is not int or raw[name] < (0 if name == "seed" else 1):
             raise ValueError(f"Training config requires positive integer {name}: {raw[name]!r}")
     if raw["traversal_mode"] not in ("external_sampling", "outcome_sampling"):

@@ -135,13 +135,16 @@ class Traversal:
         return value
 
     def average_partial(self, state: GameState, player: int, enumerated_opponent: int,
-                        sink: SampleSink, sample_reach: float = 1.0, depth: int = 0) -> None:
+                        sink: SampleSink, sample_reach: float = 1.0, depth: int = 0,
+                        enumerate_from_street: int | None = None) -> None:
         """Sample own strategy, enumerate one opponent, correct other uniform sampling.
 
         Each orientation estimates the same own-reach action mass. Combining both
         orientations in three-player games requires equal weighting (one half
         each to retain the mass of one collection pass). Chance stays in the deal.
         """
+        if enumerate_from_street is not None and enumerate_from_street not in range(4):
+            raise ValueError("Enumeration street must be in [0, 3]")
         if depth == 0:
             state = hand_root(state)
             if player not in state.players or enumerated_opponent not in state.players or player == enumerated_opponent:
@@ -156,10 +159,13 @@ class Traversal:
             return
         actions = self._children(state)
         actor = state.current_player
-        if actor == enumerated_opponent:
+        from infoset import STREETS
+        enumerate_all = enumerate_from_street is not None and STREETS.index(state.street) >= enumerate_from_street
+        if actor == enumerated_opponent or (actor != player and enumerate_all):
             for action in actions:
                 self.average_partial(self.child(state, action), player, enumerated_opponent,
-                                     sink, sample_reach, depth + 1)
+                                     sink, sample_reach, depth + 1,
+                                     **({"enumerate_from_street": enumerate_from_street} if enumerate_from_street is not None else {}))
             return
         if actor == player:
             obs = self.observer(state)
@@ -175,7 +181,8 @@ class Traversal:
             action = self.rng.choice(actions)
             sample_reach /= len(actions)
         self.average_partial(self.child(state, action), player, enumerated_opponent,
-                             sink, sample_reach, depth + 1)
+                             sink, sample_reach, depth + 1,
+                                     **({"enumerate_from_street": enumerate_from_street} if enumerate_from_street is not None else {}))
 
     def average(self, state: GameState, player: int, sink: SampleSink, own_reach: float = 1.0,
                 sample_reach: float = 1.0, depth: int = 0) -> None:

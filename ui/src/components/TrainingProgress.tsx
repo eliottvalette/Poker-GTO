@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { evaluationLabel, fetchTrainingHistory, historyWindow, type EvaluationRun, type Estimate, type Period, type TrainingHistory } from "@/lib/training-history";
+import { fetchTrainingHistory, historyWindow, type EvaluationRun, type Estimate, type Period, type TrainingHistory } from "@/lib/training-history";
 
 function number(value: number | null, digits = 1) { return value === null ? "—" : value.toFixed(digits); }
 function interval(value: Estimate) { return value.interval ? `${number(value.interval[0])} to ${number(value.interval[1])}` : "Not enough independent groups"; }
@@ -22,6 +22,17 @@ function HistoryChart({ runs, metric, selected, select }: {
     {[low, (low + high) / 2, high].filter((v, i, a) => a.indexOf(v) === i).map(v => <g key={v}>
       <line x1="72" x2="860" y1={y(v)} y2={y(v)} stroke="currentColor" opacity="0.12" />
       <text x="60" y={y(v) + 4} textAnchor="end" fill="currentColor" fontSize="11" opacity="0.65">{number(v)}</text>
+    </g>)}
+    {runs.reduce<EvaluationRun[][]>((groups, run) => {
+      if (run.status === "failed" || run[metric].mean === null) groups.push([]);
+      else groups[groups.length - 1].push(run);
+      return groups;
+    }, [[]]).filter(group => group.length > 1).map(group => <g key={group[0].release_id}>
+      {group.every(r => r[metric].interval) && <polygon
+        points={[...group.map(r => `${x(r)},${y(r[metric].interval![1])}`), ...group.toReversed().map(r => `${x(r)},${y(r[metric].interval![0])}`)].join(" ")}
+        fill="#60a5fa" opacity="0.12" />}
+      <polyline points={group.map(r => `${x(r)},${y(r[metric].mean!)}`).join(" ")}
+        fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinejoin="round" />
     </g>)}
     {points.map(r => <g key={r.release_id}>
       {r[metric].interval && <line x1={x(r)} x2={x(r)} y1={y(r[metric].interval![0])} y2={y(r[metric].interval![1])} stroke="#60a5fa" strokeWidth="3" opacity="0.3" />}
@@ -83,37 +94,37 @@ export default function TrainingProgress({ published = {} }: { published?: Parti
     {latest && Date.now() - Date.parse(latest.evaluated_at) > 3 * 3600000 && <p role="status" className="text-sm text-amber-500">No new evaluation for over 3 hours. Check the evaluation service if training is still running.</p>}
     {!loading && !error && !latest && <div className="rounded-xl border p-8 text-sm text-muted-foreground">No evaluations in this period. Results appear after the VPS evaluates a published model.</div>}
     {current && <>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {[["Policy", `Iteration ${current.iteration}`, evaluationLabel(current)],
-          ["Gain vs initial reference", `${number(current.difference.mean)} BB/100`, `Approx. 95%: ${interval(current.difference)}`],
-          ["Independent groups", String(current.completed_groups), `${current.hands} hands · ${current.discarded_hands} discarded`],
-          ["Evaluation CPU", `${number(current.cpu_seconds)} s`, new Date(current.evaluated_at).toLocaleString()]].map(([label, value, note]) =>
-          <div key={label} className="rounded-xl border p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-lg font-medium tabular-nums">{value}</p><p className="mt-1 text-xs text-muted-foreground">{note}</p></div>)}
-      </div>
-      <div className="rounded-xl border p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex gap-2"><Button variant={metric === "difference" ? "secondary" : "ghost"} onClick={() => setMetric("difference")}>vs reference</Button><Button variant={metric === "gain" ? "secondary" : "ghost"} onClick={() => setMetric("gain")}>vs opponent pool</Button></div>
-          <span className="text-xs text-muted-foreground">Policy only · BB/100 · reference #{current.reference.iteration}</span>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+        <div className="flex gap-1">
+          <Button size="sm" variant={metric === "difference" ? "secondary" : "ghost"} onClick={() => setMetric("difference")}>vs reference</Button>
+          <Button size="sm" variant={metric === "gain" ? "secondary" : "ghost"} onClick={() => setMetric("gain")}>vs opponent pool</Button>
         </div>
-        <HistoryChart runs={comparable} metric={metric} selected={current.release_id} select={setSelected} />
-        <p className="text-xs text-muted-foreground">Bars show approximate 95% intervals. Amber points hit the compute budget. Select a point to inspect it.</p>
-        {comparable.length < runs.length && <p className="mt-2 text-xs text-muted-foreground">Older evaluation suites are excluded from this comparison.</p>}
+        <span className="text-xs text-muted-foreground">Policy EV · BB/100{metric === "difference" ? ` · baseline #${current.reference.iteration}` : " · synthetic opponents"}</span>
       </div>
-      <div className="overflow-x-auto rounded-xl border">
-        <table className="w-full text-left text-sm"><caption className="p-4 text-left font-medium">Opponent breakdown · iteration {current.iteration}</caption>
-          <thead className="border-y text-xs text-muted-foreground"><tr>{["Opponent", "Stacks", "Gain BB/100", "vs reference", "Approx. 95% difference", "Groups"].map(h => <th className="px-4 py-2 font-normal" key={h}>{h}</th>)}</tr></thead>
-          <tbody>{current.segments.map(s => <tr key={`${s.profile}/${s.region}`} className="border-b last:border-0"><td className="px-4 py-2 capitalize">{s.profile.replaceAll("_", " ")}</td><td className="px-4 py-2">{s.region}</td><td className="px-4 py-2 tabular-nums">{number(s.gain.mean)}</td><td className="px-4 py-2 tabular-nums">{number(s.difference.mean)}</td><td className="px-4 py-2 tabular-nums">{interval(s.difference)}</td><td className="px-4 py-2">{s.difference.n}</td></tr>)}</tbody>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="flex flex-wrap items-baseline gap-3">
+          <strong className="text-2xl font-medium tabular-nums">{current.is_reference && metric === "difference" ? "Baseline" : `${number(current[metric].mean)} BB/100`}</strong>
+          {!(current.is_reference && metric === "difference") && <span className="text-xs text-muted-foreground">95% interval {interval(current[metric])}</span>}
+        </div>
+        <span className="text-xs text-muted-foreground">Iteration {current.iteration} · {new Date(current.evaluated_at).toLocaleString()}</span>
+      </div>
+      {current.status === "failed" && <p role="alert" className="text-sm text-destructive">Evaluation failed. {current.warnings.join(" ")}</p>}
+      {current.status === "budget_limited" && <p role="status" className="text-sm text-amber-500">Partial evaluation: compute budget reached.</p>}
+      <HistoryChart runs={comparable} metric={metric} selected={current.release_id} select={setSelected} />
+      {comparable.length < runs.length && <p className="text-xs text-muted-foreground">Incompatible evaluation versions excluded.</p>}
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <caption className="pb-3 text-left text-xs text-muted-foreground">{metric === "difference" ? `Change vs #${current.reference.iteration}` : "Win rate"} by opponent and stack · BB/100 · 95% intervals</caption>
+          <thead className="border-b text-xs text-muted-foreground"><tr><th className="py-2 font-normal">Opponent</th>{[...new Set(current.segments.map(s => s.region))].map(region => <th key={region} className="px-4 py-2 text-right font-normal capitalize">{region}</th>)}</tr></thead>
+          <tbody>{[...new Set(current.segments.map(s => s.profile))].map(profile => <tr key={profile} className="border-b last:border-0">
+            <td className="py-3 capitalize">{profile.replaceAll("_", " ")}</td>
+            {[...new Set(current.segments.map(s => s.region))].map(region => {
+              const estimate = current.segments.find(s => s.profile === profile && s.region === region)?.[metric];
+              return <td key={region} className="px-4 py-3 text-right tabular-nums">{estimate ? <><span>{number(estimate.mean)}</span><span className="block text-xs text-muted-foreground">{interval(estimate)}</span></> : "—"}</td>;
+            })}
+          </tr>)}</tbody>
         </table>
       </div>
-      <details className="rounded-xl border p-4 text-sm"><summary className="cursor-pointer">Evaluation details</summary>
-        <div className="mt-3 space-y-2 text-muted-foreground">
-          <p>{current.suite} · Model {current.model_sha256.slice(0, 12)}</p>
-          <p>Conditional river response gain: {current.river ? `${number(current.river.best_response_gain_bb, 4)} BB (${current.river.nodes} nodes)` : "Not evaluated"}. This is not full-game exploitability.</p>
-          {current.warnings.map(w => <p key={w}>{w}</p>)}
-          <p>Initial reference is a fixed comparison, not a certified strong policy. No automatic quality promotion. Hourly history: 30 days. Local detailed traces: 48 hours.</p>
-        </div>
-      </details>
-      <details className="rounded-xl border p-4 text-sm"><summary className="cursor-pointer">All evaluations ({runs.length})</summary><div className="mt-3 flex flex-wrap gap-2">{runs.map(r => <Button variant="outline" key={r.release_id} disabled={!comparable.includes(r)} onClick={() => setSelected(r.release_id)}>#{r.iteration} · {evaluationLabel(r)}</Button>)}</div></details>
     </>}
   </section>;
 }

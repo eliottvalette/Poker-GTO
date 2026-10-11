@@ -33,7 +33,7 @@ def sample_bytes(sample: object) -> int:
         if all(type(v) in (tuple, list) and all(type(x) in (int, float, bool) for x in v) for v in containers):
             # Same occurrence-based accounting as the generic walk, including aliased tuples.
             total = sum(map(sys.getsizeof, (sample, state, sample.iteration, sample.player,
-                sample.weight, sample.kind, sample.model_version, sample.traversal_mode,
+                sample.weight, sample.kind, sample.model_version, sample.traversal_mode, sample.trajectory_id, sample.root_group,
                 state.version, state.hero, state.objective, state.street, state.numeric_data,
                 state.history_data, state.feature_version)))
             visited = set()
@@ -72,6 +72,8 @@ class TrainingSample:
     kind: str
     model_version: int
     traversal_mode: str = "external_sampling"
+    trajectory_id: str = ""
+    root_group: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.state, NeuralObservation):
@@ -83,15 +85,17 @@ class TrainingSample:
         if (state is self.state and type(self.target) is tuple
                 and all(type(v) in (int, float, bool) for v in self.target)
                 and all(type(v) in (int, float, str) for v in
-                        (self.iteration, self.player, self.weight, self.kind, self.model_version, self.traversal_mode))):
+                        (self.iteration, self.player, self.weight, self.kind, self.model_version, self.traversal_mode, self.trajectory_id, self.root_group))):
             memo[id(self)] = self
             return self
         result = type(self)(self.iteration, self.player, state, copy.deepcopy(self.target, memo),
-                            self.weight, self.kind, self.model_version, self.traversal_mode)
+                            self.weight, self.kind, self.model_version, self.traversal_mode, self.trajectory_id, self.root_group)
         memo[id(self)] = result
         return result
 
     def validate(self) -> None:
+        if not isinstance(self.trajectory_id, str) or not isinstance(self.root_group, str):
+            raise ValueError("Sample provenance identifiers must be strings")
         if self.state.objective != "hand_chip_delta":
             raise ValueError(f"Only per-hand chip-delta samples are supported, received objective={self.state.objective}")
         if self.traversal_mode not in TRAVERSAL_MODES:
@@ -206,7 +210,7 @@ class ReservoirMemory:
             raise ValueError(f"Populated reservoir must declare its traversal mode at {path}")
         for item in raw["samples"]:
             expected_sample = {f.name for f in fields(TrainingSample)}
-            if not isinstance(item, dict) or set(item) != expected_sample:
+            if not isinstance(item, dict) or set(item) not in (expected_sample, expected_sample - {"trajectory_id", "root_group"}):
                 raise ValueError(f"Invalid sample fields at {path}: {item}")
             o = item["state"]
             if not isinstance(o, dict) or set(o) != {f.name for f in fields(NeuralObservation)}:
@@ -215,7 +219,8 @@ class ReservoirMemory:
                                     bytes.fromhex(o["numeric_data"]), tuple(o["legal_mask"]),
                                     bytes.fromhex(o["history_data"]), o["feature_version"])
             memory.add(TrainingSample(item["iteration"], item["player"], obs, tuple(item["target"]),
-                                      item["weight"], item["kind"], item["model_version"], item["traversal_mode"]))
+                                      item["weight"], item["kind"], item["model_version"], item["traversal_mode"],
+                                      item.get("trajectory_id", ""), item.get("root_group", "")))
         memory.seen = raw["seen"]
         def tuples(value):
             return tuple(tuples(v) for v in value) if isinstance(value, list) else value

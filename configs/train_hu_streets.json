@@ -1,0 +1,168 @@
+{
+  "config_version": 3,
+  "seed": 42,
+  "outer_iterations": 50,
+  "workers": 1,
+  "trainer_threads": 1,
+  "batch_size": 64,
+  "learning_rate": 0.0003,
+  "strategy_capacity": 50000,
+  "memory_byte_budget": 536870912,
+  "sample_byte_budget": 67108864,
+  "generation_byte_budget": 268435456,
+  "max_nodes": 200000,
+  "max_depth": 64,
+  "checkpoint_every": 5,
+  "evaluation_every": 5,
+  "traversal_mode": "external_sampling",
+  "root_sampler_version": 2,
+  "feature_schema_version": 4,
+  "model_schema_version": "cards8_numeric32_historyGRU32_head64_features4",
+  "output_dir": "runs/hu-streets",
+  "evaluation_max_nodes": 20000,
+  "3max": {
+    "enabled": false,
+    "traversals_per_player": 128,
+    "root_sampling": {
+      "mixture": {
+        "on_policy": 0.0,
+        "synthetic": 0.5,
+        "stratified": 0.5
+      },
+      "max_rollout_decisions": 128,
+      "max_rollout_hands": 128,
+      "tournament_start_players": 3,
+      "hole_card_sampling": "stratified_recorded_opening",
+      "decision_contexts": [
+        "open",
+        "facing_open",
+        "facing_3bet",
+        "facing_4bet",
+        "short",
+        "facing_jam",
+        "flop_check",
+        "flop_bet",
+        "flop_raise",
+        "turn_check",
+        "turn_bet",
+        "turn_raise",
+        "river_check",
+        "river_bet",
+        "river_raise",
+        "river_jam"
+      ]
+    },
+    "advantage_capacity": 50000,
+    "advantage_byte_budget": 536870912
+  },
+  "hu": {
+    "enabled": true,
+    "traversals_per_player": 256,
+    "root_sampling": {
+      "mixture": {
+        "on_policy": 0.0,
+        "synthetic": 0.5,
+        "stratified": 0.5
+      },
+      "max_rollout_decisions": 128,
+      "max_rollout_hands": 128,
+      "tournament_start_players": 2,
+      "hole_card_sampling": "stratified_recorded_opening",
+      "decision_contexts": [
+        "open",
+        "facing_open",
+        "facing_3bet",
+        "facing_4bet",
+        "short",
+        "facing_jam",
+        "flop_check",
+        "flop_bet",
+        "flop_raise",
+        "turn_check",
+        "turn_bet",
+        "turn_raise",
+        "river_check",
+        "river_bet",
+        "river_raise",
+        "river_jam"
+      ]
+    },
+    "advantage_capacity": 50000,
+    "advantage_byte_budget": 536870912
+  },
+  "advantage_epochs": 1,
+  "average_epochs": 1,
+  "root_policy": "current_advantage",
+  "generation_batch_size": 128,
+  "fit_schedule": {
+    "average_every": 3,
+    "advantage_max_updates": 800,
+    "average_max_updates": 800,
+    "advantage_initialization": "warm",
+    "average_initialization": "warm",
+    "cache_encoding": true
+  },
+  "street_networks": {
+    "version": 1,
+    "advantage": {
+      "PREFLOP": {
+        "capacity": 20000,
+        "byte_budget": 214748363,
+        "every": 1,
+        "min_new_samples": 128,
+        "max_updates": 64
+      },
+      "FLOP": {
+        "capacity": 10000,
+        "byte_budget": 107374183,
+        "every": 1,
+        "min_new_samples": 128,
+        "max_updates": 64
+      },
+      "TURN": {
+        "capacity": 10000,
+        "byte_budget": 107374183,
+        "every": 1,
+        "min_new_samples": 128,
+        "max_updates": 64
+      },
+      "RIVER": {
+        "capacity": 10000,
+        "byte_budget": 107374183,
+        "every": 1,
+        "min_new_samples": 128,
+        "max_updates": 64
+      }
+    },
+    "strategy": {
+      "PREFLOP": {
+        "capacity": 20000,
+        "byte_budget": 214748363,
+        "every": 3,
+        "min_new_samples": 128,
+        "max_updates": 64
+      },
+      "FLOP": {
+        "capacity": 10000,
+        "byte_budget": 107374183,
+        "every": 3,
+        "min_new_samples": 128,
+        "max_updates": 64
+      },
+      "TURN": {
+        "capacity": 10000,
+        "byte_budget": 107374183,
+        "every": 3,
+        "min_new_samples": 128,
+        "max_updates": 64
+      },
+      "RIVER": {
+        "capacity": 10000,
+        "byte_budget": 107374183,
+        "every": 3,
+        "min_new_samples": 128,
+        "max_updates": 64
+      }
+    }
+  }
+}

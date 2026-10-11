@@ -12,6 +12,8 @@ import subprocess
 import time
 import torch
 from ml.deep_cfr import DeepCFRSolver, FrozenStrategy
+from ml.model import StreetNetworks
+from training.checkpoint import checkpoint_contract
 from infoset import NUMERIC_NAMES
 from ml.model import AdvantageNetwork, AveragePolicyNetwork
 from training.checkpoint import (CONTRACT, atomic_bytes, pack_memory, unpack_memory, pack_tournament,
@@ -98,12 +100,15 @@ class TrainingRunner:
                          "device": "cpu", "utility_units": "initial_big_blind_chips"}
         if 'fit_schedule' in self.config:
             self.metadata['network_fit'] = dict(self.config['fit_schedule'])
+        if 'street_networks' in self.config:
+            self.metadata['network_fit'] = 'independent_streets_persistent_weights_and_adam'
+            self.metadata['specialist_schedules'] = self.config['street_networks']
         for name, count in (("3max", 3), ("hu", 2)):
             if config[name]["enabled"]:
                 self.solvers[name] = DeepCFRSolver(tuple(range(count)), seed=config["seed"] + count,
                     advantage_capacity=config[name]["advantage_capacity"], strategy_capacity=config["strategy_capacity"],
                     memory_byte_budget=config["memory_byte_budget"], advantage_byte_budget=config[name]["advantage_byte_budget"],
-                    replay_opening_fraction=config.get("replay_opening_fraction"))
+                    replay_opening_fraction=config.get("replay_opening_fraction"), street_networks=config.get("street_networks"))
                 self.samplers[name] = RootSampler(count, config["seed"] + count * 1000, config[name]["root_sampling"])
         self.probes = {name: fixed_roots(len(solver.players)) for name, solver in self.solvers.items()}
 
@@ -135,7 +140,7 @@ class TrainingRunner:
             from training.metrics import Coverage
             for sampler in staged_samplers.values():
                 sampler.coverage = Coverage()
-        row = {"iteration": self.iteration + 1, "tracks": {}, "checkpoint_version": CONTRACT["checkpoint"],
+        row = {"iteration": self.iteration + 1, "tracks": {}, "checkpoint_version": checkpoint_contract(self.config)["checkpoint"],
                "config_hash": config_hash(self.config),
                "traversal_budget": {key: self.config[key] for key in ("max_nodes", "max_depth")}}
         started = time.perf_counter()
@@ -217,7 +222,7 @@ class TrainingRunner:
 
     def save_checkpoint(self, path: str | Path) -> None:
         relative = Path(path).resolve().relative_to(self.output_dir.resolve()) if self.runtime_storage else None
-        raw = {"contract": CONTRACT, "config": self.config, "config_hash": config_hash(self.config),
+        raw = {"contract": checkpoint_contract(self.config), "config": self.config, "config_hash": config_hash(self.config),
                "iteration": self.iteration, "metadata": self.metadata, "metrics": self.metrics,
                "runtime_storage": asdict(self.runtime_storage) if self.runtime_storage else None,
                "torch_rng": torch.get_rng_state(), "python_rng": random.getstate(), "tracks": {}}
@@ -232,6 +237,8 @@ class TrainingRunner:
                 "card_sampling_state": sampler.card_state(),
                 "stratum_index": sampler.stratum_index, "root_coverage": sampler.coverage.as_dict(),
                 "tournament": pack_tournament(sampler.tournament)}
+            if solver.street_config is not None:
+                raw["tracks"][name]["specialist_states"] = solver.specialist_states
         write_checkpoint(Path(path), raw)
         if self.runtime_storage:
             atomic_bytes(self.output_dir / 'resume.json', (json.dumps({'path': str(relative), 'iteration': self.iteration})+'\n').encode())
@@ -285,7 +292,7 @@ class TrainingRunner:
                 solver.strategy_memory = unpack_memory(track["strategy_memory"])
                 if solver.advantage_memory.kind != "advantage" or solver.strategy_memory.kind != "strategy":
                     raise ValueError(f"Checkpoint replay slot kind mismatch at {path}: {name}")
-                if not runner.iteration and (track["advantage_weights"] is not None or track["average_weights"] is not None
+                if not runner.iteration and solver.street_config is None and (track["advantage_weights"] is not None or track["average_weights"] is not None
                                              or solver.advantage_memory.seen or solver.strategy_memory.seen):
                     raise ValueError(f"Uninitialized checkpoint contains trained state at {path}: {name}")
                 for memory in (solver.advantage_memory, solver.strategy_memory):
@@ -299,6 +306,14 @@ class TrainingRunner:
                         expected_opening = max(1, min(capacity - 1, int(capacity * fraction)))
                         if memory.memories["opening"].capacity != expected_opening:
                             raise ValueError(f"Checkpoint opening allocation mismatch: {name}")
+                    if solver.street_config is not None:
+                        from ml.street_replay import StreetReplay
+                        if not isinstance(memory, StreetReplay):
+                            raise ValueError("Street checkpoint requires partitioned replay")
+                        for street, entry in solver.street_config[memory.kind].items():
+                            part = memory.memories[street]
+                            if part.capacity != entry["capacity"] or part.byte_budget != entry["byte_budget"]:
+                                raise ValueError(f"Street replay allocation mismatch: {name}/{street}")
                     if memory.capacity != capacity or memory.byte_budget != budget:
                         raise ValueError(f"Checkpoint replay/config capacity mismatch: {name}")
                     if any(s.player not in solver.players or s.iteration > runner.iteration
@@ -310,12 +325,18 @@ class TrainingRunner:
                 if runner.iteration:
                     if not track["advantage_weights"] or track["average_weights"] is None:
                         raise ValueError(f"Missing shared checkpoint model at {path}: {name}")
-                    solver.advantage_model = AdvantageNetwork()
+                    solver.advantage_model = StreetNetworks("advantage") if solver.street_config else AdvantageNetwork()
                     solver.advantage_model.load_state_dict(track["advantage_weights"], strict=True)
                     solver.advantage_model.eval()
-                    solver.average_model = AveragePolicyNetwork()
+                    solver.average_model = StreetNetworks("strategy") if solver.street_config else AveragePolicyNetwork()
                     solver.average_model.load_state_dict(track["average_weights"], strict=True)
                     solver.average_model.eval()
+                if solver.street_config is not None:
+                    if set(track.get("specialist_states", {})) != {"advantage", "strategy"}:
+                        raise ValueError("Missing street optimizer/schedule states")
+                    solver.specialist_states = track["specialist_states"]
+                    from ml.street_training import validate_specialist_states
+                    validate_specialist_states(solver)
                 sampler.rng.setstate(track["sampler_rng"])
                 sampler.restore_card_state(track["card_sampling_state"])
                 sampler.stratum_index = track["stratum_index"]

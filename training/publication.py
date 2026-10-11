@@ -155,8 +155,9 @@ def validate_pointer(raw: dict, track: str) -> dict:
     return raw
 
 
-def publish_bundle(storage: SupabaseStorage, track: str, bundle: Path, *, keep: int = 24) -> dict:
-    """One writer per track; pointer commits only after public read-back of both artifacts."""
+def publish_bundle(storage: SupabaseStorage, track: str, bundle: Path, *, keep: int = 24,
+                   migrate_shared_release: str | None = None) -> dict:
+    """One writer per track; pointer commits only after public read-back of every artifact."""
     if track not in TRACKS or type(keep) is not int or keep < 2:
         raise ValueError('Valid dedicated track and at least two retained releases required')
     seal = json.loads((bundle/'bundle.json').read_text())
@@ -164,21 +165,32 @@ def publish_bundle(storage: SupabaseStorage, track: str, bundle: Path, *, keep: 
     migrated = seal.get('kind') == 'onnx_export' and track in seal.get('sources', {})
     if seal.get('version') != 1 or not (live or migrated):
         raise ValueError('Expected a sealed live-training or migrated ONNX export')
+    manifest_name = f'average_{track}.json'
+    manifest = json.loads((bundle/manifest_name).read_text())
+    if manifest.get('version') == 5:
+        from ml.onnx_policy import validate_street_catalog
+        validate_street_catalog(manifest, TRACKS[track])
+        names = [manifest_name, *(r['model_file'] for r in manifest['routes'].values())]
+    else:
+        names = [manifest_name, f'average_{track}.onnx']
     files = {}
-    for suffix in ('onnx', 'json'):
-        name = f'average_{track}.{suffix}'
+    for name in names:
         if (bundle/name).stat().st_size > MAX_FILE:
             raise ValueError(f'Export too large: {name}')
         data = (bundle/name).read_bytes()
         if hashlib.sha256(data).hexdigest() != seal['files'].get(name):
             raise ValueError(f'Export checksum mismatch: {name}')
         files[name] = data
-    manifest = json.loads(files[f'average_{track}.json'])
+    if manifest.get('version') == 5:
+        for route in manifest['routes'].values():
+            if hashlib.sha256(files[route['model_file']]).hexdigest() != route['model_hash']:
+                raise ValueError('Street model hash mismatch')
+    elif manifest.get('model_sha256') != hashlib.sha256(files[f'average_{track}.onnx']).hexdigest():
+        raise ValueError('Export model hash mismatch')
     if (manifest.get('supported_player_counts') != [TRACKS[track]]
-            or manifest.get('model_sha256') != hashlib.sha256(files[f'average_{track}.onnx']).hexdigest()
             or (live and manifest.get('iteration') != seal.get('iteration'))
             or type(manifest.get('iteration')) is not int or manifest['iteration'] < 1):
-        raise ValueError('Export track, model hash or iteration mismatch')
+        raise ValueError('Export track or iteration mismatch')
     iteration = manifest['iteration']
     release = hashlib.sha256(encoded({name: hashlib.sha256(data).hexdigest() for name, data in files.items()})).hexdigest()
     key = f'{track}/current.json'
@@ -188,7 +200,24 @@ def publish_bundle(storage: SupabaseStorage, track: str, bundle: Path, *, keep: 
         if error.status != 404:
             raise
         previous = None
-    if previous and (previous['iteration'] > iteration or
+    schema_migration = False
+    if previous and previous['release_id'] == release:
+        return previous
+    if migrate_shared_release is not None and (not isinstance(migrate_shared_release, str)
+            or not SHA.fullmatch(migrate_shared_release) or not previous
+            or previous['release_id'] != migrate_shared_release):
+        raise ValueError('Schema migration requires the exact current shared release identifier')
+    if previous:
+        prior_manifest = json.loads(storage.get(f"{track}/releases/{previous['release_id']}/{manifest_name}"))
+        if prior_manifest.get('version') == 5 and manifest.get('version') != 5:
+            raise ValueError('A shared-policy writer cannot replace a street-specialized publication')
+        if manifest.get('version') == 5 and prior_manifest.get('version') != 5 and migrate_shared_release is None:
+            raise ValueError('Replacing a shared policy requires explicit schema migration')
+        if migrate_shared_release is not None:
+            if prior_manifest.get('version') not in (3, 4) or manifest.get('version') != 5:
+                raise ValueError('Explicit schema migration requires a shared v3/v4 export and a street v5 catalog')
+            schema_migration = True
+    if previous and not schema_migration and (previous['iteration'] > iteration or
                      (previous['iteration'] == iteration and previous['release_id'] != release)):
         raise ValueError('Refusing to replace a newer or conflicting published iteration')
     if previous and previous['release_id'] == release:
@@ -204,6 +233,8 @@ def publish_bundle(storage: SupabaseStorage, track: str, bundle: Path, *, keep: 
         history = [] if previous is None else [previous['release_id'], *previous['history']]
         pointer = {'version': 1, 'track': track, 'release_id': release, 'iteration': iteration,
                    'published_at': datetime.now(timezone.utc).isoformat(), 'history': history[:keep-1]}
+        if schema_migration:
+            pointer['schema_migration_from'] = previous['release_id']
         storage.put(key, encoded(pointer), mutable=True)
         if json.loads(storage.get(key)) != pointer:
             raise ValueError('Publication pointer read-back mismatch')
@@ -221,7 +252,7 @@ def prune_remote(storage: SupabaseStorage, track: str, pointer: dict, *, grace_h
             continue
         prefix = f'{track}/releases/{release}'
         files = storage.list(prefix)
-        expected = {f'average_{track}.onnx', f'average_{track}.json'}
+        expected = {f'average_{track}.onnx', f'average_{track}.json'} | {f'average_{track}_{street}.onnx' for street in ('preflop', 'flop', 'turn', 'river')}
         if not files or any(row.get('name') not in expected or not row.get('created_at') for row in files):
             raise ValueError(f'Unexpected remote release contents: {prefix}')
         if all(datetime.fromisoformat(row['created_at'].replace('Z', '+00:00')) < cutoff for row in files):

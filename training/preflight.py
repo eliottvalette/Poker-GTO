@@ -43,7 +43,8 @@ def run_preflight(config: dict, *, iterations: int = 2, traversals_per_player: i
     report = {**source_metadata(), "version": PREFLIGHT_VERSION, "git_commit": source_commit(), "config_hash": config_hash(config),
               "feature_schema": FEATURE_SCHEMA_VERSION, "model_architecture": MODEL_ARCHITECTURE,
               "parameters_per_model": sum(p.numel() for p in AdvantageNetwork().parameters()),
-              "advantage_layout": "shared_per_player_count",
+              "advantage_layout": "independent_streets_v1" if "street_networks" in config else "shared_per_player_count",
+              "networks_per_track": 8 if "street_networks" in config else 2,
               "objective": "hand_chip_delta", "traversal_mode": config["traversal_mode"],
               "workers": config["workers"], "worker_torch_threads": 1, "trainer_threads": config["trainer_threads"],
               "gpu_usage": "none", "outer_iterations_proposed": config["outer_iterations"],
@@ -82,9 +83,15 @@ def run_preflight(config: dict, *, iterations: int = 2, traversals_per_player: i
                                          "semantics": "iteration aborted atomically; no samples dropped or partial models published"}
                     break
             if runner.iteration:
-                runner.export(onnx=True)
+                cold = {track: [name for i, name in enumerate(("PREFLOP", "FLOP", "TURN", "RIVER"))
+                                if not bool(solver.average_model.trained[i])]
+                        for track, solver in runner.solvers.items() if solver.street_config is not None}
+                report["cold_average_specialists"] = cold
+                report["export_status"] = "unavailable: cold specialists" if any(cold.values()) else "exported"
+                if not any(cold.values()):
+                    runner.export(onnx=True)
                 report["checkpoint_bytes"] = (Path(directory) / "checkpoints" / f"iteration_{runner.iteration:06d}.pt").stat().st_size
-                report["onnx_model_bytes"] = {name: (Path(directory) / "policy" / f"average_{name}.onnx").stat().st_size for name in runner.solvers}
+                report["onnx_model_bytes"] = {name: sum(p.stat().st_size for p in (Path(directory) / "policy").glob(f"average_{name}*.onnx")) for name in runner.solvers}
                 report["preflight_artifact_bytes"] = sum(p.stat().st_size for p in Path(directory).rglob('*') if p.is_file())
                 samples = [s for solver in runner.solvers.values() for memory in (solver.advantage_memory, solver.strategy_memory) for s in memory.samples]
                 sizes = [sample_bytes(s) for s in samples]
@@ -108,14 +115,14 @@ def run_preflight(config: dict, *, iterations: int = 2, traversals_per_player: i
                                           "root_seconds": sum(track["root_seconds"] for track in row["tracks"].values()),
                                           "fit_seconds": sum(track["fit_seconds"] for track in row["tracks"].values()),
                                           "nodes": sum(track["nodes"] for track in row["tracks"].values())} for row in report["measured_iterations"]]
-                report["model_count"] = 2 * len(runner.solvers)
+                report["model_count"] = report["networks_per_track"] * len(runner.solvers)
                 strategies = len(runner.solvers)
                 capacity = sum(config[name]["advantage_capacity"] for name in runner.solvers) + strategies * config["strategy_capacity"]
                 retained = sum(len(m.samples) for s in runner.solvers.values() for m in (s.advantage_memory, s.strategy_memory))
                 replay_ram = capacity * report["bytes_per_sample"]["mean"]
                 fit_seconds = sum(row["fit_seconds"] for row in rows) / runner.iteration
                 generation_iteration = report["traversals_per_iteration_proposed"] / report["traversals_per_second"]
-                full_fit = fit_seconds * capacity / retained
+                full_fit = fit_seconds if "street_networks" in config else fit_seconds * capacity / retained
                 evaluation_seconds = max(0, statistics.mean(row["wall_seconds"] for row in report["measured_iterations"]) - generation_seconds / runner.iteration - fit_seconds)
                 iteration_estimate = generation_iteration + full_fit + evaluation_seconds / config["evaluation_every"]
                 report["replay_capacities"] = {"advantage_by_track": {name: config[name]["advantage_capacity"] for name in runner.solvers}, "strategy_per_track": config["strategy_capacity"], "total_samples": capacity}
@@ -126,7 +133,7 @@ def run_preflight(config: dict, *, iterations: int = 2, traversals_per_player: i
                 report["runtime_estimates_seconds"] = {"pilot": iteration_estimate * config["outer_iterations"],
                     "500_iterations": iteration_estimate * 500, "generation_per_iteration": generation_iteration,
                     "fit_at_full_capacity_per_iteration": full_fit,
-                    "method": "measured throughput including root generation and spawn overhead; linear full-replay fit scaling; conservative extrapolation, not a guarantee"}
+                    "method": "measured throughput; fixed update caps for specialists, linear replay fit scaling for legacy; encoding growth and changing tree shapes are not predicted"}
                 report["expected_artifact_footprint_bytes"] = report["checkpoint_bytes"] * capacity / retained * (math.ceil(config["outer_iterations"] / config["checkpoint_every"]) + 1)
                 report["artifact_estimate_method"] = "checkpoint size scaled by replay capacity and retained checkpoint count; excludes logs and allocator overhead"
             report["readiness"] = "PILOT READY" if runner.iteration == iterations and report["failure"] is None else "NOT READY"

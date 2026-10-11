@@ -6,12 +6,12 @@ from itertools import combinations
 import random
 import math
 from typing import Callable
-from actions import ACTION_IDS, apply_action
+from actions import ACTION_IDS, apply_action, legal_actions
 from blind_schedule import DEFAULT_SIMULATION_SCHEDULE
 from cfr_solver import regret_matching, sample_index, validate_strategy
 from infoset import observe
 from features.neural import neural_observation
-from poker_game_expresso import HandState
+from poker_game_expresso import HandState, BlindLevel
 from tournament import TournamentState
 from training.metrics import Coverage
 
@@ -36,7 +36,7 @@ def canonical_seats(hand: HandState) -> HandState:
 
 class RootSampler:
     def __init__(self, player_count: int, seed: int, config: dict) -> None:
-        if player_count not in (2, 3) or set(config) != {"mixture", "max_rollout_decisions", "max_rollout_hands", "tournament_start_players", "hole_card_sampling"}:
+        if player_count not in (2, 3) or (set(config) - {"decision_contexts"}) != {"mixture", "max_rollout_decisions", "max_rollout_hands", "tournament_start_players", "hole_card_sampling"}:
             raise ValueError(f"Invalid root configuration: players={player_count}, config={config}")
         mixture = config["mixture"]
         if set(mixture) != set(SOURCES) or any(type(w) not in (int, float) or not math.isfinite(w) or w < 0 for w in mixture.values()) or abs(sum(mixture.values()) - 1) > 1e-9:
@@ -46,6 +46,14 @@ class RootSampler:
         if (config["tournament_start_players"] not in (2, 3) or config["tournament_start_players"] < player_count
                 or type(config["max_rollout_hands"]) is not int or config["max_rollout_hands"] < 1):
             raise ValueError(f"Invalid tournament root search configuration: {config}")
+        if "decision_contexts" in config:
+            supported = {"open", "facing_open", "facing_3bet", "facing_4bet", "short", "facing_jam",
+                         "flop_check", "flop_bet", "flop_raise", "turn_check", "turn_bet", "turn_raise",
+                         "river_check", "river_bet", "river_raise", "river_jam"}
+            if (not isinstance(config["decision_contexts"], list) or not config["decision_contexts"]
+                    or len(set(config["decision_contexts"])) != len(config["decision_contexts"])
+                    or not set(config["decision_contexts"]) <= supported or mixture["on_policy"] != 0):
+                raise ValueError("Decision contexts require unique supported recipes and no on-policy mixture")
         self.player_count, self.config = player_count, config
         if config["hole_card_sampling"] not in ("random", "stratified", "stratified_recorded_opening"):
             raise ValueError(f"Invalid hole-card sampling mode: {config['hole_card_sampling']}")
@@ -189,9 +197,58 @@ class RootSampler:
         return HandState.start(stacks, button, self.rng, stage.blinds,
                                hand_number=stage.first_hand, blind_level_index=level)
 
+    def _decision_root(self, traverser: int) -> HandState:
+        """Stationary controlled root distribution; actions never depend on cards.
+
+        Every recipe constructs a legal prefix with the canonical engine. This
+        defines a training distribution over subgame roots, not an on-policy
+        estimate of their full-game visitation frequencies.
+        """
+        contexts = self.config["decision_contexts"]
+        context = contexts[self.stratum_index % len(contexts)]
+        self.stratum_index += 1
+        count = self.player_count
+        depth = self.rng.choice((12., 25., 40.))
+        stacks = {i: depth * self.rng.choice((0.75, 1., 1.5)) for i in range(count)}
+        if context == "short":
+            stacks = {i: self.rng.choice((2., 4., 6.)) for i in range(count)}
+        if context == "facing_4bet":
+            stacks = {i: max(25., v) for i,v in stacks.items()}
+        hand = HandState.start(stacks, self.rng.randrange(count), self.rng, BlindLevel(.5, 1.))
+        initial = hand.clone()
+        street = context.split("_")[0].upper()
+        if street in ("FLOP", "TURN", "RIVER"):
+            while hand.street != street and not hand.terminal:
+                hand.act("CALL" if hand.to_call() else "CHECK")
+        raises = {"facing_open": 1, "facing_3bet": 2, "facing_4bet": 3}.get(context, 0)
+        if context.endswith("_bet"):
+            raises = 1
+        if context.endswith("_raise"):
+            raises = 2
+        if context.endswith("_jam"):
+            apply_action(hand, "ALL_IN")
+        else:
+            for _ in range(raises):
+                choices = [a for a in legal_actions(hand) if a.category == "RAISE" and a.action_id != "ALL_IN"]
+                if not choices:
+                    raise ValueError(f"Decision recipe has no non-all-in raise: {context}")
+                choices[0].apply(hand)
+        if hand.terminal:
+            raise ValueError(f"Decision recipe unexpectedly terminal: {context}")
+        if self.config["hole_card_sampling"] != "random":
+            actor = hand.current_player if count == 2 else traverser
+            redealt = self.stratify_cards(initial, actor, stream=f"decision_roots/{context}")
+            for event in hand.history[len(initial.history):]:
+                redealt.act(event.action, event.amount_to if event.action == "RAISE" else None)
+            hand = redealt
+        self.coverage.record(neural_observation(observe(hand)), f"decision_root/{context}")
+        return hand
+
     def sample(self, _solver_rng: random.Random | None = None, *, traverser: int | None = None) -> HandState:
         if self.config["hole_card_sampling"] != "random" and traverser not in range(self.player_count):
             raise ValueError("Stratified hole-card roots require an explicit seated traverser")
+        if "decision_contexts" in self.config:
+            return self._decision_root(traverser)
         source = self.rng.choices(SOURCES, weights=[self.config["mixture"][s] for s in SOURCES], k=1)[0]
         root = self._on_policy() if source == "on_policy" else self._exploration(source == "stratified")
         if self.config["hole_card_sampling"] == "stratified" and not root.terminal:

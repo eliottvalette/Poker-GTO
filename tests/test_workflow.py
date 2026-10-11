@@ -31,7 +31,7 @@ class WorkflowTests(unittest.TestCase):
             config.update(output_dir=str(self.root / 'runs' / track), workers=1, advantage_epochs=1, average_epochs=1,
                           checkpoint_every=1, evaluation_every=100)
             config[track]['traversals_per_player'] = 2
-            (self.root / 'configs' / f'train_{track}.json').write_text(json.dumps(config))
+            (self.root / 'configs' / f'train_{track}_streets.json').write_text(json.dumps(config))
 
     def train(self, track):
         return workflow.train_track(track, .001)
@@ -111,7 +111,7 @@ class WorkflowTests(unittest.TestCase):
             self.train('hu')
         config = workflow.config_for('hu')
         config['output_dir'] = str(self.root / 'fresh-hu')
-        (self.root / 'configs/train_hu.json').write_text(json.dumps(config))
+        (self.root / 'configs/train_hu_streets.json').write_text(json.dumps(config))
         fresh = self.train('hu')
         self.assertEqual(fresh['initial_iteration'], 0)
         self.assertEqual(fresh['final_iteration'], 1)
