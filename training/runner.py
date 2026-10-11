@@ -55,7 +55,7 @@ def write_source_manifest(repository: Path, destination: Path) -> None:
     metadata = source_metadata(repository)
     listing = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd=repository)
     files = [name for name in sorted(set(listing.decode().split('\0')) - {''})
-             if (Path(name).suffix in ('.py', '.ts', '.tsx') or name.startswith('configs/'))]
+             if (repository / name).is_file() and (Path(name).suffix in ('.py', '.ts', '.tsx') or name.startswith('configs/'))]
     destination.write_text(json.dumps({'version': 1, 'metadata': metadata, 'files': files}, indent=2) + '\n')
 
 
@@ -77,10 +77,10 @@ def source_metadata(repository: Path | None = None) -> dict:
     digest = hashlib.sha256()
     for name in sorted(set(listing.stdout.decode().split("\0")) - {""}):
         path = repository / name
-        if path.suffix not in (".py", ".ts", ".tsx") and not name.startswith("configs/"):
+        if not path.is_file() or (path.suffix not in (".py", ".ts", ".tsx") and not name.startswith("configs/")):
             continue
         digest.update(name.encode())
-        digest.update(path.read_bytes() if path.exists() else b"deleted")
+        digest.update(path.read_bytes())
     return {"source_git_commit": source_commit(repository), "source_git_dirty": bool(status.stdout),
             "source_code_sha256": digest.hexdigest()}
 

@@ -6,6 +6,7 @@ import { PolicyBank } from "./policy-bank";
 /** Poll small pointers; only download and validate changed model bundles. */
 export function usePublishedPolicies() {
   const [models, setModels] = useState<Record<number, LoadedAveragePolicy>>({});
+  const [publishedAt, setPublishedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -15,7 +16,7 @@ export function usePublishedPolicies() {
       try {
         const changed = await bank.refresh();
         if (!disposed) {
-          if (changed) setModels({ ...bank.models });
+          if (changed) { setModels({ ...bank.models }); setPublishedAt(bank.publishedAt); }
           setError(null);
         }
       } catch (cause) {
@@ -33,5 +34,5 @@ export function usePublishedPolicies() {
       void bank.close().catch(console.error);
     };
   }, []);
-  return { models, error, loading };
+  return { models, error, loading, publishedAt };
 }

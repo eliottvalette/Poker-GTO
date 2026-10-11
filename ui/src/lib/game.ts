@@ -22,7 +22,7 @@ export type TableView = {
 };
 
 export class BrowserTable {
-  constructor(public tournament: TournamentState, public readonly hero: number, private rng: SeededRNG, public readonly opponentProfile = "uniform") {
+  constructor(public tournament: TournamentState, public readonly hero: number, private rng: SeededRNG, public readonly opponentProfile = "uniform", private carriedResult = 0) {
     if (!tournament.original_players.includes(hero)) throw new Error(`Hero ${hero} is not seated`);
   }
 
@@ -49,12 +49,21 @@ export class BrowserTable {
   }
 
   async nextHandWithPolicy(policy: OpponentPolicy): Promise<void> {
-    if (this.tournament.terminal) throw new Error(`Tournament already won by player ${this.tournament.winner}`);
-    this.tournament.startHand(); await this.advanceWithPolicy(policy);
+    if (!this.tournament.hand?.terminal) throw new Error("The current hand is not settled");
+    if (this.tournament.terminal || this.tournament.hand.players[this.hero]?.stack === 0) {
+      const total = this.view().hero_result_bb;
+      const count = this.tournament.original_players.length;
+      if (count !== 2 && count !== 3) throw new Error(`Unsupported table size: ${count}`);
+      const fresh = BrowserTable.initialize(Math.floor(this.rng.next() * 0x100000000), this.hero, this.opponentProfile, count);
+      this.tournament = fresh.tournament;
+      this.rng = fresh.rng;
+      this.carriedResult = total;
+    } else this.tournament.startHand();
+    await this.advanceWithPolicy(policy);
   }
 
   clone(): BrowserTable {
-    return new BrowserTable(this.tournament.clone(), this.hero, this.rng.clone(), this.opponentProfile);
+    return new BrowserTable(this.tournament.clone(), this.hero, this.rng.clone(), this.opponentProfile, this.carriedResult);
   }
 
   act(action: string): void {
@@ -117,7 +126,7 @@ export class BrowserTable {
       hand_terminal: hand.terminal, tournament_terminal: t.terminal, winner: t.winner,
       hand_results_bb: hand.terminal ? Object.fromEntries(t.original_players.map(id => [id, hand.players[id] ? hand.utility(id) / bigBlind : 0])) : {},
       // Historical sum uses each settled hand's own BB unit.
-      hero_result_bb: [...t.completed, ...(hand.terminal ? [hand] : [])]
+      hero_result_bb: this.carriedResult + [...t.completed, ...(hand.terminal ? [hand] : [])]
         .reduce((total, previous) => total + (previous.players[this.hero] ? previous.utility(this.hero) / previous.blinds.big : 0), 0),
       total_chips_bb: t.total_chips / bigBlind, blind_level_index: hand.blind_level_index,
       chip_unit_big_blind: bigBlind, blinds: { small: hand.blinds.small / bigBlind, big: 1 },

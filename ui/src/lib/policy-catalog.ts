@@ -1,7 +1,7 @@
 /** Shared catalog routing for the UI and Web Worker. No secret credentials are used. */
 export type PolicyCatalog = {
   version: number;
-  exports: Record<string, { bundle_id: string; iteration: number }>;
+  exports: Record<string, { bundle_id: string; iteration: number; published_at?: string }>;
 };
 
 export function policyStorageBase(): string | null {
@@ -29,7 +29,10 @@ export async function fetchPolicyCatalog(assetOrigin?: string): Promise<PolicyCa
     const pointer = await response.json();
     if (pointer.version !== 1 || pointer.track !== track || !/^[a-f0-9]{64}$/.test(pointer.release_id)
         || !Number.isSafeInteger(pointer.iteration) || pointer.iteration < 1) throw new Error(`Invalid Supabase ${track} pointer`);
-    return [track, { bundle_id: pointer.release_id, iteration: pointer.iteration }];
+    if (typeof pointer.published_at !== "string" || !Number.isFinite(Date.parse(pointer.published_at))) {
+      throw new Error(`Invalid Supabase ${track} publication date`);
+    }
+    return [track, { bundle_id: pointer.release_id, iteration: pointer.iteration, published_at: pointer.published_at }];
   }));
   return { version: 1, exports: Object.fromEntries(entries) };
 }

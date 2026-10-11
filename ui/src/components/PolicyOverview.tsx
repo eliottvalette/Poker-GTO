@@ -27,10 +27,6 @@ export default function PolicyOverview({ policies }: { policies: Record<number, 
     count === 3 ? [25, 25, 25] : [37.5, 37.5], 1, 42), [count, position]);
   const policy = policies[count];
   const actions = legalActions(hand);
-  const spread = cells ? Math.max(...actions.map(action => {
-    const values = cells.map(cell => cell.probabilities[action.action_id] ?? 0);
-    return (Math.max(...values) - Math.min(...values)) * 100;
-  })) : null;
   useEffect(() => {
     let cancelled = false;
     setCells(null); setProgress(0); setError(null);
@@ -51,12 +47,12 @@ export default function PolicyOverview({ policies }: { policies: Record<number, 
         <div role="group" aria-label="Position">{(count === 3 ? ["BTN", "SB", "BB"] : ["SB", "BB"]).map(p => <Button key={p} size="sm" variant={position === p ? "default" : "secondary"} aria-pressed={position === p} onClick={() => setPosition(p as Position)}>{p}</Button>)}</div>
       </div>
     </CardHeader>
-    <CardContent className="space-y-4">
+    <CardContent className={styles.content}>
       <div className={styles.context}><span>{position} · {hand.history.filter(event => event.action !== "BLIND").length === 0 ? "Unopened pot" : "After previous positions call"} · Pot {(hand.pot / hand.blinds.big).toFixed(1)} BB</span></div>
       {!policy && <div role="status">No published {count === 3 ? "3-max" : "HU"} policy. Export this track with migrate.py.</div>}
       {error && <div role="alert" className="text-destructive">{error}</div>}
       {policy && !error && <div className={styles.layout}>
-        <div>
+        <div className={styles.range}>
           <div className={styles.legend}>{actions.map(action => <span key={action.action_id}><i style={{ background: actionColor(action.action_id) }} />{label(action.action_id, action.amount_to, hand.blinds.big)}</span>)}</div>
           {!cells && <div role="status" className={styles.loading}>Computing range · {progress} / 1326 combos</div>}
           {cells && <div className={styles.matrix} aria-label="Preflop action range">
@@ -80,7 +76,6 @@ export default function PolicyOverview({ policies }: { policies: Record<number, 
               </Tooltip>)}
             </div>)}
           </div>}
-          {spread !== null && <p className={styles.caption}>1326 exact combos, averaged within each class. Largest action difference between classes: {spread.toFixed(1)} percentage points.</p>}
         </div>
 
       </div>}

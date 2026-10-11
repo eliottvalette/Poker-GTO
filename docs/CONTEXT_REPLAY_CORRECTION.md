@@ -1,6 +1,6 @@
 # Context replay and validation correction
 
-Status: IMPLEMENTED AND DEPLOYED. Strategic improvement remains unvalidated; the first production candidates were rejected by the activation gate.
+Status: IMPLEMENTED AND DEPLOYED. Strategic improvement remains unvalidated. The publication gate recorded in the historical evidence below has been removed; validated current-run exports are now activated directly.
 
 | Requirement | Status | Evidence / next action |
 |---|---|---|
@@ -9,7 +9,7 @@ Status: IMPLEMENTED AND DEPLOYED. Strategic improvement remains unvalidated; the
 | Actual train/validation/test coverage | DONE | Per-split context/class counts and ESS |
 | Frozen A/B supervision validation | DONE | Frozen historical targets, zero-regret/uniform baselines; separate from strategic references |
 | Bounded matched comparison | DONE | Same stream/checkpoint, allocation-only comparison and independent poker probes |
-| Separate candidate publication from active policy | DONE | Candidate evaluation before activation; explicit decisions retained |
+| Direct publication of current-run exports | DONE | No statistical activation gate; evaluations remain observational |
 | OVH end-to-end activation | DONE | Fresh runs bootstrapped, saved/resumed/exported, both services running without restarts |
 | UI and Supabase compatibility | DONE | Real candidate uploads and evaluations; both tracks verified in Chrome against live Storage |
 
@@ -55,3 +55,9 @@ The running release is `25dacf5e3c4759f27daf3b5201ba16fc60c2a493`, a verified so
 
 Next action: inspect the next hourly candidates' fixed A/B validation, conditional coverage and independent activation comparisons. Do not interpret additional iterations, improved retention, or a single successful gate as proof of general poker strength. Position/stack coverage remains available in aggregate diagnostics; the new split-specific summary currently resolves context/opening class/root counts and ESS, not every position-by-stack cross-tabulation.
 
+
+## Publication correction — direct current-run delivery
+
+The candidate promotion gate described above is superseded. New validated exports are published directly to `current.json`; hourly evaluation measures them but cannot block activation. `training/promotion.py` and candidate-channel plumbing are removed. Technical export checks (schema, hashes, CPU inference/read-back) still apply.
+
+The Training page no longer exposes a historical-run selector. It shows the latest identified run and excludes untracked history. Obsolete Supabase model releases and evaluation references are removed during the explicit production cleanup; evaluations restart against a reference from the current run, so old-reference differences are not mixed into the new series. Active training checkpoints are preserved and resumed.

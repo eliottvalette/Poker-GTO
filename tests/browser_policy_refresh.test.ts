@@ -39,12 +39,13 @@ test("Supabase pointers are independent, public, and route each track to immutab
   const requests:string[]=[];
   globalThis.fetch=async (input) => {
     const url=String(input);requests.push(url);const track=url.includes('/hu/')?'hu':'3max';
-    return new Response(JSON.stringify({version:1,track,release_id:(track==='hu'?'a':'b').repeat(64),iteration:9}));
+    return new Response(JSON.stringify({version:1,track,release_id:(track==='hu'?'a':'b').repeat(64),iteration:9,published_at:"2026-10-11T17:00:00Z"}));
   };
   try {
     const catalog=await fetchPolicyCatalog();
     assert.deepEqual(Object.keys(catalog.exports).sort(),['3max','hu']);
     assert.equal(requests.length,2);
+    assert.equal(catalog.exports.hu.published_at,"2026-10-11T17:00:00Z");
     assert.match(policyArtifactBase('hu',catalog.exports.hu.bundle_id),/object\/public\/poker-policies\/hu\/releases\/a{64}\/average_hu$/);
     globalThis.fetch=async () => new Response('unavailable',{status:503});
     await assert.rejects(fetchPolicyCatalog(),/HTTP 503/);

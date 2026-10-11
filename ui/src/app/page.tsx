@@ -6,7 +6,7 @@ import PolicyAnalysis from "@/components/PolicyAnalysis";
 import TrainingProgress from "@/components/TrainingProgress";
 import { usePublishedPolicies } from "@/lib/use-published-policies";
 import { Button } from "@/components/ui/button";
-import { Sidebar, SidebarContent, SidebarHeader, SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
+import { Sidebar, SidebarFooter, SidebarContent, SidebarHeader, SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
 
 function CollapsedNavigationTrigger() {
   const { isMobile, state } = useSidebar();
@@ -16,7 +16,7 @@ function CollapsedNavigationTrigger() {
 
 export default function Page() {
   const [mainTab, setMainTab] = useState<"overview" | "case" | "test" | "training">("test");
-  const { models, error, loading } = usePublishedPolicies();
+  const { models, error, loading, publishedAt } = usePublishedPolicies();
   return <SidebarProvider>
     <Sidebar variant="floating" className="p-3">
       <SidebarHeader className="border-b border-border p-4"><div className="flex items-center gap-2"><SidebarTrigger /><h1 className="text-lg font-semibold">GTO Viewer</h1></div></SidebarHeader>
@@ -24,14 +24,15 @@ export default function Page() {
         {([["overview", "Overview"], ["case", "Specific spot"], ["test", "Test Live"], ["training", "Training"]] as const).map(([tab, label]) =>
           <Button key={tab} variant={mainTab === tab ? "default" : "secondary"} onClick={() => setMainTab(tab)}>{label}</Button>)}
       </SidebarContent>
+      <SidebarFooter className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
+        <span>Last update</span>
+        {publishedAt ? <time dateTime={publishedAt}>{new Date(publishedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</time> : <span>Unavailable</span>}
+      </SidebarFooter>
     </Sidebar>
     <SidebarInset className="min-w-0">
       <CollapsedNavigationTrigger />
       <main className="space-y-4 px-4 py-3">
         {loading && <div role="status" className="text-sm text-muted-foreground">Loading published policies…</div>}
-        {!loading && Object.keys(models).length > 0 && <div role="status" className="text-xs text-muted-foreground">
-          Policies · {([[2, "HU"], [3, "3-max"]] as const).filter(([count]) => models[count]).map(([count, label]) => `${label} ${models[count].manifest.iteration}`).join(" · ")}
-        </div>}
         {error && <div role="alert" className="text-sm text-destructive">{error}</div>}
         {mainTab === "overview" && <PolicyOverview policies={models} />}
         {mainTab === "case" && <PolicyAnalysis policies={models} />}

@@ -12,6 +12,11 @@ export class PolicyBank {
   private closed = false;
   readonly models: Record<number, LoadedAveragePolicy> = {};
 
+  get publishedAt(): string | null {
+    const dates = Object.values(this.lastCatalog?.exports ?? {}).flatMap(entry => entry.published_at ? [entry.published_at] : []);
+    return dates.sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
+  }
+
   constructor(private catalog = fetchPolicyCatalog,
     private load: (catalog: PolicyCatalog) => Promise<Record<number, LoadedAveragePolicy>> = loadPublishedPolicies) {}
 

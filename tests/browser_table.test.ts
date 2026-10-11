@@ -252,3 +252,40 @@ test("HU format deals exactly two players and routes two-player observations thr
   assert.ok(counts.every(count=>count===2));
   assert.throws(()=>BrowserTable.create(1,1,"uniform",2),/not seated/);
 });
+
+
+test("Next hand restarts after a win or Hero bust while preserving settled P&L", async () => {
+  const { ACTION_IDS } = await import("../ui/src/lib/poker/actions.js");
+  const passive = async (obs: ReturnType<typeof observe>) => {
+    const action = obs.legal_mask[ACTION_IDS.indexOf("CHECK")] ? "CHECK" : "CALL";
+    return ACTION_IDS.map(id => Number(id === action));
+  };
+  const outcomes = new Set<string>();
+  for (const count of [2, 3] as const) {
+    for (let seed = 1; seed <= 20; seed++) {
+      const t = new TournamentState(count === 2 ? {0: 25, 2: 25} : {0: 25, 1: 25, 2: 1}, 0, new SeededRNG(seed));
+      t.startHand();
+      const table = new BrowserTable(t, 2, new SeededRNG(seed + 1), "published");
+      await assert.rejects(() => table.nextHandWithPolicy(passive), /not settled/);
+      while (!t.hand!.terminal) {
+        const h = t.hand!;
+        if (h.current_player === 2) h.act("RAISE", h.players[2].street_bet + h.players[2].stack);
+        else h.act(h.toCall() > 0 ? "CALL" : "CHECK");
+      }
+      if (!t.terminal && t.active.includes(2)) continue;
+      outcomes.add(t.terminal ? t.winner === 2 ? "won" : "lost" : "busted-multiway");
+      const total = table.view().hero_result_bb;
+      const copy = table.clone();
+      await table.nextHandWithPolicy(passive);
+      await copy.nextHandWithPolicy(passive);
+      assert.deepEqual(copy.view(), table.view());
+      assert.equal(table.view().hand_number, 1);
+      assert.equal(table.view().hero_result_bb, total);
+      assert.deepEqual(table.tournament.original_players, count === 2 ? [0, 2] : [0, 1, 2]);
+      assert.equal(table.view().players.find(p => p.player_id === 2)!.active, true);
+      const manual = await BrowserTable.createWithPolicy(seed, 2, "published", passive, count);
+      assert.equal(manual.view().hero_result_bb, 0);
+    }
+  }
+  assert.deepEqual([...outcomes].sort(), ["busted-multiway", "lost", "won"]);
+});

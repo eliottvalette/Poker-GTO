@@ -120,24 +120,24 @@ def write_trace(path: Path, value: dict) -> None:
 
 
 def evaluate_published(storage: SupabaseStorage, track: str, directory: Path,
-                       budget: EvaluationBudget = EvaluationBudget(), *, channel: str = 'current') -> dict | None:
+                       budget: EvaluationBudget = EvaluationBudget()) -> dict | None:
     """One writer per track; never modifies the policy publication pointer."""
-    if track not in TRACKS or channel not in ('current','candidate'):
+    if track not in TRACKS:
         raise ValueError('Unknown evaluation track')
     directory.mkdir(parents=True, exist_ok=True)
     with (directory / '.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        return _evaluate(storage, track, directory, budget, channel)
+        return _evaluate(storage, track, directory, budget)
 
 
-def _evaluate(storage: SupabaseStorage, track: str, directory: Path, budget: EvaluationBudget, channel: str = 'current') -> dict | None:
+def _evaluate(storage: SupabaseStorage, track: str, directory: Path, budget: EvaluationBudget) -> dict | None:
     now = datetime.now(timezone.utc)
     retain_traces(directory, now)
     key = f'evaluation/{track}/history.json.gz'
     history = read_history(storage, key) or {'version': 1, 'track': track, 'runs': []}
     validate_history(history, track)
     compact = retain_history(history, now)
-    pointer = read_json(storage, f'{track}/{channel}.json')
+    pointer = read_json(storage, f'{track}/current.json')
     if pointer is None:
         print(f'[{track}] evaluation waiting for a published policy', flush=True)
         return None
@@ -190,9 +190,6 @@ def _evaluate(storage: SupabaseStorage, track: str, directory: Path, budget: Eva
             raise ValueError('Pinned reference checksum mismatch')
         baseline = OnnxPolicy(ref_model, ref_manifest, TRACKS[track])
     report, traces = evaluate_policy(candidate, baseline, TRACKS[track], budget)
-    if channel == 'candidate':
-        from training.promotion import assess_candidate
-        report['activation'] = assess_candidate(storage, track, pointer, candidate, budget)
     report.update(run_id=manifest.get('run_id'),
                   architecture=manifest.get('layout', 'shared_per_player_count'),
                   release_id=pointer['release_id'], model_sha256=model_hash,

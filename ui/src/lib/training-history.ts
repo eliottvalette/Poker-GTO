@@ -2,7 +2,6 @@ import { policyStorageBase } from "./policy-catalog";
 
 export type Estimate = { n: number; mean: number | null; m2: number; se: number | null; interval: [number, number] | null };
 export type EvaluationRun = {
-  activation?: { status: "accepted" | "not_accepted" | "active"; active_iteration: number; reason: string };
   run_id?: string | null; architecture?: string;
   suite: string; release_id: string; model_sha256: string; iteration: number;
   evaluated_at: string; published_at: string; status: "complete" | "budget_limited" | "failed";
@@ -37,10 +36,6 @@ export function parseTrainingHistory(value: unknown, track: "hu" | "3max"): Trai
   const ids = new Set();
   for (const r of value.runs) {
     if (!object(r) || !hash(r.release_id) || ids.has(r.release_id) || !hash(r.model_sha256)
-        || (r.activation !== undefined && (!object(r.activation)
-          || !["accepted", "not_accepted", "active"].includes(String(r.activation.status))
-          || !Number.isSafeInteger(r.activation.active_iteration) || Number(r.activation.active_iteration) < 1
-          || typeof r.activation.reason !== "string"))
         || (r.run_id !== undefined && r.run_id !== null && (typeof r.run_id !== "string" || !/^[a-f0-9]{32}$/.test(r.run_id)))
         || (r.architecture !== undefined && !["shared_per_player_count", "independent_streets_v1"].includes(String(r.architecture)))
         || typeof r.suite !== "string" || !Number.isInteger(r.iteration) || Number(r.iteration) < 1
