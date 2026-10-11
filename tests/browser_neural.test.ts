@@ -1,4 +1,4 @@
-import { loadPublishedPolicies } from "../ui/src/lib/onnx-policy";
+import { loadPublishedPolicies, loadStreetPolicies, validatePolicyManifest } from "../ui/src/lib/onnx-policy";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -103,4 +103,32 @@ test("private descriptors cover pairs, suited cards, broadway and ace-low connec
 
  test("empty policy catalog returns no models without a legacy fallback", async () => {
   assert.deepEqual(await loadPublishedPolicies({version:1,exports:{}}),{});
+});
+
+const publishedManifests = JSON.parse(readFileSync("tests/fixtures/published_street_manifests.json", "utf8")) as
+  Record<string, Parameters<typeof loadStreetPolicies>[0]>;
+
+test("published HU and 3-max catalogs accept run metadata on all eight routes", async () => {
+  for (const [track, count] of [["hu", 2], ["3max", 3]] as const) {
+    const catalog = publishedManifests[track];
+    const loaded = loadStreetPolicies(catalog, "https://example.test/", count, catalog.iteration);
+    for (const route of Object.values(catalog.routes)) {
+      assert.equal(validatePolicyManifest(route.manifest).run_id, catalog.run_id);
+      const legacy = structuredClone(route.manifest);
+      delete legacy.run_id; delete legacy.layout;
+      assert.equal(validatePolicyManifest(legacy).model_sha256, route.model_hash);
+      assert.equal(validatePolicyManifest({ ...legacy, run_id: null }).run_id, null);
+      assert.throws(() => validatePolicyManifest({ ...route.manifest, run_id: "invalid" }), /run identifier/);
+      assert.throws(() => validatePolicyManifest({ ...route.manifest, layout: "independent_streets_v1" }), /layout/);
+      assert.throws(() => validatePolicyManifest({ ...route.manifest, extra: true }), /unexpected=\[extra\]/);
+      const incomplete = { ...route.manifest } as Partial<typeof route.manifest>;
+      delete incomplete.actions;
+      assert.throws(() => validatePolicyManifest(incomplete), /missing=\[actions\]/);
+      assert.throws(() => validatePolicyManifest({ ...route.manifest, validation_max_absolute_error: 1 }), /Incompatible/);
+    }
+    const mixed = structuredClone(catalog);
+    mixed.routes.RIVER.manifest.run_id = "f".repeat(32);
+    assert.throws(() => loadStreetPolicies(mixed, "https://example.test/", count, mixed.iteration), /RIVER model route/);
+    await loaded.release();
+  }
 });

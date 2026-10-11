@@ -7,6 +7,8 @@ const INPUTS = ["cards", "street", "position", "numeric", "history", "mask"] as 
 import { numericNames, neuralObservation } from "./poker/neural";
 
 export type PolicyManifest = {
+  run_id?: string | null;
+  layout?: "shared_per_player_count";
   version: number;
   action_schema_version: number;
   feature_schema_version: number;
@@ -61,7 +63,22 @@ export function validatePolicyManifest(raw: unknown): PolicyManifest {
     "supported_player_counts", "actions", "numeric_names", "positions", "events", "normalization_bb",
     "card_encoding", "card_slots", "unknown_card", "card_vocabulary", "history_width", "full_history",
     "batch_size", "inputs", "output", "validation_max_absolute_error", "amount_units", "utility_units", "history_scope", "payout_scope"];
-  if (!equalArray(Object.keys(raw).sort(), fields.sort()) || manifest.version !== 4
+  const optionalFields = ["run_id", "layout"];
+  const actualFields = Object.keys(raw);
+  if (!fields.every(field => actualFields.includes(field))
+      || actualFields.some(field => !fields.includes(field) && !optionalFields.includes(field))) {
+    const missing = fields.filter(field => !actualFields.includes(field));
+    const unexpected = actualFields.filter(field => !fields.includes(field) && !optionalFields.includes(field));
+    throw new Error(`Incompatible average-policy manifest fields: missing=[${missing.join(", ")}], unexpected=[${unexpected.join(", ")}]`);
+  }
+  if (manifest.run_id !== undefined && manifest.run_id !== null
+      && (typeof manifest.run_id !== "string" || !/^[a-f0-9]{32}$/.test(manifest.run_id))) {
+    throw new Error("Invalid average-policy training run identifier");
+  }
+  if (manifest.layout !== undefined && manifest.layout !== "shared_per_player_count") {
+    throw new Error("Invalid single-network manifest layout");
+  }
+  if (manifest.version !== 4
       || manifest.action_schema_version !== 1
       || ![2, 3, 4].includes(manifest.feature_schema_version)
       || manifest.suit_normalization !== (manifest.feature_schema_version >= 3 ? "private_order_minimum" : "first_observable_occurrence")
@@ -202,10 +219,13 @@ type StreetRoute = {
 
 /** Validate every route before loading any weights; load one session per queried street. */
 export function loadStreetPolicies(raw: {
+  run_id?: string | null;
   version: number; layout: string; iteration: number; supported_player_counts: number[];
   routes: Record<string, StreetRoute>;
 }, base: string, count: number, iteration: number, assetOrigin?: string): LoadedAveragePolicy {
   if (raw.version !== 5 || raw.layout !== "independent_streets_v1" || raw.iteration !== iteration
+      || (raw.run_id !== undefined && raw.run_id !== null
+          && (typeof raw.run_id !== "string" || !/^[a-f0-9]{32}$/.test(raw.run_id)))
       || !equalArray(raw.supported_player_counts, [count]) || !raw.routes
       || !equalArray(Object.keys(raw.routes).sort(), [...STREETS].sort())) {
     throw new Error("Invalid street policy catalog");
@@ -214,6 +234,7 @@ export function loadStreetPolicies(raw: {
     const route = raw.routes[street];
     const manifest = validatePolicyManifest(route.manifest);
     if (route.player_count !== count || route.street !== street || route.model_kind !== "AVERAGE"
+        || (manifest.run_id ?? null) !== (raw.run_id ?? null)
         || !Number.isSafeInteger(route.model_version) || route.model_version < 1 || route.model_version > iteration
         || !/^[a-f0-9]{64}$/.test(route.checkpoint_source) || route.model_hash !== manifest.model_sha256
         || route.feature_schema !== manifest.feature_schema_version || route.action_schema !== manifest.action_schema_version
