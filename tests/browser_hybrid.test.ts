@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { analyzeHybrid, restoreHand, uniformRanges, HYBRID_BUDGETS, type HandTransport, type HybridBudget, type Ranges } from "../ui/src/lib/poker/hybrid";
+import { analyzeHybrid, restoreHand, uniformRanges, HYBRID_BUDGETS, LIVE_DECISION_BUDGET, type HandTransport, type HybridBudget, type Ranges } from "../ui/src/lib/poker/hybrid";
 import { HandState, SeededRNG } from "../ui/src/lib/poker/engine";
 
 const fixtures = JSON.parse(readFileSync("tests/fixtures/hybrid_parity.json", "utf8")) as {
@@ -28,4 +28,26 @@ for (const count of [2, 3]) test(`Live ${count}-player preflop calculation is de
   assert.ok(a.nodes > 16);
   assert.ok(Math.abs(Object.values(a.probabilities).reduce((x, y) => x + y, 0) - 1) < 1e-12);
   assert.throws(() => analyzeHybrid(hand, ranges, { ...HYBRID_BUDGETS.FAST, maxNodes: 1 }), /budget exhausted/);
+});
+
+for (const count of [2, 3]) test(`Model-free live decisions cover all streets for ${count} players`, () => {
+  const hand = HandState.start(Object.fromEntries(Array.from({length: count}, (_, i) => [i, 25])), 0, new SeededRNG(81));
+  const profiles = Object.fromEntries(Object.keys(hand.players).map(p => [p, "conservative"]));
+  for (const street of ["PREFLOP", "FLOP", "TURN", "RIVER"]) {
+    while (hand.street !== street) hand.act(hand.toCall() ? "CALL" : "CHECK");
+    const result = analyzeHybrid(hand, uniformRanges(hand), LIVE_DECISION_BUDGET, "behavior", profiles);
+    assert.equal(result.samples, 128);
+    assert.equal(result.iterations, 0);
+    assert.ok(result.nodes <= LIVE_DECISION_BUDGET.maxNodes);
+    assert.equal(Object.keys(result.ev).length, result.legalActions.length);
+    for (const value of Object.values(result.ev)) assert.ok(Number.isFinite(value));
+    const winner = Math.max(...Object.values(result.ev));
+    for (const [action, probability] of Object.entries(result.probabilities)) {
+      if (probability > 0) assert.ok(Math.abs(result.ev[action] - winner) < 1e-10);
+    }
+    const other = hand.clone();
+    for (const seat of Object.keys(other.players).map(Number)) if (seat !== other.current_player) other.players[seat].cards = [50, 51];
+    other.deck.reverse();
+    assert.deepEqual(analyzeHybrid(other, uniformRanges(other), LIVE_DECISION_BUDGET, "behavior", profiles), result);
+  }
 });

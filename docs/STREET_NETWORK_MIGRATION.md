@@ -119,6 +119,8 @@ This localhost fixture server maps only local experimental policy bundles; it do
 
 ## Remaining quality limitations
 
+Local follow-up: [SOLVER_AUTHORITY.md](SOLVER_AUTHORITY.md) records the calculation-first decision path and separate finite-game distillation workflow. The sixteen specialists remain implemented; their existence is not evidence of strategic quality. This follow-up has not changed the OVH training service or production artifacts.
+
 The migration is implemented; poker strength is not established. Seed-101 HU A folds AA about 72.7%, while B folds AA about 5.5%; this discrepancy exposes an unstable current regret model despite a less extreme historical average. 3-max weak-hand over-aggression and low retained strategy ESS remain. Tiny opening datasets contain missing AA/KK/AKs supervision. Some postflop conditional EVs improve, others regress. The exact small river fixtures do not certify general equilibrium quality.
 
 All sixteen models are therefore experimental. The next substantial budget and acceptance checks are in STREET_NETWORK_EXPERIMENTS.md. No large training, automatic acceptance, production export, commit, push or deployment was performed.

@@ -54,6 +54,8 @@ Implemented `range-display.ts` and two inspector views: blocker/multiplicity-nor
 
 ## Training finalization and cleanup
 
+The subsequent local solver-authority correction is tracked in [SOLVER_AUTHORITY.md](SOLVER_AUTHORITY.md): Test Live recommendations now originate from the hybrid worker, and resumable finite-game regrets can generate optional specialist supervision. Historical implementation completion below must not be read as a current model-quality or deployment claim.
+
 DONE: main HU/three-player configs now use recorded-player stratification, 20% protected openings, independent50/20 fit budgets and explicit bounded session settings. Training only resumes its own local checkpoint by default; resuming a published checkpoint requires an explicit programmatic option. Test Live opponent selection now drives actual actions and Bayesian likelihoods, including ONNX inference in the worker. Unknown or unavailable policies fail explicitly. Empty catalogs clear old loaded models. See `TRAINING.md` for the operational commands and limitations.
 
 Explicit cleanup removed `artifacts/`, old `policy/` weights/releases/legacy CSV/GZ, `ui/public/policy/releases`, old run outputs if present, and generated UI build caches/static export. The catalog contains no active or exported models. Historical numerical reports above are not current model-quality claims. No large production training was launched and no diagnostic checkpoint was promoted. Final validation:196 Python tests,140 browser tests, production build, actual ONNX opponent/likelihood test before deletion, and empty-catalog browser test afterward.

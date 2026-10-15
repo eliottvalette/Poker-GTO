@@ -156,7 +156,8 @@ class ReferencePolicy:
             )
 
     def probabilities(self, observation: Observation) -> tuple[float, ...]:
-        key = observation.key()
+        from infoset import ordered_private_observation
+        key = ordered_private_observation(observation).key()
         if key in self.table:
             self.table_hits += 1
             return self.table[key]

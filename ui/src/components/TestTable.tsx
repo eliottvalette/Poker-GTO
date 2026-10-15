@@ -4,13 +4,13 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cardLabel, BrowserTable, type TableView } from "@/lib/game";
-import { PolicyCoverageError, type LoadedAveragePolicy } from "@/lib/onnx-policy";
+import { type LoadedAveragePolicy } from "@/lib/onnx-policy";
 import { ACTION_IDS } from "@/lib/poker/actions";
-import { observe, NUMERIC_NAMES, type Observation } from "@/lib/poker/observation";
+import { NUMERIC_NAMES, type Observation } from "@/lib/poker/observation";
 import PokerTableFrame from "@/components/PokerTableFrame";
 import { actionColor } from "@/lib/poker/presentation";
 import styles from "./TestTable.module.css";
-import HybridAnalysis from "./HybridAnalysis";
+import HybridAnalysis, { type DecisionSnapshot } from "./HybridAnalysis";
 import { showdownHighlights } from "@/lib/poker/showdown-display";
 import RangeInspection from "./RangeInspection";
 import { rangeStateKey, type RangeSnapshot } from "@/lib/poker/beliefs";
@@ -31,6 +31,8 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
   const [heroSeat, setHeroSeat] = useState<Seat>(2);
   const [rangeSnapshot, setRangeSnapshot] = useState<RangeSnapshot | null>(null);
   const [analysisSession, setAnalysisSession] = useState(0);
+  const [decision, setDecision] = useState<DecisionSnapshot | null>(null);
+  const [cancelCalculation, setCancelCalculation] = useState(0);
   const [game, setGame] = useState<TableView | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,22 +43,6 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
   const models = useRef<Record<number, LoadedAveragePolicy>>({});
   models.current = policies;
 
-  async function viewWithPolicy(candidate: BrowserTable): Promise<TableView> {
-    const view = candidate.view();
-    const count = Object.keys(candidate.tournament.hand?.players ?? {}).length;
-    const policy = models.current[count];
-    if (!policy) view.policy.reason = `Average policy unavailable for ${count} players; publish this track with migrate.py`;
-    if (policy && !view.hand_terminal && view.actor === candidate.hero) {
-      try {
-        view.policy = { status: "experimental", reason: "Loaded average policy; equilibrium quality has not been certified",
-          probabilities: await policy.query(observe(candidate.tournament)) };
-      } catch (cause) {
-        if (!(cause instanceof PolicyCoverageError)) throw cause;
-        view.policy.reason = cause.message;
-      }
-    }
-    return view;
-  }
 
   function opponentPolicy() {
     return async (observation:Observation):Promise<number[]> => {
@@ -80,7 +66,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
       }
       const tableResultBefore = table.current?.view().hero_result_bb;
       const candidate = await BrowserTable.createWithPolicy(Date.now(), hero, "published", opponentPolicy(), count);
-      const next = await viewWithPolicy(candidate);
+      const next = candidate.view();
       table.current = candidate;
       started.current = true;
       setGame(next);
@@ -118,7 +104,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
         if (!action) throw new Error("Action ID is required");
         await candidate.actWithPolicy(action,opponentPolicy());
       }
-      const next = await viewWithPolicy(candidate);
+      const next = candidate.view();
       if (operation === "next") setAnalysisSession(value => value + 1);
       table.current = candidate;
       setGame(next);
@@ -138,7 +124,7 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
       locked.current = true;
       setBusy(true);
       try {
-        const next = await viewWithPolicy(table.current);
+        const next = table.current.view();
         if (!cancelled) setGame(next);
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
@@ -154,7 +140,9 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
   const showdown = table.current?.tournament.hand ? showdownHighlights(table.current.tournament.hand) : {};
   const sessionPnL = (game?.hero_result_bb ?? 0) + carriedPnL;
   const actionHistory = game?.history ?? [];
-  const policy = game?.policy;
+  const currentDecision = !busy && table.current?.tournament.hand && decision?.sessionId === analysisSession
+    && decision.stateKey === rangeStateKey(table.current.tournament.hand, heroSeat) ? decision : null;
+  const calculation = currentDecision?.status === "current" ? currentDecision.result : undefined;
 
   const visibleActions: TableView["legal_actions"] = game?.legal_actions ?? [
     { action_id: "FOLD", category: "FOLD", amount_to: null },
@@ -194,7 +182,13 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
           heroSeat={heroSeat}
           board={game?.board.map(cardLabel).join(" ") ?? ""}
         />
-        {game && !game.hand_terminal && game.actor === heroSeat && !policy?.probabilities && <div className="px-4 py-2 text-sm text-muted-foreground">{policy?.reason}</div>}
+        {game && !game.hand_terminal && game.actor === heroSeat && <div className="px-4 py-2 text-xs text-muted-foreground" role="status">
+          {currentDecision?.status === "error" ? currentDecision.error : calculation
+            ? `${calculation.iterations ? "Local CFR" : "Monte Carlo · conservative continuations"} · ${calculation.samples} samples`
+            : "Calculating action values…"}
+          {calculation?.warnings.some(w => /unresolved|insufficient/i.test(w)) && " · Ranking uncertain"}
+          {currentDecision?.status === "calculating" && <button className="ml-2 underline" onClick={() => setCancelCalculation(value => value + 1)}>Cancel</button>}
+        </div>}
         {error && <div role="alert" className="px-4 py-2 text-sm text-destructive">{error}</div>}
         <div className={styles.toolbar} aria-label="Table controls">
           <TableFormat value={playerCount} disabled={busy} onChange={count => {
@@ -215,13 +209,14 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
         <div className="px-3 pb-4 sm:px-4" aria-label="Poker actions">
           <div className={styles.actions}>
             {visibleActions.map(action => {
-              const probability = policy?.probabilities?.[action.action_id];
+              const probability = calculation?.probabilities[action.action_id];
+              const ev = calculation?.ev[action.action_id];
               return (
                 <Button key={action.action_id} disabled={busy || !game || game.hand_terminal || game.actor !== heroSeat}
                   onClick={() => void command("action", action.action_id)}
                   className={`${styles.actionButton} relative h-10 w-full min-w-0 flex-col gap-0 border border-border bg-white py-1 text-black hover:bg-white/90`}>
                   <span className="relative z-10 whitespace-nowrap">{actionLabel(action)}</span>
-                  {probability !== undefined && <span className="relative z-10 text-xs">{(probability * 100).toFixed(0)}%</span>}
+                  {probability !== undefined && <span className="relative z-10 text-xs">{(probability * 100).toFixed(0)}%{ev !== undefined && table.current?.tournament.hand ? ` · ${(ev / table.current.tournament.hand.blinds.big).toFixed(2)} BB` : ""}</span>}
                   {probability !== undefined && <span className="absolute inset-y-0 left-0 bg-black/10" style={{ width: `${probability * 100}%`, background: actionColor(action.action_id), opacity: .25 }} />}
                 </Button>
               );
@@ -230,9 +225,9 @@ export default function TestTable({ policies }: { policies: Record<number, Loade
         </div>
       </Card>
       {table.current?.tournament.hand?.players[heroSeat] &&
-        <HybridAnalysis rangesOnly hand={table.current.tournament.hand} hero={table.current.tournament.hand.players[heroSeat].cards}
+        <HybridAnalysis rangesOnly autoAnalyze onDecisionUpdate={setDecision} cancelToken={cancelCalculation} hand={table.current.tournament.hand} hero={table.current.tournament.hand.players[heroSeat].cards}
           observerSeat={heroSeat} opponentProfile={opponentProfile} onRangeUpdate={setRangeSnapshot}
-          baseline={policy?.probabilities ?? null} sessionId={analysisSession} reconstructHistory transitioning={busy}
+          baseline={null} sessionId={analysisSession} reconstructHistory transitioning={busy}
           initialProfiles={Object.fromEntries(Object.keys(table.current.tournament.hand.players).map(p => [p, Number(p) === heroSeat ? "conservative" : opponentProfile]))} />
       }
       <Card>

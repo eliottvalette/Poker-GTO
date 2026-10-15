@@ -1,6 +1,6 @@
 """Exact observations and lossless tabular keys; no opponent private information."""
 from __future__ import annotations
-from dataclasses import asdict, dataclass, fields
+from dataclasses import dataclass, fields, replace
 import json
 import math
 from actions import ACTION_IDS, legal_actions
@@ -51,7 +51,30 @@ class Observation(ObservationFields):
             raise ValueError("Observation recall must encode a list of hand observations")
 
     def key(self) -> str:
-        return json.dumps(asdict(self), sort_keys=True, separators=(",", ":"), allow_nan=False)
+        # JSON serialization reads immutable fields directly; recursive dataclass
+        # copying is unnecessary and dominates small finite-game traversals.
+        return json.dumps({item.name: getattr(self, item.name) for item in fields(self)},
+                          sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def ordered_private_observation(observation: Observation) -> Observation:
+    """Match finite-game deals' sorted hole cards without changing suit identity."""
+    if observation.cards[0] < observation.cards[1]:
+        return observation
+    history = list(observation.history)
+    private_events = [i for i, event in enumerate(history) if round(event[4] * 6) == EVENTS.index("CARD")][:2]
+    if len(private_events) != 2:
+        raise ValueError("Observation lacks the two private-card history events")
+    a, b = private_events
+    if tuple(round(history[i][10] * 51) for i in (a, b)) != observation.cards[:2]:
+        raise ValueError("Private-card history and observation cards disagree")
+    history[a], history[b] = history[b], history[a]
+    recall = json.loads(observation.recall)
+    if len(recall) != 1:
+        raise ValueError("Finite-game policy requires a single-hand observation")
+    recall[0]["hole"] = sorted(recall[0]["hole"])
+    return replace(observation, cards=(observation.cards[1], observation.cards[0], *observation.cards[2:]),
+                   history=tuple(history), recall=json.dumps(recall, sort_keys=True, separators=(",", ":"), allow_nan=False))
 
 
 def observe_fields(state: HandState | TournamentState) -> ObservationFields:
@@ -121,6 +144,6 @@ def observe(state: HandState | TournamentState) -> Observation:
     hand = state if isinstance(state, HandState) else state.hand
     recall = [{"hand": hand.hand_number, "button": hand.button, "initial": hand.initial_stacks,
                "hole": hand.actor.cards, "board": hand.board, "shown_cards": {}, "final_stacks": None,
-               "events": [asdict(event) for event in hand.history]}]
+               "events": [{item.name: getattr(event, item.name) for item in fields(event)} for event in hand.history]}]
     return Observation(**{item.name: getattr(raw, item.name) for item in fields(raw)},
                        recall=json.dumps(recall, sort_keys=True, separators=(",", ":"), allow_nan=False))

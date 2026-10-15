@@ -6,11 +6,14 @@ import { PROFILES } from "@/lib/poker/behavior";
 import { handClassMasses, recoverHandStart, rangeStateKey, type RangeSnapshot, type BeliefTransition } from "@/lib/poker/beliefs";
 import { HandState } from "@/lib/poker/engine";
 import { withHeroCards } from "@/lib/poker/policy-analysis";
-import { HYBRID_BUDGETS, transportHand, uniformRanges, type HybridAnalysis as Result, type Ranges } from "@/lib/poker/hybrid";
+import { HYBRID_BUDGETS, LIVE_DECISION_BUDGET, transportHand, uniformRanges, type HybridAnalysis as Result, type Ranges } from "@/lib/poker/hybrid";
 
-export default function HybridAnalysis({ hand, hero, baseline, sessionId, reconstructHistory = false, initialProfiles = {}, transitioning = false, observerSeat, onRangeUpdate, opponentProfile, rangesOnly = false }: {
+export type DecisionSnapshot = { sessionId: number; stateKey: string; result?: Result; error?: string; status: "calculating" | "current" | "error" };
+
+export default function HybridAnalysis({ hand, hero, baseline, sessionId, reconstructHistory = false, initialProfiles = {}, transitioning = false, observerSeat, onRangeUpdate, opponentProfile, rangesOnly = false, autoAnalyze = false, onDecisionUpdate, cancelToken = 0 }: {
   hand: HandState; hero: [number, number]; baseline: Record<string, number> | null; sessionId: number;
   rangesOnly?: boolean; reconstructHistory?: boolean; initialProfiles?: Record<number,string>; transitioning?: boolean; observerSeat?: number; opponentProfile?: string; onRangeUpdate?: (snapshot: RangeSnapshot) => void;
+  autoAnalyze?: boolean; onDecisionUpdate?: (snapshot: DecisionSnapshot) => void; cancelToken?: number;
 }) {
   const [budget, setBudget] = useState("FAST");
   const [mode, setMode] = useState("reference");
@@ -33,6 +36,14 @@ export default function HybridAnalysis({ hand, hero, baseline, sessionId, recons
   const publicKey = JSON.stringify([hand.hand_number, hand.button, hand.board, hand.history, hand.current_player,
     hand.blinds, Object.values(hand.players).map(p => [p.player_id, p.position, p.stack, p.street_bet, p.contribution, p.folded])]);
   useEffect(() => () => { requestSequence.current++; worker.current?.terminate(); worker.current = null; }, []);
+  useEffect(() => {
+    if (!cancelToken) return;
+    requestSequence.current++; worker.current?.terminate(); worker.current = null;
+    setBusy(false);
+    if (observerSeat !== undefined) onDecisionUpdate?.({ sessionId, stateKey: rangeStateKey(hand, observerSeat), status: "error", error: "Calculation cancelled" });
+    // Cancellation applies to the active request only; a later state starts new work.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cancelToken]);
   const selectedProfiles = Object.fromEntries(Object.keys(hand.players).map(p => [p, opponentProfile && Number(p)!==observerSeat ? opponentProfile : profiles[Number(p)] ?? initialProfiles[Number(p)] ?? "conservative"]));
   useEffect(() => {
     if (transitioning) {
@@ -47,30 +58,40 @@ export default function HybridAnalysis({ hand, hero, baseline, sessionId, recons
     if (previous.current !== hand) {
       let before = previous.current;
       if (JSON.stringify(hand.history.slice(0, before.history.length)) !== JSON.stringify(before.history)) {
-        setError("Unexpected hand history replacement; use Apply state to start an explicit new session");
+        sessionError("Hand history changed inside this session; start a new hand");
         return;
       }
       for (const event of hand.history.slice(before.history.length)) {
-        if (event.action === "BLIND") { setError("Unexpected blind event inside a session"); return; }
+        if (event.action === "BLIND") { sessionError("Unexpected blind event inside a session"); return; }
         const after = before.clone(); after.act(event.action, event.action === "RAISE" ? event.amount_to : null);
         trace.current.push({ before: transportHand(before), after: transportHand(after),
           action: { action_id: "OBSERVED", category: event.action, amount_to: event.action === "RAISE" ? event.amount_to : null } });
         before = after;
       }
-      if (before.board.join() !== hand.board.join() || before.pot !== hand.pot) { setError("Canonical history replay does not match this hand"); return; }
+      if (before.board.join() !== hand.board.join() || before.pot !== hand.pot) { sessionError("Canonical history replay does not match this hand"); return; }
       previous.current = hand;
     }
-    calculate(true);
+    calculate(!(autoAnalyze && !hand.terminal && hand.current_player === observerSeat));
     // Public beliefs are replayed from the declared prior when likelihood assumptions change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [publicKey, sessionId, rangeText, profiles, interpolate, budget, mode, searchMode, heroKey, transitioning, observerSeat, opponentProfile]);
+  }, [publicKey, sessionId, rangeText, profiles, interpolate, budget, mode, searchMode, heroKey, transitioning, observerSeat, opponentProfile, autoAnalyze]);
 
   function publishRanges(status: RangeSnapshot["status"], marginals?: Ranges, error?: string, display?: RangeSnapshot["display"]) {
     if (observerSeat !== undefined) onRangeUpdate?.({ sessionId, stateKey: rangeStateKey(hand, observerSeat), status, profiles: selectedProfiles, marginals, error, display });
   }
 
+  function sessionError(message: string) {
+    requestSequence.current++; worker.current?.terminate(); worker.current = null;
+    setBusy(false); setError(message); setPosterior(null); publishRanges("error", undefined, message);
+    if (observerSeat !== undefined) onDecisionUpdate?.({ sessionId, stateKey: rangeStateKey(hand, observerSeat), status: "error", error: message });
+  }
+
   function calculate(updateOnly = false) {
-    if (updateOnly) publishRanges("updating");
+    publishRanges("updating");
+    const decision = (status: DecisionSnapshot["status"], result?: Result, error?: string) => {
+      if (!updateOnly && observerSeat !== undefined) onDecisionUpdate?.({ sessionId, stateKey: rangeStateKey(hand, observerSeat), status, result, error });
+    };
+    decision("calculating");
     try {
       const state = updateOnly || hand.terminal ? hand : withHeroCards(hand, hero);
       const ranges: Ranges = rangeText.trim() ? JSON.parse(rangeText) : uniformRanges(initial.current);
@@ -82,19 +103,19 @@ export default function HybridAnalysis({ hand, hero, baseline, sessionId, recons
       next.onmessage = (event: MessageEvent<{ requestId?: number; result?: Result; ranges?: Ranges; marginals?: Ranges; display?: RangeSnapshot["display"]; error?: string; workerMilliseconds?: number }>) => {
         if (event.data.requestId !== requestSequence.current) return;
         setBusy(false);
-        if (event.data.error) { setError(event.data.error); setPosterior(null); publishRanges("error", undefined, event.data.error); }
+        if (event.data.error) { setError(event.data.error); setPosterior(null); publishRanges("error", undefined, event.data.error); decision("error", undefined, event.data.error); }
         else {
           publishRanges("current", event.data.marginals, undefined, event.data.display);
           if (event.data.ranges) setPosterior(event.data.ranges);
-          if (event.data.result) { setResult(event.data.result); setLatency(event.data.workerMilliseconds ?? null); }
+          if (event.data.result) { setResult(event.data.result); setLatency(event.data.workerMilliseconds ?? null); decision("current", event.data.result); }
         }
       };
-      next.onerror = event => { if (requestId !== requestSequence.current) return; setError(event.message); publishRanges("error", undefined, event.message); setBusy(false); setPosterior(null); next.terminate(); worker.current = null; };
-      next.postMessage({ requestId, observerSeat, state: transportHand(state), ranges, budget: HYBRID_BUDGETS[budget],
+      next.onerror = event => { event.preventDefault(); if (requestId !== requestSequence.current) return; setError(event.message); publishRanges("error", undefined, event.message); decision("error", undefined, event.message); setBusy(false); setPosterior(null); next.terminate(); worker.current = null; };
+      next.postMessage({ requestId, observerSeat, state: transportHand(state), ranges, budget: autoAnalyze ? LIVE_DECISION_BUDGET : HYBRID_BUDGETS[budget],
         searchMode: mode === "exploitative" ? "response" : searchMode,
         profiles: mode === "reference" && !updateOnly ? Object.fromEntries(Object.keys(hand.players).map(p => [p, "conservative"])) : selectedProfiles,
         likelihoodProfiles: selectedProfiles, transitions: trace.current, interpolate, updateOnly });
-    } catch (cause) { const message = cause instanceof Error ? cause.message : String(cause); setError(message); publishRanges("error", undefined, message); setBusy(false); }
+    } catch (cause) { const message = cause instanceof Error ? cause.message : String(cause); setError(message); publishRanges("error", undefined, message); decision("error", undefined, message); setBusy(false); }
   }
   if (rangesOnly) return null;
   return <section className="space-y-3 border-t pt-4" aria-label="Hybrid analysis">

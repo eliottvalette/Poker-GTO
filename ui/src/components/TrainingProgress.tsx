@@ -101,7 +101,7 @@ export default function TrainingProgress({ published = {} }: { published?: Parti
           <Button size="sm" variant={metric === "difference" ? "secondary" : "ghost"} onClick={() => setMetric("difference")}>vs reference</Button>
           <Button size="sm" variant={metric === "gain" ? "secondary" : "ghost"} onClick={() => setMetric("gain")}>vs opponent pool</Button>
         </div>
-        <span className="text-xs text-muted-foreground">{activeSeries?.label} · BB/100{metric === "difference" ? ` · baseline #${current.reference.iteration}` : " · synthetic opponents"}</span>
+        <span className="text-xs text-muted-foreground">NN policy · BB/100{metric === "difference" ? ` · baseline #${current.reference.iteration}` : " · synthetic opponents"}</span>
       </div>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="flex flex-wrap items-baseline gap-3">

@@ -58,6 +58,10 @@ class TabularPolicy:
 class LocallySolvedPolicy(TabularPolicy):
     """An explicit table produced by a local solver, with identical lookup semantics."""
 
+    def probabilities(self, observation: Observation) -> tuple[float, ...]:
+        from infoset import ordered_private_observation
+        return super().probabilities(ordered_private_observation(observation))
+
 
 @dataclass(frozen=True)
 class NeuralAveragePolicy:

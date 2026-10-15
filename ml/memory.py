@@ -18,6 +18,7 @@ from features.neural import NeuralObservation, neural_observation
 MEMORY_VERSION = 6
 DEFAULT_BYTE_BUDGET = 64 * 1024 * 1024
 TRAVERSAL_MODES = ("external_sampling", "outcome_sampling")
+SUPERVISION_MODES = (*TRAVERSAL_MODES, "finite_game_cfr")
 
 
 def sample_bytes(sample: object) -> int:
@@ -98,8 +99,8 @@ class TrainingSample:
             raise ValueError("Sample provenance identifiers must be strings")
         if self.state.objective != "hand_chip_delta":
             raise ValueError(f"Only per-hand chip-delta samples are supported, received objective={self.state.objective}")
-        if self.traversal_mode not in TRAVERSAL_MODES:
-            raise ValueError(f"Invalid sample traversal mode: {self.traversal_mode}; expected {TRAVERSAL_MODES}")
+        if self.traversal_mode not in SUPERVISION_MODES:
+            raise ValueError(f"Invalid sample supervision mode: {self.traversal_mode}; expected {SUPERVISION_MODES}")
         if self.kind not in ("advantage", "strategy") or self.iteration < 1 or self.model_version != self.iteration - 1:
             raise ValueError(f"Invalid sample metadata: {self.kind}, iteration={self.iteration}, version={self.model_version}")
         if self.player != self.state.hero or self.state.version != STATE_VERSION:

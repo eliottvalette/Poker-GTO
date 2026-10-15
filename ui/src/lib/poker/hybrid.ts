@@ -12,6 +12,7 @@ export const HYBRID_BUDGETS: Record<string, HybridBudget> = {
   NORMAL: { maxNodes: 100000, iterations: 100, samples: 64, maxDepth: 4, maxJointCandidates: 10000, seed: 0 },
   DEEP: { maxNodes: 1000000, iterations: 1000, samples: 512, maxDepth: 6, maxJointCandidates: 100000, seed: 0 },
 };
+export const LIVE_DECISION_BUDGET: HybridBudget = { ...HYBRID_BUDGETS.FAST, maxNodes: 100000, samples: 128 };
 export type HybridAnalysis = {
   legalActions: SolverAction[]; probabilities: Record<string, number>; ev: Record<string, number>;
   evUnits: "physical_chips/hand_delta"; method: string; nodes: number; samples: number; iterations: number;

@@ -7,6 +7,8 @@ reach or the number of compatible hidden deals representing it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
+import json
 import math
 import random
 from typing import Callable
@@ -40,11 +42,13 @@ class RiverSolution:
     work: WorkCounter
     complete_iterations: int
     warnings: list[str] = field(default_factory=list)
+    checkpoint: dict = field(default_factory=dict)
 
 
 class RiverSolver:
-    def __init__(self, prior: PolicySource | None = None) -> None:
+    def __init__(self, prior: PolicySource | None = None, *, resume: dict | None = None) -> None:
         self.prior = prior
+        self.resume = resume
 
     def solve(self, public: HandState, ranges: JointRanges, budget: ComputeBudget,
               cancelled: Callable[[], bool] = lambda: False) -> RiverSolution:
@@ -152,6 +156,39 @@ class RiverSolver:
                     work.samples += 1
             chance_method = "exhaustive turn rivers" if exhaustive else "fixed sampled chance forest"
         tree_nodes = work.nodes
+        # Bind accumulated regrets to the complete finite game, including leaf
+        # utilities. A changed range, chance sample or continuation is a new game.
+        digest = hashlib.sha256()
+
+        def fingerprint(node: TreeNode) -> None:
+            digest.update(json.dumps((node.player, node.key, node.utilities,
+                                      [(a.action_id, a.amount_to) for a in node.actions]),
+                                     separators=(",", ":"), allow_nan=False).encode())
+            for child in node.children:
+                fingerprint(child)
+
+        for deal, tree in trees:
+            digest.update(json.dumps((sorted(deal.hands.items()), deal.probability), allow_nan=False).encode())
+            fingerprint(tree)
+        game_hash = digest.hexdigest()
+        completed = 0
+        if self.resume is not None:
+            saved = self.resume
+            if saved.get("schema") != 1 or saved.get("game_hash") != game_hash:
+                raise ValueError("CFR resume requires the identical public-range game and continuation forest")
+            completed = saved["iterations"]
+            if type(completed) is not int or completed < 1:
+                raise ValueError("CFR checkpoint requires positive completed iterations")
+            for name, destination in (("regrets", regrets), ("strategy_mass", masses)):
+                source = saved[name]
+                if set(source) != set(destination):
+                    raise ValueError(f"CFR checkpoint {name} information sets differ")
+                for key, vector in source.items():
+                    if len(vector) != len(ACTION_IDS) or any(not math.isfinite(v) for v in vector):
+                        raise ValueError(f"Invalid CFR checkpoint {name} vector")
+                    if name == "strategy_mass" and any(v < 0 for v in vector):
+                        raise ValueError("CFR average masses must be nonnegative")
+                    destination[key] = list(vector)
         warnings = ["Belief-conditioned local solve; upstream safety constraints are not enforced."]
         if private_deals is not None:
             warnings.append("Private ranges approximated by a fixed seeded compatible-deal sample; only encountered holdings are solved.")
@@ -170,7 +207,7 @@ class RiverSolver:
                 break
             strategy = {}
             for key, obs in observations.items():
-                if iteration == 0 and self.prior is not None:
+                if completed + iteration == 0 and self.prior is not None:
                     from cfr_solver import validate_strategy
                     probabilities = self.prior.probabilities(obs)
                     validate_strategy(probabilities, obs.legal_mask)
@@ -248,6 +285,8 @@ class RiverSolver:
                     utilities[p] += deal.probability * strategies[hand][action.action_id] * values[seat_index[p]]
         for hand, values in ev.items():
             ev[hand] = {a: v / hand_mass[hand] for a, v in values.items()}
-        return RiverSolution(LocallySolvedPolicy(averages, f"river-cfr-{work.iterations}"), strategies, ev,
+        return RiverSolution(LocallySolvedPolicy(averages, f"river-cfr-{completed + work.iterations}"), strategies, ev,
                              {k: tuple(v) for k, v in regrets.items()}, {k: tuple(v) for k, v in masses.items()},
-                             utilities, work, work.iterations, warnings)
+                             utilities, work, work.iterations, warnings,
+                             {"schema": 1, "game_hash": game_hash, "iterations": completed + work.iterations,
+                              "regrets": regrets, "strategy_mass": masses})
