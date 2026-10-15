@@ -12,16 +12,14 @@ import time
 import torch
 
 from actions import ACTION_IDS
-from cfr_solver import regret_matching
 from evaluation import subgame_best_response
 from hybrid.distillation import SolverStudents
-from hybrid.knowledge import calculate
+from hybrid.knowledge import calculate, game_contract
+from hybrid.solver_inputs import RootPriorPolicy
 from hybrid.policy_source import UniformLegalPolicy
-from hybrid.policy_source import ScriptedPolicy
 from hybrid.ranges import HandRange, JointRanges, combo
 from hybrid.river_solver import RiverSolver
 from hybrid.state import ComputeBudget, instantiate
-from ml.model import encode_batch
 from poker_game_expresso import HandState
 from infoset import observe
 from training.checkpoint import atomic_bytes
@@ -80,17 +78,12 @@ def run(output: Path, *, iterations: int = 32, updates: int = 64) -> dict:
                 computed = RiverSolver().solve(root, ranges, ComputeBudget(iterations=200, max_nodes=1000000))
                 gains = {}
                 for kind in ("advantage", "strategy"):
-                    model = learner.models[kind]
-                    def probabilities(obs):
-                        if kind == "strategy":
-                            return model.probabilities(obs)
-                        with torch.no_grad():
-                            return regret_matching(model(encode_batch([obs]))[0].tolist(), obs.legal_mask)
-                    gains[kind] = sum(subgame_best_response(worlds, probabilities, p)["best_response_gain_bb"] for p in root.players)
+                    policy = RootPriorPolicy(learner.models[kind], game_contract(root, ranges, budget, "test"), UniformLegalPolicy())
+                    gains[kind + "_root_uniform_downstream"] = sum(subgame_best_response(worlds, policy.probabilities, p)["best_response_gain_bb"] for p in root.players)
                 gains["computed_no_model"] = sum(subgame_best_response(worlds, computed.policy.probabilities, p)["best_response_gain_bb"] for p in root.players)
                 gains["uniform"] = sum(subgame_best_response(worlds, UniformLegalPolicy().probabilities, p)["best_response_gain_bb"] for p in root.players)
                 assistance = []
-                prior = ScriptedPolicy(learner.models["strategy"].probabilities, "experimental-solver-student")
+                prior = RootPriorPolicy(learner.models["strategy"], game_contract(root, ranges, budget, "test"), UniformLegalPolicy())
                 for limit in (10, 50):
                     for use_prior in (False, True):
                         begin = time.perf_counter()
@@ -117,9 +110,9 @@ def run(output: Path, *, iterations: int = 32, updates: int = 64) -> dict:
                         used.add(hand)
                         obs = observe(instantiate(held_root, deal.hands))
                         ev = reference.action_ev_by_hand[hand]
-                        with torch.no_grad():
-                            a = regret_matching(learner.models["advantage"](encode_batch([obs]))[0].tolist(), obs.legal_mask)
-                        b = learner.models["strategy"].probabilities(obs)
+                        contract = game_contract(held_root, held_ranges, budget, "test")
+                        a = learner.models["advantage"].probabilities(obs, contract)
+                        b = learner.models["strategy"].probabilities(obs, contract)
                         policies = {"computed_no_model": low.strategy_by_hand[hand],
                                     "advantage": dict(zip(ACTION_IDS, a)), "strategy": dict(zip(ACTION_IDS, b))}
                         contexts.append({"holding": hand, "reference_ev_bb": ev,

@@ -5,7 +5,7 @@ generate these targets. Chance forests remain finite approximations.
 """
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 import hashlib
 import json
 from pathlib import Path
@@ -124,3 +124,52 @@ def cached_policy(path: Path, state: HandState, ranges: JointRanges) -> LocallyS
         key = json.dumps(row["observation"], sort_keys=True, separators=(",", ":"), allow_nan=False)
         table[key] = probabilities
     return LocallySolvedPolicy(table, f"computed/{payload['checkpoint']['game_hash']}/{payload['checkpoint']['iterations']}")
+
+
+
+
+
+@dataclass(frozen=True)
+class RootSample:
+    state: Observation
+    target: tuple[float, ...]
+    root_group: str
+    kind: str
+    weight: float = 1.
+    iteration: int = 1
+
+
+def root_supervision(path: Path, kind: str) -> tuple[dict, list[RootSample]]:
+    """Root-only advantages under the calculated average profile, in current BB.
+
+    Preserve physical suits until ranges and observations are encoded together.
+    Internal records remain readable through supervision() for legacy audits.
+    """
+    import ast
+    from actions import ACTION_IDS
+    if kind not in ("advantage", "strategy"):
+        raise ValueError(f"Unsupported root target: {kind}")
+    payload = json.loads(path.read_text())
+    contract = payload["contract"]
+    if contract["schema"] != 1:
+        raise ValueError("Unsupported solver knowledge schema")
+    root = contract["root"]
+    values = {tuple(ast.literal_eval(hand)): ev for hand, ev in payload["action_ev_by_hand"].items()}
+    result = []
+    for record in payload["records"]:
+        raw = record["observation"]
+        recall = json.loads(raw["recall"])
+        if raw["hero"] != root["current_player"] or recall[0]["events"] != root["history"]:
+            continue
+        observation = Observation(**{**raw, "cards": tuple(raw["cards"]), "numeric": tuple(raw["numeric"]),
+                                     "legal_mask": tuple(raw["legal_mask"]),
+                                     "history": tuple(tuple(event) for event in raw["history"])})
+        ev = values[tuple(sorted(observation.cards[:2]))]
+        strategy = record["strategy"]
+        baseline = sum(strategy[ACTION_IDS.index(a)] * v for a, v in ev.items())
+        target = (tuple((ev[a] - baseline) / root["blinds"]["big"] if a in ev else 0. for a in ACTION_IDS)
+                  if kind == "advantage" else tuple(strategy))
+        result.append(RootSample(observation, target, payload["root_group"], kind))
+    if not result:
+        raise ValueError(f"No root supervision at {path}")
+    return contract, result

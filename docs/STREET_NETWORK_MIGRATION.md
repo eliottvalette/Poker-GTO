@@ -136,3 +136,8 @@ Status: production training ACTIVE; first hourly street publication/evaluation P
 - The first live export occurs after approximately one hour plus the current iteration. Publication timers remain active. Each run has a one-time authorization bound to its exact run ID and the currently published shared release. Cold B specialists cannot be exported. The old published policies remain available until validated export succeeds.
 - Run IDs survive checkpoint resume, extracted/live exports and hourly reports. UI curves separate run ID, architecture, evaluation suite and pinned reference; legacy history is retained as untracked history, never backdated or reclassified as specialist training. UI changes require the normal Vercel delivery after pushing.
 - `initialize_street_run` rejects existing directories; `publish_pending` rejects migration authorization for a different run. Completion receipts preserve the migration provenance. The publisher still rejects old shared writers after switching to street models.
+
+
+## Range-conditioned solver students (local follow-up)
+
+The sixteen production specialists are unchanged. Optional solver students now use exact public range factors and declared continuation context, with root-only action-advantage/average-strategy targets and a separate checkpoint schema. Implementation, bounded experiments, and failed strategic acceptance are recorded in [RANGE_CONDITIONED_STUDENTS.md](RANGE_CONDITIONED_STUDENTS.md). This does not mark production training as switched or neural assistance as accepted.

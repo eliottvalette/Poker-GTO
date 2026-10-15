@@ -102,4 +102,8 @@ No Git push, Vercel deployment, OVH restart, publication, Supabase mutation or p
 
 Before a production offline replacement, specify and benchmark a wider curriculum of legitimate public roots/range priors, including deeper stacks and varied preflop responses. The delivered runner can refine these games but does not turn an arbitrary tiny curriculum into full NLHE knowledge. Fixed continuation forests can overfit sampled worlds; the broader live response route still depends on synthetic continuation assumptions. Current neural inputs do not encode exact range priors, so student generalization across distinct priors is unaccepted. No safe re-solving or multiplayer Nash guarantee is claimed.
 
-Next executable action: a bounded curriculum-coverage and finite-game cost study using SolverRunner, before selecting any OVH training workload. This is strategic acceptance work, not another change of neural depth.
+## Subsequent range-input correction
+
+The original measurements above describe the v1 students. Their missing-range limitation is now addressed by root-only range-conditioned students with a separate v2 checkpoint contract. See [RANGE_CONDITIONED_STUDENTS.md](RANGE_CONDITIONED_STUDENTS.md) for the 224-game study, changed target semantics, sixteen-specialist resume tests, numerical evidence and remaining quality failures. Production Deep CFR remains separate; the experiments do not constitute its replacement.
+
+Next executable action: improve finite-forest label precision and independent-root coverage using the measured sample-budget study, before selecting any OVH workload.

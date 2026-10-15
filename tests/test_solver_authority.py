@@ -82,27 +82,37 @@ class SolverAuthorityTests(unittest.TestCase):
 
     def test_student_checkpoint_resumes_all_eight_models_exactly(self):
         torch.set_num_threads(1)
-        with tempfile.TemporaryDirectory() as directory:
-            paths = []
-            for split in ("train", "validation", "test"):
-                for root, ranges in curriculum(2, split):
-                    path = Path(directory) / f"{split}-{root.street}.json"
-                    calculate(path, root, ranges, ComputeBudget(iterations=2, samples=16, max_depth=1), split=split)
-                    paths.append(path)
-            student = SolverStudents(2)
-            student.fit(paths, updates=2, batch_size=8)
-            path = Path(directory) / "student.pt"
-            student.save(path)
-            resumed = SolverStudents.load(path)
-            a = student.fit(paths, updates=2, batch_size=8)
-            b = resumed.fit(paths, updates=2, batch_size=8)
-            self.assertEqual(a, b)
-            for kind in student.models:
-                for key, value in student.models[kind].state_dict().items():
-                    self.assertTrue(torch.equal(value, resumed.models[kind].state_dict()[key]))
-            _, records = supervision(paths[0], "strategy")
-            weighted = conditional_weights(records)
-            self.assertEqual([s.target for s in weighted], [s.target for s in records])
+        for count in (2, 3):
+            with tempfile.TemporaryDirectory() as directory:
+                paths = []
+                for split in ("train", "validation", "test"):
+                    for root, ranges in curriculum(count, split):
+                        path = Path(directory) / f"{split}-{root.street}.json"
+                        calculate(path, root, ranges, ComputeBudget(iterations=2, samples=16, max_depth=1), split=split)
+                        paths.append(path)
+                student = SolverStudents(count)
+                with self.assertRaisesRegex(MemoryError, "encoding requires"):
+                    student.fit(paths, updates=2, batch_size=8, max_encoding_bytes=1)
+                leaked = json.loads(paths[0].read_text())
+                leaked["contract"]["split"] = "test"
+                leak_path = Path(directory) / "leaked-root.json"
+                leak_path.write_text(json.dumps(leaked))
+                with self.assertRaisesRegex(ValueError, "root leakage"):
+                    student.fit([*paths, leak_path], updates=2, batch_size=8)
+                self.assertTrue(all(count == 0 for count in student.updates.values()))
+                student.fit(paths, updates=2, batch_size=8)
+                path = Path(directory) / "student.pt"
+                student.save(path)
+                resumed = SolverStudents.load(path)
+                a = student.fit(paths, updates=2, batch_size=8)
+                b = resumed.fit(paths, updates=2, batch_size=8)
+                self.assertEqual(a, b)
+                for kind in student.models:
+                    for key, value in student.models[kind].state_dict().items():
+                        self.assertTrue(torch.equal(value, resumed.models[kind].state_dict()[key]))
+                _, records = supervision(paths[0], "strategy")
+                weighted = conditional_weights(records)
+                self.assertEqual([s.target for s in weighted], [s.target for s in records])
 
     def test_residual_direct_path_receives_gradients_even_with_zero_hidden_path(self):
         torch.set_num_threads(1)
