@@ -67,7 +67,7 @@ class SolverStudents:
         self.dataset_contract: list | None = None
 
     def fit(self, paths: list[Path], *, updates: int = 64, batch_size: int = 64,
-            max_encoding_bytes: int = 256 * 1024 * 1024) -> dict:
+            max_encoding_bytes: int = 256 * 1024 * 1024, allow_dataset_update: bool = False) -> dict:
         from hybrid.knowledge import root_supervision
         from hybrid.solver_inputs import encode_roots
         import hashlib
@@ -90,7 +90,9 @@ class SolverStudents:
                     groups[sample.root_group] = split
                     populations[kind, STREETS[sample.state.street], split].append(sample)
                     contexts[id(sample)] = contract
-        if self.dataset_contract is not None and self.dataset_contract != contracts:
+        if type(allow_dataset_update) is not bool:
+            raise ValueError("Dataset update permission must be explicit boolean")
+        if self.dataset_contract is not None and self.dataset_contract != contracts and not allow_dataset_update:
             raise ValueError("Frozen distillation dataset changed; create a separate study")
         from features.neural import numeric_names
         from infoset import HISTORY_WIDTH

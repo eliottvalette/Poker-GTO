@@ -1,8 +1,8 @@
-"""One bounded publication attempt; systemd retries on its next timer tick."""
+"""Publish scoped calculated knowledge and current solver progress."""
 import os
 from pathlib import Path
-from training.publication import SupabaseStorage, publish_pending
+from training.publication import SupabaseStorage
+from training.solver_service import publish_status
 
 if __name__ == '__main__':
-    storage = SupabaseStorage.from_environment()
-    publish_pending(storage, os.environ['GTO_TRACK'], Path(os.environ['GTO_DATA_DIR']))
+    publish_status(SupabaseStorage.from_environment(), Path(os.environ['GTO_DATA_DIR']) / 'solver-v1', os.environ['GTO_TRACK'])

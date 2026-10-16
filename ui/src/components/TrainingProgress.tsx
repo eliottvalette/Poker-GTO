@@ -46,7 +46,7 @@ function HistoryChart({ runs, metric, selected, select }: {
   </svg>;
 }
 
-export default function TrainingProgress({ published = {} }: { published?: Partial<Record<"hu" | "3max", number>> }) {
+export function LegacyTrainingProgress({ published = {} }: { published?: Partial<Record<"hu" | "3max", number>> }) {
   const [track, setTrack] = useState<"hu" | "3max">("hu");
   const [period, setPeriod] = useState<Period>("24h");
   const [metric, setMetric] = useState<"gain" | "difference">("difference");
@@ -130,3 +130,5 @@ export default function TrainingProgress({ published = {} }: { published?: Parti
     </>}
   </section>;
 }
+
+export { default } from "./SolverProgress";

@@ -36,7 +36,7 @@ export default function Page() {
         {error && <div role="alert" className="text-sm text-destructive">{error}</div>}
         {mainTab === "overview" && <PolicyOverview policies={models} />}
         {mainTab === "case" && <PolicyAnalysis policies={models} />}
-        {mainTab === "training" && <TrainingProgress published={{ hu: models[2]?.manifest.iteration, "3max": models[3]?.manifest.iteration }} />}
+        {mainTab === "training" && <TrainingProgress />}
         <div hidden={mainTab !== "test"}><TestTable policies={models} /></div>
       </main>
     </SidebarInset>

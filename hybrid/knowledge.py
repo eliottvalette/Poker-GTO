@@ -30,34 +30,44 @@ def public_root(state: HandState) -> dict:
 
 
 def game_contract(state: HandState, ranges: JointRanges, budget: ComputeBudget, split: str,
-                  continuation: PolicySource | None = None) -> dict:
+                  continuation: PolicySource | None = None, *, sample_private: bool = False, depth_limited: bool = False) -> dict:
     if split not in ("train", "validation", "test"):
         raise ValueError("An independent root split is required")
     continuation = continuation if continuation is not None else UniformLegalPolicy()
     return json.loads(json.dumps({
         "schema": 1, "root": public_root(state),
         "ranges": {p: [[list(h), w] for h, w in r.weights.items()] for p, r in ranges.ranges.items()},
-        "forest": {"samples": budget.samples, "depth": budget.max_depth, "seed": budget.seed},
+        "forest": {"samples": budget.samples, "depth": budget.max_depth, "seed": budget.seed,
+                   **({"depth_limited_river": True} if depth_limited and state.street == "RIVER" else {})},
         "continuation": continuation.version, "split": split,
+        **({"private_sampling": "seeded_compatible_joint"} if sample_private else {}),
     }, sort_keys=True, allow_nan=False))
 
 
 def calculate(path: Path, state: HandState, ranges: JointRanges, budget: ComputeBudget,
               *, split: str, continuation: PolicySource | None = None,
-              max_artifact_bytes: int | None = None) -> RiverSolution:
+              max_artifact_bytes: int | None = None, sample_private: bool = False, depth_limited: bool = False) -> RiverSolution:
     """Add bounded iterations to this exact declared game and atomically save.
 
     The range prior and root stay explicit. Every saved strategy belongs to this
     context, not a universal policy table keyed only by an observation.
     """
     continuation = continuation if continuation is not None else UniformLegalPolicy()
-    contract = game_contract(state, ranges, budget, split, continuation)
+    if depth_limited and not sample_private:
+        raise ValueError("Depth-limited knowledge requires explicit sampled private ranges")
+    contract = game_contract(state, ranges, budget, split, continuation, sample_private=sample_private, depth_limited=depth_limited)
     previous = json.loads(path.read_text()) if path.exists() else None
     if previous is not None and previous["contract"] != contract:
         raise ValueError(f"Solver artifact contract changed at {path}; use a distinct explicit experiment")
     solver = RiverSolver(resume=previous["checkpoint"] if previous else None)
-    result = (solver.solve(state, ranges, budget) if state.street == "RIVER" else
-              solver.solve_chance(state, ranges, budget, continuation=continuation))
+    if depth_limited:
+        result = solver.solve_depth_limited(state, ranges, budget, continuation)
+    elif state.street == "RIVER":
+        result = (solver.solve_sampled(state, ranges, budget) if sample_private
+                  else solver.solve(state, ranges, budget))
+    else:
+        result = solver.solve_chance(state, ranges, budget, continuation=continuation,
+                                    sample_private=sample_private)
     group = hashlib.sha256(json.dumps(contract["root"], sort_keys=True).encode()).hexdigest()
     iterations = result.checkpoint["iterations"]
     records = []
@@ -66,6 +76,8 @@ def calculate(path: Path, state: HandState, ranges: JointRanges, budget: Compute
                         "regret": [v / iterations / state.blinds.big for v in result.regrets[key]],
                         "strategy_mass": result.strategy_mass[key]})
     payload = {"contract": contract, "root_group": group, "checkpoint": result.checkpoint,
+               "cumulative_nodes": (previous.get("cumulative_nodes", previous["work"]["nodes"]) if previous else 0) + result.work.nodes,
+               "calculation_batches": (previous.get("calculation_batches", 1) if previous else 0) + 1,
                "records": records, "action_ev_by_hand": {str(h): ev for h, ev in result.action_ev_by_hand.items()},
                "work": {"nodes": result.work.nodes, "samples": result.work.samples,
                         "additional_iterations": result.work.iterations},

@@ -1,20 +1,16 @@
-"""Sequential, bounded evaluation of both published tracks; no checkpoint loads."""
-import os
+"""Hourly solver reference diagnostics, separate from legacy NN win-rate history."""
 from pathlib import Path
-
-from training.evaluation_history import evaluate_published
+import torch
 from training.publication import SupabaseStorage
-
+from training.solver_service import publish
 
 if __name__ == '__main__':
+    torch.set_num_threads(1)
     storage = SupabaseStorage.from_environment()
-    failures = []
     for track in ('hu', '3max'):
-        try:
-            report = evaluate_published(storage, track, Path(os.environ['GTO_EVALUATION_DIR']) / track)
-            if report and report['status'] == 'failed':
-                failures.append(f'{track}: {report["warnings"][-1]}')
-        except Exception as error:
-            failures.append(f'{track}: {type(error).__name__}: {error}')
-    if failures:
-        raise RuntimeError('; '.join(failures))
+        directory = Path('/var/lib/gto') / track / 'solver-v1'
+        if not all((directory / 'references' / f'{street}.json').exists()
+                   for street in ('PREFLOP', 'FLOP', 'TURN', 'RIVER')):
+            print(f'{track}: waiting for worker reference tables', flush=True)
+            continue
+        publish(storage, directory, track)

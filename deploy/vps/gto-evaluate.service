@@ -1,5 +1,5 @@
 [Unit]
-Description=Evaluate published HU and 3-max policies
+Description=Evaluate HU and 3-max calculated knowledge
 After=network-online.target
 Wants=network-online.target
 

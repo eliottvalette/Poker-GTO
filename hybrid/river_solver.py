@@ -58,7 +58,8 @@ class RiverSolver:
 
     def solve_chance(self, public: HandState, ranges: JointRanges, budget: ComputeBudget,
                      cancelled: Callable[[], bool] = lambda: False,
-                     continuation: PolicySource | None = None) -> RiverSolution:
+                     continuation: PolicySource | None = None,
+                     sample_private: bool = False) -> RiverSolution:
         """CFR on a bounded public private-deal/runout forest with shared infosets.
 
         Turn rivers are exhaustive when the sample budget covers all outcomes.
@@ -67,7 +68,23 @@ class RiverSolver:
         """
         if public.terminal or public.street == "RIVER":
             raise ValueError("Chance search requires a live preflop, flop or turn decision")
-        return self._solve(public, ranges, budget, cancelled, chance=True, continuation=continuation)
+        deals = None
+        if sample_private:
+            rng = random.Random(budget.seed)
+            deals = tuple(JointDeal(ranges.sample(rng), 1 / budget.samples) for _ in range(budget.samples))
+        return self._solve(public, ranges, budget, cancelled, chance=True, continuation=continuation,
+                           private_deals=deals)
+
+    def solve_depth_limited(self, public: HandState, ranges: JointRanges, budget: ComputeBudget,
+                            continuation: PolicySource,
+                            cancelled: Callable[[], bool] = lambda: False) -> RiverSolution:
+        """Explicit sampled private forest and rollout leaves on any live street."""
+        if public.terminal:
+            raise ValueError("Depth-limited solving requires a live decision")
+        rng = random.Random(budget.seed)
+        deals = tuple(JointDeal(ranges.sample(rng), 1 / budget.samples) for _ in range(budget.samples))
+        return self._solve(public, ranges, budget, cancelled, chance=True,
+                           continuation=continuation, private_deals=deals)
 
     def solve_sampled(self, public: HandState, ranges: JointRanges, budget: ComputeBudget,
                       cancelled: Callable[[], bool] = lambda: False) -> RiverSolution:
@@ -130,7 +147,7 @@ class RiverSolver:
             return TreeNode(state.current_player, key, actions, tuple(children))
 
         deals = ranges.enumerate(budget.max_joint_candidates) if private_deals is None else private_deals
-        if private_deals is not None:
+        if private_deals is not None and not chance:
             work.samples = len(private_deals)
         if not chance:
             trees = [(deal, build(instantiate(public, deal.hands))) for deal in deals]

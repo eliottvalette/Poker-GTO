@@ -2,7 +2,7 @@
 import os
 import socket
 from pathlib import Path
-from training.vps import run_continuous
+from training.solver_service import run
 
 
 def notify_ready() -> None:
@@ -12,11 +12,9 @@ def notify_ready() -> None:
             address = '\0' + address[1:]
         with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as notifier:
             notifier.connect(address)
-            notifier.sendall(b'READY=1\nSTATUS=Checkpoint loaded; continuous training ready')
+            notifier.sendall(b'READY=1\nSTATUS=Solver knowledge loaded; continuous calculation ready')
 
 if __name__ == '__main__':
     track = os.environ['GTO_TRACK']
     directory = Path(os.environ['GTO_DATA_DIR'])
-    source = os.environ.get('GTO_SOURCE_CHECKPOINT')
-    run_continuous(track, directory, source_checkpoint=Path(source) if source else None,
-                   workers=int(os.environ.get('GTO_WORKERS', '1')), ready=notify_ready)
+    run(directory / 'solver-v1', track, notify_ready)

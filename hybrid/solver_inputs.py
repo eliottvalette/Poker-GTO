@@ -23,7 +23,8 @@ RIVER_CONTINUATION = "terminal-river-v1"
 
 
 def continuation_id(contract: dict) -> str:
-    return RIVER_CONTINUATION if contract["root"]["street"] == "RIVER" else contract["continuation"]
+    return (RIVER_CONTINUATION if contract["root"]["street"] == "RIVER"
+            and not contract["forest"].get("depth_limited_river", False) else contract["continuation"])
 
 
 def range_vector(obs: Observation, contract: dict) -> torch.Tensor:
@@ -104,7 +105,8 @@ def encode_roots(observations: list[Observation], contracts: list[dict], vocabul
         if identity not in vocabulary:
             raise ValueError(f"Unsupported continuation profile: {identity}")
         profile = [float(identity == value) for value in vocabulary]
-        depth = 0 if obs.street == 3 else contract["forest"]["depth"]
+        depth = (0 if obs.street == 3 and not contract["forest"].get("depth_limited_river", False)
+                 else contract["forest"]["depth"])
         vectors.append(torch.cat((range_vector(obs, contract), torch.tensor([*profile, float(depth)]))))
     return {**encode_batch(observations), "solving_context": torch.stack(vectors)}
 
