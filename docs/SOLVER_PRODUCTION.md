@@ -1,6 +1,6 @@
 # Solver production cutover
 
-Implementation and local validation complete. Remote activation requires checking the deployed revision, service logs, public solver histories and production UI.
+Implementation, local validation and production activation verified on 2026-10-16. Code revision: `38189ed0ca02ecfe278987d39f84d813f032f92b`.
 
 | Requirement | Status | Evidence |
 |---|---|---|
@@ -9,7 +9,7 @@ Implementation and local validation complete. Remote activation requires checkin
 | Bounded publication and independent evaluation | DONE | `solver/{track}/` Storage namespace; evaluator does not modify candidate tables |
 | Training UI shows solver measurements | DONE | `SolverProgress.tsx`, strict parser, no legacy NN curve fallback |
 | Tests and resource preflight | DONE | 57-test deployment/regression suite, five focused service tests, 162 browser tests, lint and static build |
-| OVH activation and public read-back | IN PROGRESS | Verify live processes, knowledge files, hourly history, Vercel deployment |
+| OVH activation and public read-back | DONE | GitHub run 38911716384 succeeded; both workers, publication timers and evaluation timer active; public histories and production UI verified |
 
 ## Ownership and contracts
 
@@ -53,4 +53,12 @@ All 40 response labels remain indeterminate at the requested 0.1 BB tolerance. A
 
 Tests cover sampled resume equality, contract incompatibility, durable table recovery, independent Storage namespaces, read-only evaluation, evolving-dataset opt-in, optimizer checkpoint restore, and approximate-river continuation encoding. The GitHub deployment workflow now includes these solver tests before activation.
 
-Next verification: observe both production workers producing new tables/labels, run the hourly publisher, read back both public solver histories, and confirm the Vercel Training page uses the new UI. General poker strength and useful neural amortization remain unvalidated.
+## Production verification
+
+GitHub validation and deployment succeeded: https://github.com/eliottvalette/Poker-GTO/actions/runs/38911716384 . Both services report `Solver knowledge loaded; continuous calculation ready`. At final inspection HU had completed 66 visits and 3-max 35, with zero abandoned roots and both experimental student checkpoints present. HU had passed its second fitting cadence without a frozen-dataset incompatibility.
+
+Both publication services and the evaluation service returned `Result=success`. Public Storage read-back confirmed `solver_knowledge_v1` histories for HU and 3-max with all four streets. Legacy `evaluation/` history and ONNX pointers were not overwritten. The production Vercel page returned HTTP 200 and its served JavaScript contains the new `Computed CFR knowledge` component; Vercel deployment status is successful.
+
+Observed production RAM after the initial HU fit: 288,714,752 bytes current / 322,977,792 peak; 3-max before its first fit: 152,674,304 / 152,924,160. Later verification confirmed the 3-max fit and checkpoint completed successfully. These are point-in-time observations, not long-run upper bounds.
+
+Next engineering action: inspect precision and family coverage after a complete first pass, compare independently sampled continuation values and assess whether any student helps live computation. General poker strength and useful neural amortization remain unvalidated.
