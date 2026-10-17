@@ -63,6 +63,19 @@ validate model hashes. See [the live pipeline runbook](../docs/LIVE_PIPELINE.md)
 `vercel.json` supplies public build settings for the existing Vercel Git deployment.
 No secret/service-role key belongs in that file or in the browser environment.
 
+## Deployment storage
+
+Turbopack resolves `onnxruntime-web/wasm` to the external-WASM entry point of the
+pinned ONNX Runtime package. `scripts/prepare-onnx.mjs` supplies the single runtime
+copy under `/onnxruntime/`, which matches `wasmPaths` in `src/lib/onnx-policy.ts`.
+Do not also bundle the runtime binary into `_next/static/media/`.
+The unused legacy `avg_policy.json.gz` is no longer shipped.
+
+Vercel's project root is `ui`. Enable “Skip deployments when there are no changes
+to the root directory or its dependencies” so training-only changes do not create
+new UI deployments. Deployment retention is configured separately in Vercel;
+smaller builds do not remove previously retained deployments.
+
 ## Dependency security maintenance (2026-10-09)
 
 Next.js and its ESLint configuration are aligned at 15.5.27. The lockfile updates
