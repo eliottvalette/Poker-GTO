@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { type LoadedAveragePolicy } from "@/lib/onnx-policy";
 import { analysisRoot, queryRange, type RangeCell } from "@/lib/poker/policy-analysis";
+import { rangeQuality } from "@/lib/poker/range-quality";
 import { legalActions } from "@/lib/poker/actions";
 import { type Position } from "@/lib/poker/engine";
 import { Button } from "./ui/button";
@@ -27,6 +28,7 @@ export default function PolicyOverview({ policies }: { policies: Record<number, 
     count === 3 ? [25, 25, 25] : [37.5, 37.5], 1, 42), [count, position]);
   const policy = policies[count];
   const actions = legalActions(hand);
+  const quality = cells ? rangeQuality(cells) : null;
   useEffect(() => {
     let cancelled = false;
     setCells(null); setProgress(0); setError(null);
@@ -41,7 +43,7 @@ export default function PolicyOverview({ policies }: { policies: Record<number, 
   }
   return <Card className={styles.overview}>
     <CardHeader className={styles.header}>
-      <div><CardTitle>Preflop overview</CardTitle><p className={styles.subtitle}>Balanced stacks · {count === 3 ? "25 BB each" : "37.5 BB each"}{policy ? ` · Iteration ${policy.manifest.iteration}` : ""}</p></div>
+      <div><CardTitle>Experimental preflop policy</CardTitle><p className={styles.subtitle}>Balanced stacks · {count === 3 ? "25 BB each" : "37.5 BB each"}{policy ? ` · Iteration ${policy.manifest.iteration}` : ""}</p></div>
       <div className={styles.controls}>
         <div role="group" aria-label="Player count">{[3, 2].map(n => <Button key={n} size="sm" variant={count === n ? "default" : "secondary"} aria-pressed={count === n} onClick={() => selectTrack(n)}>{n === 3 ? "3-max" : "HU"}</Button>)}</div>
         <div role="group" aria-label="Position">{(count === 3 ? ["BTN", "SB", "BB"] : ["SB", "BB"]).map(p => <Button key={p} size="sm" variant={position === p ? "default" : "secondary"} aria-pressed={position === p} onClick={() => setPosition(p as Position)}>{p}</Button>)}</div>
@@ -55,7 +57,8 @@ export default function PolicyOverview({ policies }: { policies: Record<number, 
         <div className={styles.range}>
           <div className={styles.legend}>{actions.map(action => <span key={action.action_id}><i style={{ background: actionColor(action.action_id) }} />{label(action.action_id, action.amount_to, hand.blinds.big)}</span>)}</div>
           {!cells && <div role="status" className={styles.loading}>Computing range · {progress} / 1326 combos</div>}
-          {cells && <div className={styles.matrix} aria-label="Preflop action range">
+          {quality && !quality.usable && <div role="alert" className="rounded-lg border border-amber-500/40 p-4 text-sm">This model barely distinguishes starting hands. Range withheld: the largest action difference is {(quality.maximumActionSpan * 100).toFixed(1)} percentage points across hand classes. Training is experimental and no reliable range is available yet.</div>}
+          {cells && quality?.usable && <div className={styles.matrix} aria-label="Preflop action range">
             <span />{RANKS.map(rank => <span key={rank} className={styles.rank}>{rank}</span>)}
             {RANKS.map((rank, row) => <div key={rank} className={styles.row}>
               <span className={styles.rank}>{rank}</span>

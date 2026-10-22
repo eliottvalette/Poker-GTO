@@ -18,7 +18,7 @@
   "root_sampler_version": 2,
   "feature_schema_version": 4,
   "model_schema_version": "cards8_numeric32_historyGRU32_head64_features4",
-  "output_dir": "runs/3max-selfplay",
+  "output_dir": "runs/3max-selfplay-v2",
   "evaluation_max_nodes": 20000,
   "3max": {
     "enabled": true,
@@ -32,7 +32,7 @@
       "max_rollout_decisions": 128,
       "max_rollout_hands": 128,
       "tournament_start_players": 3,
-      "hole_card_sampling": "random"
+      "hole_card_sampling": "stratified_recorded_opening"
     },
     "advantage_capacity": 50000,
     "advantage_byte_budget": 536870912
@@ -49,7 +49,7 @@
       "max_rollout_decisions": 128,
       "max_rollout_hands": 128,
       "tournament_start_players": 2,
-      "hole_card_sampling": "random"
+      "hole_card_sampling": "stratified_recorded_opening"
     },
     "advantage_capacity": 50000,
     "advantage_byte_budget": 536870912
@@ -64,6 +64,8 @@
     "average_max_updates": 256,
     "advantage_initialization": "fresh",
     "average_initialization": "fresh",
-    "cache_encoding": true
-  }
+    "cache_encoding": true,
+    "decision_balance": true
+  },
+  "replay_opening_fraction": 0.5
 }

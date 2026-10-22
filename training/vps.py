@@ -70,7 +70,12 @@ def export_live(runner: TrainingRunner, *, keep: int = 2) -> Path:
                     references[track] = {
                         'advantage_strategy':river_reference(SimpleNamespace(probabilities=FrozenStrategy(solver.snapshot())),len(solver.players)),
                         'average_strategy':river_reference(solver.average_model,len(solver.players))}
-            seal_bundle(temporary, {**metadata, 'algorithmic_validation':references})
+            opening_health = {}
+            if runner.config.get('fit_schedule', {}).get('decision_balance'):
+                from training.opening_health import assess_opening
+                opening_health = {track: assess_opening(solver) for track, solver in runner.solvers.items()}
+            seal_bundle(temporary, {**metadata, 'algorithmic_validation':references,
+                                    'opening_health': opening_health})
             temporary.rename(destination)
         finally:
             if temporary.exists():

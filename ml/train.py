@@ -2,10 +2,31 @@
 from __future__ import annotations
 import random
 import math
+from dataclasses import replace
 from collections.abc import Callable
 import torch
 from ml.memory import TrainingSample
 from ml.model import AdvantageNetwork, AveragePolicyNetwork, StreetNetworks, encode_batch
+
+
+def balance_decisions(samples: list[TrainingSample]) -> list[TrainingSample]:
+    """Equal objective mass for the first opening and each remaining street.
+
+    Preserve iteration/reach/inclusion weights within each declared stratum.
+    This is an explicit approximation objective, not the original stream objective.
+    """
+    from training.metrics import opening_hand_class
+    groups: dict[str, list[TrainingSample]] = {}
+    for sample in samples:
+        key = 'first_open' if opening_hand_class(sample.state) else f'street_{sample.state.street}'
+        groups.setdefault(key, []).append(sample)
+    result = []
+    for rows in groups.values():
+        scale = max(_sample_weight(sample) for sample in rows)
+        total = math.fsum(_sample_weight(sample) / scale for sample in rows)
+        result.extend(replace(sample, weight=(_sample_weight(sample) / scale) / total / sample.iteration)
+                      for sample in rows)
+    return result
 
 
 def _sample_weight(sample: TrainingSample) -> float:
@@ -121,7 +142,13 @@ def fit(model, samples: list[TrainingSample], epochs: int, batch_size: int, seed
         on_measurement: Callable[[int, dict[str, float]], None] | None = None,
         max_updates: int | None = None, cache_encoding: bool = False,
         optimizer: torch.optim.Optimizer | None = None,
-        explicit_partitions: tuple[list[TrainingSample], list[TrainingSample]] | None = None) -> dict[str, float]:
+        explicit_partitions: tuple[list[TrainingSample], list[TrainingSample]] | None = None,
+        decision_balance: bool = False) -> dict[str, float]:
+    if decision_balance:
+        if explicit_partitions is not None:
+            raise ValueError('Decision-balanced fitting requires its own partitioned population')
+        samples = balance_decisions(samples)
+        sampling = 'weighted_replacement'
     if isinstance(model, StreetNetworks):
         raise ValueError("Fit independent specialists through fit_specialists; pooled optimization is unsupported")
     if max_updates is not None and (type(max_updates) is not int or max_updates < 1):

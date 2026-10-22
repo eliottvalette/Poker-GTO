@@ -53,7 +53,7 @@ def initialize(directory: Path, track: str) -> dict:
 
 def run(directory: Path, track: str, ready: Callable[[], None]) -> None:
     initialize(directory, track)
-    run_continuous(track, directory, workers=1, first_export_seconds=60,
+    run_continuous(track, directory, workers=1, first_export_seconds=60, export_seconds=300,
                    storage=RuntimeStorage(checkpoints_keep=2), ready=ready)
 
 
@@ -77,5 +77,15 @@ def publish_status(storage: SupabaseStorage, directory: Path, track: str) -> Non
               'iteration_seconds': row['wall_seconds'], 'traversals': metric['traversals'],
               'nodes': metric['nodes'], 'replay': metric['replay'],
               'advantage': metric['advantage'], 'average_policy': metric['average_policy'],
-              'quality': 'experimental', 'objective': 'hand_chip_delta'}
+              'quality': 'experimental', 'objective': 'hand_chip_delta',
+              'learning_objective': 'decision_balanced_v1', 'publication_gate': 'opening_health_v1'}
+    selected = directory / 'exports/current.json'
+    if selected.exists():
+        from training.workflow import validate_bundle
+        name = json.loads(selected.read_text())['directory']
+        import re
+        if not re.fullmatch(r'iteration_[0-9]+', name):
+            raise ValueError('Invalid self-play export selection')
+        seal = validate_bundle(directory / 'exports' / name)
+        status['opening_health'] = seal.get('opening_health', {}).get(track)
     storage.put(f'selfplay/{track}/status.json', encoded(status), mutable=True)

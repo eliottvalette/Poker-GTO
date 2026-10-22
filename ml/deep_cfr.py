@@ -411,7 +411,8 @@ class DeepCFRSolver:
                 component_started = time.perf_counter()
                 metrics["advantage"] = fit(advantage, advantage_samples, advantage_epochs, batch_size,
                                            self.seed, learning_rate=learning_rate,
-                                           max_updates=schedule.get('advantage_max_updates'), cache_encoding=cache_encoding)
+                                           max_updates=schedule.get('advantage_max_updates'), cache_encoding=cache_encoding,
+                                           decision_balance=schedule.get('decision_balance', False))
                 metrics['fit_component_seconds']['advantage'] = time.perf_counter() - component_started
                 metrics['fit_initialization']['advantage'] = 'warm_weights_fresh_optimizer' if warm_a else 'fresh'
                 average = self.average_model
@@ -421,7 +422,8 @@ class DeepCFRSolver:
                     average = copy.deepcopy(average) if warm_b else AveragePolicyNetwork()
                     component_started = time.perf_counter()
                     metrics["average_policy"] = fit(average, strategy_samples, average_epochs, batch_size, self.seed + 10,
-                        learning_rate=learning_rate, max_updates=schedule.get('average_max_updates'), cache_encoding=cache_encoding)
+                        learning_rate=learning_rate, max_updates=schedule.get('average_max_updates'), cache_encoding=cache_encoding,
+                        decision_balance=schedule.get('decision_balance', False))
                     metrics['fit_component_seconds']['average_policy'] = time.perf_counter() - component_started
                     metrics['fit_initialization']['average_policy'] = 'warm_weights_fresh_optimizer' if warm_b else 'fresh'
                 else:

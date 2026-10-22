@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { policyStorageBase } from "@/lib/policy-catalog";
 
-type Status = { track: "hu" | "3max"; iteration: number; updated_at: string; iteration_seconds: number };
+type Status = { track: "hu" | "3max"; iteration: number; updated_at: string; iteration_seconds: number;
+  opening_health?: { passed: boolean; reasons: string[] } | null };
 
 export default function SelfPlayStatus() {
   const [rows, setRows] = useState<Status[]>([]);
@@ -26,6 +27,10 @@ export default function SelfPlayStatus() {
             || !Number.isSafeInteger(value.iteration) || value.iteration < 1
             || !Number.isFinite(Date.parse(value.updated_at)) || !Number.isFinite(value.iteration_seconds)
             || value.iteration_seconds < 0) throw new Error(`${track}: invalid self-play status.`);
+          if (value.opening_health != null && (typeof value.opening_health.passed !== "boolean"
+            || !Array.isArray(value.opening_health.reasons) || value.opening_health.reasons.some((reason: unknown) => typeof reason !== "string"))) {
+            throw new Error(`${track}: invalid publication health status.`);
+          }
           return value as Status;
         }));
         if (alive) { setRows(next); setError(""); }
@@ -43,6 +48,7 @@ export default function SelfPlayStatus() {
     <div className="flex flex-wrap gap-6">{rows.map(row => <div key={row.track}>
       <strong>{row.track === "hu" ? "HU" : "3-Max"} · Iteration {row.iteration.toLocaleString()}</strong>
       <p className="text-xs text-muted-foreground">{row.iteration_seconds.toFixed(1)} s per last iteration · {new Date(row.updated_at).toLocaleString()}</p>
+      {row.opening_health?.passed === false && <p className="text-sm text-amber-500">Latest candidate withheld: {row.opening_health.reasons.join("; ")}</p>}
       {Date.now() - Date.parse(row.updated_at) > Math.max(180000, row.iteration_seconds * 3000) && <p className="text-sm text-amber-500">No recent completed iteration; check the training service.</p>}
     </div>)}</div>
   </div>;

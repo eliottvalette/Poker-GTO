@@ -45,6 +45,10 @@ def validate_config(raw: dict) -> dict:
         schedule = raw['fit_schedule']
         fields = {'average_every', 'advantage_max_updates', 'average_max_updates',
                   'advantage_initialization', 'average_initialization', 'cache_encoding'}
+        if isinstance(schedule, dict) and 'decision_balance' in schedule:
+            fields.add('decision_balance')
+            if type(schedule['decision_balance']) is not bool:
+                raise ValueError('decision_balance must be boolean')
         if not isinstance(schedule, dict) or set(schedule) != fields:
             raise ValueError(f"fit_schedule must contain exactly {fields}")
         for key in ('average_every', 'advantage_max_updates', 'average_max_updates'):

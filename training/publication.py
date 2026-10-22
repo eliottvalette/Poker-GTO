@@ -260,7 +260,8 @@ def prune_remote(storage: SupabaseStorage, track: str, pointer: dict, *, grace_h
 
 
 def publish_pending(storage: SupabaseStorage, track: str, data_dir: Path, *,
-                    keep: int = 24, grace_hours: int = 24) -> dict | None:
+                    keep: int = 24, grace_hours: int = 24,
+                    require_opening_health: bool = False) -> dict | None:
     """Called by a timer; missing initial export is an explicit waiting state."""
     import fcntl
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -274,6 +275,15 @@ def publish_pending(storage: SupabaseStorage, track: str, data_dir: Path, *,
         directory = selection['directory']
         if not re.fullmatch(r'iteration_[0-9]+', directory):
             raise ValueError('Invalid local export selection')
+        if require_opening_health:
+            from training.workflow import validate_bundle
+            seal = validate_bundle(data_dir / 'exports' / directory)
+            health = seal.get('opening_health', {}).get(track)
+            if not isinstance(health, dict):
+                raise ValueError('Self-play export is missing the required opening health report')
+            if health.get('passed') is not True:
+                print(f'[{track}] publication withheld: {health.get("reasons")}', flush=True)
+                return None
         authorization = data_dir / 'publication-migration.json'
         migration = None
         if authorization.exists():

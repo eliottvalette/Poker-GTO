@@ -63,3 +63,61 @@ BB/100 measurements are not full-game exploitability or a GTO certificate.
 
 Sources: [Deep CFR](https://proceedings.mlr.press/v97/brown19b.html) and
 [Pluribus](https://noambrown.github.io/papers/19-Science-Superhuman.pdf).
+
+## Production verification (2026-10-22)
+
+Revision `bb4f7874e2c228eaf2c1f705d4f74f0f668ee93e` passed all 62 Python
+CI tests, the frontend build/lint and 162 browser tests. GitHub run
+`39829215046` deployed both self-play workers. Both remained active with zero
+restarts at inspection. HU passed iteration 11 and 3-max passed iteration 24.
+Observed peak cgroup memory was approximately 2.58 GB for HU and 1.66 GB for 3-max;
+these measurements do not establish a long-run maximum.
+
+The first public ONNX exports were HU iteration 2 and 3-max iteration 3.
+Both publishers succeeded after the validated replacement credential was installed
+on OVH and synchronized to both the GitHub repository and `training` environment
+secret scopes. Both independent evaluations completed 128 deal groups successfully
+at 18:28:47 UTC (HU) and 18:29:17 UTC (3-max). These first observations establish
+baselines; improvement requires subsequent model evaluations.
+
+## Opening-range correction (2026-10-22)
+
+The first 3-max export was strategically unsuitable: at the 25 BB opening it
+jammed AA at 84.2% and 72o at 84.4%. Native ONNX inference reproduced the browser,
+so this was not a rendering error. A frozen-replay audit found only two retained
+AA openings and zero KK openings after three iterations. First openings carried
+0.0794% of the shared strategy objective in 3-max (0.7298% in HU). Re-fitting only
+those sparse opening records still reproduced the weak targets; simply increasing
+fit epochs was rejected as a repair.
+
+The corrected learning contract uses `selfplay-v2` data roots, fresh networks and
+replay, stratified recorded-player cards, and a 50% opening replay reservation.
+Inverse inclusion correction still applies within replay. Fitting explicitly
+normalizes iteration/reach/inclusion mass separately for first openings and each
+remaining street, then samples from that normalized objective. With all five
+strata present, first openings carry 20% of the approximation objective. Weights
+inside each stratum retain their original ratios. This deliberately changes the
+function-approximation objective; it must not be described as an unchanged Deep
+CFR stream objective or an established equilibrium guarantee.
+
+A four-iteration pilot measured 20% opening mass for both networks in both tracks.
+HU took 4.0–10.6 seconds per iteration, 3-max 5.5–9.4 seconds. Both candidates were
+rejected: neither covered all 169 starting-hand classes with four retained
+records each, and the 3-max maximum action span remained only 12.0 percentage
+points. The pilot validates the repair to coverage allocation, not poker strength.
+
+Exports now carry a sealed opening-health report. The self-play publisher requires
+coverage of all 169 classes in both replays, at least four records per class,
+and a maximum action-probability span of at least 15 percentage points across
+1,326 holdings. Candidates meeting these preliminary checks also receive two
+128-world independent-seed fixed-policy continuation probes (AA and 72o). A
+conservative action-deviation margin above 0.5 BB rejects the candidate. These are
+minimum rejection checks, not a GTO certificate or a formal sequential test.
+Candidates are exported every five minutes for screening; rejected candidates do
+not replace the public pointer and are visible in training status.
+
+Overview independently withholds an existing grid when its class probabilities
+vary by less than 15 percentage points, and labels all learned ranges experimental.
+Thus old rejected exports cannot continue to appear as usable GTO ranges while
+the corrected run gathers data. No prescribed AA/72o action frequencies or
+hand-written opening strategy were inserted into the learned output.

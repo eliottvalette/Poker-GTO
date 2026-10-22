@@ -140,3 +140,23 @@ class TrainingWeightTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class DecisionBalanceTests(unittest.TestCase):
+    def test_first_opening_keeps_equal_objective_mass_despite_many_descendants(self):
+        import random
+        from training.metrics import opening_hand_class
+        from ml.train import balance_decisions, _sample_weight
+        from poker_game_expresso import HandState
+        opening = observe(HandState.start({0: 37.5, 1: 37.5}, 0, random.Random(42)))
+        post = observe(river())
+        def sample(obs, weight, iteration):
+            target = regret_matching([0.] * len(ACTION_IDS), obs.legal_mask)
+            return TrainingSample(iteration, obs.hero, obs, target, weight, 'strategy', 0)
+        source = [sample(opening, 1., 1), sample(opening, 3., 2)] + [sample(post, 1e6, 9)] * 100
+        result = balance_decisions(source)
+        first = [s for s in result if opening_hand_class(s.state)]
+        rest = [s for s in result if not opening_hand_class(s.state)]
+        self.assertAlmostEqual(sum(map(_sample_weight, first)), 1.)
+        self.assertAlmostEqual(sum(map(_sample_weight, rest)), 1.)
+        self.assertAlmostEqual(_sample_weight(first[1]) / _sample_weight(first[0]), 6.)
+        self.assertEqual(source[0].weight, 1.)
