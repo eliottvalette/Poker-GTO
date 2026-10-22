@@ -33,9 +33,17 @@ class SelfPlayTests(unittest.TestCase):
             config['hu']['traversals_per_player'] = 4
             with patch('training.selfplay.configuration', return_value=config):
                 initialize(root, 'hu')
+            original_iteration = TrainingRunner.run_iteration
             for expected in (1, 2):
-                with patch('training.vps.export_live', return_value=root / 'export'):
-                    run_continuous('hu', root, total_seconds=.001)
+                def complete_then_interrupt(runner, **kwargs):
+                    if runner.iteration == expected:
+                        raise KeyboardInterrupt
+                    return original_iteration(runner, **kwargs)
+
+                with patch('training.vps.export_live', return_value=root / 'export'), \
+                     patch.object(TrainingRunner, 'run_iteration', autospec=True,
+                                  side_effect=complete_then_interrupt):
+                    run_continuous('hu', root)
                 self.assertEqual(TrainingRunner.load_checkpoint(root / 'checkpoint.pt').iteration, expected)
             storage = MemoryStorage()
             publish_status(storage, root, 'hu')
