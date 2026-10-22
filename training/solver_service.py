@@ -66,7 +66,10 @@ def step(directory: Path, track: str, config: dict | None = None) -> dict:
     count = 20 * cfg['roots_per_family_street']
     cursor = state['cursor']
     if cursor >= count * ((cfg['max_iterations'] + cfg['iterations_per_visit'] - 1) // cfg['iterations_per_visit']):
-        return {**state, 'status': 'allocation_complete'}
+        if state.get('status') != 'allocation_complete':
+            state['status'] = 'allocation_complete'
+            write(directory / 'state.json', state)
+        return state
     round_index, coordinate = divmod(cursor, count)
     index, position = divmod(coordinate, 20)
     family = FAMILIES[position // 4]

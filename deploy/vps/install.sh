@@ -71,7 +71,6 @@ install -d -o gto -g gto /var/lib/gto/evaluation
 for selected in "${tracks[@]}"; do
   data=/var/lib/gto/$selected
   install -d -o gto -g gto "$data" "$data/tmp"
-  [[ -f "$data/checkpoint.pt" || -f "$data/resume.json" ]] || { echo "Upload a compact $selected checkpoint before deployment" >&2; exit 1; }
 done
 install -d -m 0750 /etc/gto
 install -d -m 0755 /opt/gto/releases

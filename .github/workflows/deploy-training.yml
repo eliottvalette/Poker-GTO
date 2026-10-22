@@ -77,7 +77,23 @@ jobs:
           set -euo pipefail
           test -n "$SUPABASE_SECRET_KEY" || { echo 'Missing SUPABASE_SECRET_KEY repository secret' >&2; exit 1; }
           umask 077
-          printf 'SUPABASE_URL=https://vcyctuntcwrrcizvadwh.supabase.co\nSUPABASE_POLICY_BUCKET=poker-policies\nSUPABASE_SECRET_KEY=%s\n' "$SUPABASE_SECRET_KEY" > "$RUNNER_TEMP/publication.env"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from training.publication import SupabaseStorage
+
+          public = json.loads(Path('ui/vercel.json').read_text())['build']['env']
+          storage = SupabaseStorage(public['NEXT_PUBLIC_SUPABASE_URL'],
+                                    os.environ['SUPABASE_SECRET_KEY'],
+                                    public['NEXT_PUBLIC_SUPABASE_POLICY_BUCKET'])
+          values = {'SUPABASE_URL': storage.url, 'SUPABASE_POLICY_BUCKET': storage.bucket,
+                    'SUPABASE_SECRET_KEY': storage.secret}
+          if any(any(c.isspace() for c in value) for value in values.values()):
+              raise ValueError('Publication environment values must not contain whitespace')
+          Path(os.environ['RUNNER_TEMP'], 'publication.env').write_text(
+              ''.join(f'{key}={value}\n' for key, value in values.items()))
+          PY
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$TARGET_USER@$TARGET_HOST" 'install -d -m 0700 ~/gto-incoming'
           scp -p -o BatchMode=yes -o StrictHostKeyChecking=yes "$RUNNER_TEMP/publication.env" "$TARGET_USER@$TARGET_HOST:gto-incoming/publication.env"
           rm "$RUNNER_TEMP/publication.env"

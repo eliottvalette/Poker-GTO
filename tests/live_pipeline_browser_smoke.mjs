@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 const cdp=process.env.POKER_CDP_ORIGIN ?? 'http://127.0.0.1:9335';
 const origin=process.env.POKER_UI_ORIGIN ?? 'http://127.0.0.1:3118';
-const storage=process.env.POKER_STORAGE_ORIGIN ?? 'https://vcyctuntcwrrcizvadwh.supabase.co/storage/v1/object/public/poker-policies';
+const storage=process.env.POKER_STORAGE_ORIGIN;
+assert.ok(storage, 'Set POKER_STORAGE_ORIGIN to the explicit public Storage bucket URL');
 const versions=await Promise.all(['hu','3max'].map(async track=>{
   const response=await fetch(`${storage}/${track}/current.json?smoke=${Date.now()}`);
   assert.ok(response.ok);return (await response.json()).iteration;

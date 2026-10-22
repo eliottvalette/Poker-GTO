@@ -14,7 +14,7 @@ PREVIOUS = 'b' * 40
 
 
 class DeploymentTests(unittest.TestCase):
-    def run_deployment(self, *, fail: str = '', selection: str = 'both') -> tuple:
+    def run_deployment(self, *, fail: str = '', selection: str = 'both', legacy: bool = True) -> tuple:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             release = root / 'opt/gto/releases' / REVISION
@@ -28,7 +28,8 @@ class DeploymentTests(unittest.TestCase):
             for track in ('hu', '3max'):
                 data = root / 'var/lib/gto' / track
                 data.mkdir(parents=True)
-                (data / 'checkpoint.pt').write_text(track)
+                if legacy:
+                    (data / 'checkpoint.pt').write_text(track)
             commands = root / 'commands'
             commands.mkdir()
             dispatcher = commands / 'dispatch'
@@ -72,8 +73,15 @@ elif name == 'runuser':
             )
             selected = (root / 'opt/gto/current').resolve().name
             for track in ('hu', '3max'):
-                self.assertEqual((root / 'var/lib/gto' / track / 'checkpoint.pt').read_text(), track)
+                if legacy:
+                    self.assertEqual((root / 'var/lib/gto' / track / 'checkpoint.pt').read_text(), track)
             return result, log.read_text().splitlines(), selected
+
+    def test_fresh_solver_deployment_requires_no_legacy_checkpoint(self) -> None:
+        result, log, selected = self.run_deployment(legacy=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(selected, REVISION)
+        self.assertEqual(sum(line.startswith('runuser') for line in log), 2)
 
     def test_both_tracks_stop_before_preflight_and_publish_after_restore(self) -> None:
         result, log, selected = self.run_deployment()

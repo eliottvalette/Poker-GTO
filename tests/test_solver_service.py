@@ -19,6 +19,21 @@ class Storage:
     def put(self, key, data, **kwargs): self.data[key] = data
 
 class SolverServiceTests(unittest.TestCase):
+    def test_completed_allocation_is_persisted_and_published(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            initialize(root, 'hu')
+            state = {'cursor': 32000, 'status': 'running', 'streets': {},
+                     'failed': {}, 'student': {'accepted': False}}
+            (root / 'state.json').write_text(json.dumps(state))
+            self.assertEqual(step(root, 'hu')['status'], 'allocation_complete')
+            self.assertEqual(json.loads((root / 'state.json').read_text())['status'],
+                             'allocation_complete')
+            storage = Storage()
+            publish_status(storage, root, 'hu')
+            self.assertEqual(json.loads(storage.data['solver/hu/status.json'])['status'],
+                             'allocation_complete')
+
     def test_sampled_resume_equals_uninterrupted_and_declares_sampling(self):
         item = scenario(3, 'TURN', FAMILIES[0], 0)
         with tempfile.TemporaryDirectory() as d:

@@ -1,5 +1,8 @@
 # Continuous training and policy delivery
 
+For the current outage and fresh-start procedure, see [recovery](RECOVERY.md).
+The deployment results below are historical and do not establish current health.
+
 Status: implementation operational locally and against real Supabase Storage.
 Both continuous trainers and publication timers are installed on OVH. Vercel reports successful
 production deployment for commit 6f1b8ef, including the public Storage configuration.
