@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import SelfPlayStatus from "./SelfPlayStatus";
 import { Button } from "@/components/ui/button";
 import { fetchTrainingHistory, historyWindow, trainingSeries, type EvaluationRun, type Estimate, type Period, type TrainingHistory } from "@/lib/training-history";
 
@@ -131,4 +132,6 @@ export function LegacyTrainingProgress({ published = {} }: { published?: Partial
   </section>;
 }
 
-export { default } from "./SolverProgress";
+export default function TrainingProgress() {
+  return <><SelfPlayStatus /><LegacyTrainingProgress /></>;
+}

@@ -1,9 +1,9 @@
-"""Validate the explicit solver run before service activation; preserve legacy data."""
+"""Validate or initialize the explicit continuous self-play run before activation."""
 import os
 from pathlib import Path
-from training.solver_service import initialize
+from training.selfplay import initialize
 
 if __name__ == '__main__':
-    root = Path(os.environ['GTO_DATA_DIR']).resolve() / 'solver-v1'
+    root = Path(os.environ['GTO_DATA_DIR']).resolve() / 'selfplay-v1'
     contract = initialize(root, os.environ['GTO_TRACK'])
-    print(f"Solver contract compatible: {contract['engine']} {contract['track']}", flush=True)
+    print(f"Self-play contract compatible: {contract['engine']} {contract['track']}", flush=True)

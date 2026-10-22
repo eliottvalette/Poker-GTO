@@ -2,7 +2,7 @@
 import os
 import socket
 from pathlib import Path
-from training.solver_service import run
+from training.selfplay import run
 
 
 def notify_ready() -> None:
@@ -12,9 +12,9 @@ def notify_ready() -> None:
             address = '\0' + address[1:]
         with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as notifier:
             notifier.connect(address)
-            notifier.sendall(b'READY=1\nSTATUS=Solver knowledge loaded; continuous calculation ready')
+            notifier.sendall(b'READY=1\nSTATUS=Self-play checkpoint loaded; continuous training ready')
 
 if __name__ == '__main__':
     track = os.environ['GTO_TRACK']
     directory = Path(os.environ['GTO_DATA_DIR'])
-    run(directory / 'solver-v1', track, notify_ready)
+    run(directory / 'selfplay-v1', track, notify_ready)

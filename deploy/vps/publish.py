@@ -1,8 +1,12 @@
-"""Publish scoped calculated knowledge and current solver progress."""
+"""Publish continuous self-play progress and validated policy exports."""
 import os
 from pathlib import Path
-from training.publication import SupabaseStorage
-from training.solver_service import publish_status
+from training.publication import SupabaseStorage, publish_pending
+from training.selfplay import publish_status
 
 if __name__ == '__main__':
-    publish_status(SupabaseStorage.from_environment(), Path(os.environ['GTO_DATA_DIR']) / 'solver-v1', os.environ['GTO_TRACK'])
+    storage = SupabaseStorage.from_environment()
+    directory = Path(os.environ['GTO_DATA_DIR']) / 'selfplay-v1'
+    track = os.environ['GTO_TRACK']
+    publish_status(storage, directory, track)
+    publish_pending(storage, track, directory, keep=2, grace_hours=2)

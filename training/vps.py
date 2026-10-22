@@ -86,13 +86,16 @@ def export_live(runner: TrainingRunner, *, keep: int = 2) -> Path:
 def run_continuous(track: str, output_dir: Path, *, source_checkpoint: Path | None = None,
                    workers: int = 1, export_seconds: float = 3600,
                    total_seconds: float | None = None, storage: RuntimeStorage = RuntimeStorage(),
-                   ready: Callable[[], None] | None = None) -> None:
+                   ready: Callable[[], None] | None = None,
+                   first_export_seconds: float | None = None) -> None:
     """Run until interrupted; optional total_seconds bounds diagnostics. No network publication."""
     from training.workflow import exclusive_lock
     if not math.isfinite(export_seconds) or export_seconds <= 0:
         raise ValueError('export_seconds must be positive and finite')
     if total_seconds is not None and (not math.isfinite(total_seconds) or total_seconds <= 0):
         raise ValueError('total_seconds must be positive and finite')
+    if first_export_seconds is not None and (not math.isfinite(first_export_seconds) or first_export_seconds <= 0):
+        raise ValueError('first_export_seconds must be positive and finite')
     checkpoint = output_dir / 'checkpoint.pt'
     with exclusive_lock(output_dir / '.training.lock'):
         pointer = output_dir / 'resume.json'
@@ -114,12 +117,15 @@ def run_continuous(track: str, output_dir: Path, *, source_checkpoint: Path | No
         if ready:
             ready()
         started = time.monotonic()
+        first_export = not (output_dir / 'exports/current.json').exists()
         while total_seconds is None or time.monotonic()-started < total_seconds:
-            seconds = export_seconds if total_seconds is None else min(export_seconds, total_seconds-(time.monotonic()-started))
+            interval = first_export_seconds if first_export and first_export_seconds is not None else export_seconds
+            seconds = interval if total_seconds is None else min(interval, total_seconds-(time.monotonic()-started))
             if seconds <= 0:
                 break
             result = runner.run_for(seconds, checkpoint)
             bundle = export_live(runner)
+            first_export = False
             print(f'[{track}] validated live export: {bundle}', flush=True)
             if result['stop_reason'] == 'interrupted':
                 break

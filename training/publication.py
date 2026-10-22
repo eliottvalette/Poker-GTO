@@ -259,7 +259,8 @@ def prune_remote(storage: SupabaseStorage, track: str, pointer: dict, *, grace_h
             storage.remove([f"{prefix}/{row['name']}" for row in files])
 
 
-def publish_pending(storage: SupabaseStorage, track: str, data_dir: Path) -> dict | None:
+def publish_pending(storage: SupabaseStorage, track: str, data_dir: Path, *,
+                    keep: int = 24, grace_hours: int = 24) -> dict | None:
     """Called by a timer; missing initial export is an explicit waiting state."""
     import fcntl
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -283,9 +284,9 @@ def publish_pending(storage: SupabaseStorage, track: str, data_dir: Path) -> dic
                 raise ValueError('Publication migration authorization does not match this training run')
             migration = approval['shared_release_id']
         pointer = publish_bundle(storage, track, data_dir/'exports'/directory,
-                                 migrate_shared_release=migration)
+                                 migrate_shared_release=migration, keep=keep)
         if authorization.exists():
             authorization.rename(data_dir / 'publication-migration-completed.json')
-        prune_remote(storage, track, pointer)
+        prune_remote(storage, track, pointer, grace_hours=grace_hours)
         print(f'[{track}] published iteration {pointer["iteration"]}, release {pointer["release_id"]}', flush=True)
         return pointer
