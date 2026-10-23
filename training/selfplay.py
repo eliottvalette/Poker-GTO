@@ -27,7 +27,7 @@ def configuration(track: str, directory: Path) -> dict:
     return config
 
 
-def initialize(directory: Path, track: str) -> dict:
+def initialize(directory: Path, track: str, *, source_directory: Path | None = None) -> dict:
     """Initialize only an empty run; reject different learning contracts on resume."""
     config = configuration(track, directory)
     contract = {'engine': ENGINE, 'track': track, 'config': config}
@@ -42,7 +42,38 @@ def initialize(directory: Path, track: str) -> dict:
     if directory.exists() and any(directory.iterdir()):
         raise ValueError(f'Nonempty directory without self-play contract: {directory}')
     torch.set_num_threads(1)
-    runner = TrainingRunner(config)
+    if source_directory is None:
+        runner = TrainingRunner(config)
+    else:
+        import uuid
+        from training.runner import source_metadata
+        pointer = json.loads((source_directory / 'resume.json').read_text())
+        relative = Path(pointer['path'])
+        if relative.is_absolute() or '..' in relative.parts or not (
+            relative == Path('checkpoint.pt') or relative.parent == Path('checkpoints')
+            and relative.name.startswith('iteration_') and relative.suffix == '.pt'
+        ):
+            raise ValueError('Invalid source checkpoint pointer for fitting-budget migration')
+        source = source_directory / relative
+        runner = TrainingRunner.load_checkpoint(source)
+        if runner.iteration != pointer['iteration'] or set(runner.solvers) != {track}:
+            raise ValueError('Source iteration or track mismatch for fitting-budget migration')
+        before = runner.config
+        expected = {**before, 'output_dir': config['output_dir'],
+                    'advantage_epochs': config['advantage_epochs'],
+                    'average_epochs': config['average_epochs'],
+                    'fit_schedule': {**before['fit_schedule'],
+                        'advantage_max_updates': config['fit_schedule']['advantage_max_updates'],
+                        'average_max_updates': config['fit_schedule']['average_max_updates']}}
+        if config != expected:
+            raise ValueError('Fitting-budget migration cannot change replay, sampling, features or other learning settings')
+        runner.config = config
+        runner.metadata = {**runner.metadata, **source_metadata(), 'run_id': uuid.uuid4().hex,
+                           'network_fit': dict(config['fit_schedule']),
+                           'fitting_budget_migration': {'source': str(source),
+                               'source_run_id': runner.metadata['run_id'],
+                               'source_iteration': runner.iteration,
+                               'before': before['fit_schedule'], 'after': config['fit_schedule']}}
     runner.enable_bounded_storage(RuntimeStorage(checkpoints_keep=2))
     runner.save_checkpoint(directory / 'checkpoint.pt')
     contract.update(run_id=runner.metadata['run_id'],

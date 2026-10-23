@@ -4,6 +4,6 @@ from pathlib import Path
 from training.selfplay import initialize
 
 if __name__ == '__main__':
-    root = Path(os.environ['GTO_DATA_DIR']).resolve() / 'selfplay-v2'
-    contract = initialize(root, os.environ['GTO_TRACK'])
+    root = Path(os.environ['GTO_DATA_DIR']).resolve() / 'selfplay-v3'
+    contract = initialize(root, os.environ['GTO_TRACK'], source_directory=root.parent / 'selfplay-v2')
     print(f"Self-play contract compatible: {contract['engine']} {contract['track']}", flush=True)

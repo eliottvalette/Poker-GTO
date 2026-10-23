@@ -121,3 +121,37 @@ vary by less than 15 percentage points, and labels all learned ranges experiment
 Thus old rejected exports cannot continue to appear as usable GTO ranges while
 the corrected run gathers data. No prescribed AA/72o action frequencies or
 hand-written opening strategy were inserted into the learned output.
+
+### Fitting-budget diagnosis and continuation
+
+After the coverage repair, production v2 reached all 169 classes with at least
+43–50 advantage and 44–45 strategy records per class. Nevertheless, exported
+maximum action spans remained approximately 7.1% (HU) and 6.1% (3-max), so both
+were withheld. This demonstrates that coverage protection alone was insufficient.
+
+An explicit frozen-input study used preflop samples extracted from HU iteration
+359 and 3-max iteration 352. Complete inputs, measurements and reproduction code
+are retained under `runs/opening-fitting-budget-study/` (ignored diagnostic assets).
+The sampled regret targets distinguish strong and weak holdings: mean 3-max fold
+regrets were -21.17 for AA and +7.86 for 72o. The approximator failed to reproduce
+that distinction at the previous optimization budget.
+
+On identical frozen preflop records, initialization, partition seed and architecture,
+increasing fresh-fit updates from 256 to 2,048 reduced held-out-record advantage
+MSE from 343.96 to 330.53 in HU and from 317.25 to 304.76 in 3-max. At the fixed
+opening, the 3-max fitted regret policy's AA fold probability fell from 42.1% to
+0%, while 72o rose from 52.8% to 97.3%. These frequencies are diagnostics of the
+fit, not prescribed targets or equilibrium references. The record split shares
+public contexts and does not establish independent-root strategic generalization.
+The study isolates preflop fitting; end-to-end production still includes all streets.
+A logarithmic-input variant was also tested but is not deployed: increasing the
+budget alone already repaired the demonstrated distinction without a schema change.
+
+The v3 service raises both fit caps to 2,048 updates and allows up to 32 epochs to
+reach those caps. It continues from an explicitly validated v2 checkpoint into
+`selfplay-v3`, preserving learned samples, RNG state, weights and iteration count.
+A new run ID and recorded migration make the changed fitting protocol explicit.
+The migration refuses any unrelated configuration difference. Each service then
+fits fresh networks using the larger budget on subsequent self-play iterations.
+No fabricated strategy labels are introduced. The public rejection checks remain
+in force; a completed migration alone does not authorize publication of a weak model.

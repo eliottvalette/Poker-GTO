@@ -17,4 +17,4 @@ def notify_ready() -> None:
 if __name__ == '__main__':
     track = os.environ['GTO_TRACK']
     directory = Path(os.environ['GTO_DATA_DIR'])
-    run(directory / 'selfplay-v2', track, notify_ready)
+    run(directory / 'selfplay-v3', track, notify_ready)

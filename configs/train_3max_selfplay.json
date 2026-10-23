@@ -18,7 +18,7 @@
   "root_sampler_version": 2,
   "feature_schema_version": 4,
   "model_schema_version": "cards8_numeric32_historyGRU32_head64_features4",
-  "output_dir": "runs/3max-selfplay-v2",
+  "output_dir": "runs/3max-selfplay-v3",
   "evaluation_max_nodes": 20000,
   "3max": {
     "enabled": true,
@@ -54,14 +54,14 @@
     "advantage_capacity": 50000,
     "advantage_byte_budget": 536870912
   },
-  "advantage_epochs": 4,
-  "average_epochs": 4,
+  "advantage_epochs": 32,
+  "average_epochs": 32,
   "root_policy": "current_advantage",
   "generation_batch_size": 16,
   "fit_schedule": {
     "average_every": 1,
-    "advantage_max_updates": 256,
-    "average_max_updates": 256,
+    "advantage_max_updates": 2048,
+    "average_max_updates": 2048,
     "advantage_initialization": "fresh",
     "average_initialization": "fresh",
     "cache_encoding": true,
