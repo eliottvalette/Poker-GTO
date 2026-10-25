@@ -4,3 +4,5 @@ Description=GTO project CPU scheduling group
 CPUAccounting=yes
 CPUWeight=100
 MemoryAccounting=yes
+MemoryHigh=4500M
+MemoryMax=5G
