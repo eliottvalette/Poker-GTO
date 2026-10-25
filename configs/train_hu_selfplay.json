@@ -18,7 +18,7 @@
   "root_sampler_version": 2,
   "feature_schema_version": 4,
   "model_schema_version": "cards8_numeric32_historyGRU32_head64_features4",
-  "output_dir": "runs/hu-selfplay-v3",
+  "output_dir": "runs/hu-selfplay-v4",
   "evaluation_max_nodes": 20000,
   "3max": {
     "enabled": false,
@@ -39,7 +39,7 @@
   },
   "hu": {
     "enabled": true,
-    "traversals_per_player": 64,
+    "traversals_per_player": 256,
     "root_sampling": {
       "mixture": {
         "on_policy": 1.0,
@@ -59,9 +59,9 @@
   "root_policy": "current_advantage",
   "generation_batch_size": 16,
   "fit_schedule": {
-    "average_every": 1,
-    "advantage_max_updates": 2048,
-    "average_max_updates": 2048,
+    "average_every": 3,
+    "advantage_max_updates": 1024,
+    "average_max_updates": 1024,
     "advantage_initialization": "fresh",
     "average_initialization": "fresh",
     "cache_encoding": true,

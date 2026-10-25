@@ -10,6 +10,8 @@ case "$track" in
   *) echo 'Invalid track selection: expected hu, 3max or both' >&2; exit 1 ;;
 esac
 [[ "$(id -u)" == 0 ]] || { echo 'Installation requires root' >&2; exit 1; }
+exec 8>/var/lock/ovh-project-deployment.lock
+flock -n 8 || { echo 'Another project deployment is running on this host' >&2; exit 1; }
 exec 9>/var/lock/gto-deployment.lock
 flock -n 9 || { echo 'Another deployment is running' >&2; exit 1; }
 release=/opt/gto/releases/$revision
@@ -90,7 +92,7 @@ for selected in "${tracks[@]}"; do
   runuser -u gto -- env PYTHONPATH="$release" TMPDIR="$data/tmp" GTO_DATA_DIR="$data" GTO_TRACK="$selected" \
     "$release/.venv/bin/python" deploy/vps/check_resume.py
 done
-install -m 0644 deploy/vps/gto-training@.service deploy/vps/gto-publish@.service deploy/vps/gto-publish@.timer deploy/vps/gto-evaluate.service deploy/vps/gto-evaluate.timer /etc/systemd/system/
+install -m 0644 deploy/vps/gto.slice deploy/vps/gto-training@.service deploy/vps/gto-publish@.service deploy/vps/gto-publish@.timer deploy/vps/gto-evaluate.service deploy/vps/gto-evaluate.timer /etc/systemd/system/
 install -m 0644 deploy/vps/journald-gto.conf /etc/systemd/journald@gto.conf
 ln -sfn "$release" /opt/gto/current.pending
 mv -Tf /opt/gto/current.pending "$current"

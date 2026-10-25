@@ -16,6 +16,7 @@ from training.runtime_storage import RuntimeStorage
 from training.vps import run_continuous
 
 ENGINE = 'continuous_selfplay_v1'
+RUN_DIRECTORY = 'selfplay-v4'
 
 
 def configuration(track: str, directory: Path) -> dict:
@@ -25,6 +26,88 @@ def configuration(track: str, directory: Path) -> dict:
     config = load_config(root / 'configs' / f'train_{track}_selfplay.json')
     config['output_dir'] = str(directory.resolve())
     return config
+
+
+def migrate_v4(directory: Path, track: str, *, source_directory: Path) -> dict:
+    """Preserve complete v3 state and change only the declared v4 learning budget."""
+    import copy
+    import hashlib
+    import tempfile
+    import uuid
+    from training.checkpoint import read_checkpoint, write_checkpoint
+    from training.config import config_hash
+    from training.runner import source_metadata
+
+    directory, source_directory = directory.resolve(), source_directory.resolve()
+    if directory.name != RUN_DIRECTORY or source_directory.name != 'selfplay-v3':
+        raise ValueError('Budget migration requires explicit selfplay-v3 -> selfplay-v4 directories')
+    if directory.exists():
+        if not (directory / 'selfplay.json').is_file():
+            raise FileExistsError(f'Unowned v4 destination: {directory}')
+        return initialize(directory, track)
+    config = configuration(track, directory)
+    source_contract = json.loads((source_directory / 'selfplay.json').read_text())
+    pointer = json.loads((source_directory / 'resume.json').read_text())
+    relative = Path(pointer['path'])
+    if relative.is_absolute() or '..' in relative.parts or not (
+        relative == Path('checkpoint.pt') or relative.parent == Path('checkpoints')
+        and relative.name.startswith('iteration_') and relative.suffix == '.pt'
+    ):
+        raise ValueError('Invalid v3 resume pointer')
+    source = source_directory / relative
+    torch.set_num_threads(1)
+    # Full runner validation checks replay, RNG, sampler and model contracts.
+    restored = TrainingRunner.load_checkpoint(source)
+    if restored.iteration != pointer['iteration'] or restored.iteration < 1 or set(restored.solvers) != {track}:
+        raise ValueError('v3 checkpoint iteration or dedicated track mismatch')
+    del restored
+    raw = read_checkpoint(source)
+    before = raw['config']
+    if (raw['iteration'] != pointer['iteration'] or source_contract['engine'] != ENGINE
+            or source_contract['track'] != track or source_contract['config'] != before
+            or source_contract['run_id'] != raw['metadata']['run_id']):
+        raise ValueError('v3 source contract/checkpoint mismatch; stop training before migrating')
+    if (before[track]['traversals_per_player'] != 64
+            or before['fit_schedule']['advantage_max_updates'] != 2048
+            or before['fit_schedule']['average_max_updates'] != 2048
+            or before['fit_schedule']['average_every'] != 1
+            or before['root_policy'] != 'current_advantage'
+            or before[track]['advantage_capacity'] != 50000
+            or before['strategy_capacity'] != 50000 or 'street_networks' in before):
+        raise ValueError('v4 migration requires the declared shared-network v3 production budget')
+    expected = copy.deepcopy(before)
+    expected['output_dir'] = str(directory)
+    expected[track]['traversals_per_player'] = 256
+    expected['fit_schedule'].update(advantage_max_updates=1024, average_max_updates=1024, average_every=3)
+    if config != expected:
+        raise ValueError('v4 migration cannot change settings outside traversals and fitting cadence/caps')
+    checksum = hashlib.sha256()
+    with source.open('rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            checksum.update(block)
+    raw['config'], raw['config_hash'] = config, config_hash(config)
+    migration = {'source': str(source), 'source_sha256': checksum.hexdigest(),
+                 'source_run_id': raw['metadata']['run_id'], 'source_iteration': raw['iteration'],
+                 'before': {'traversals_per_player': 64, 'fit_schedule': before['fit_schedule']},
+                 'after': {'traversals_per_player': 256, 'fit_schedule': config['fit_schedule']},
+                 'fixed_hyperparameters_until_iteration': raw['iteration'] + 500,
+                 'exceptions': 'Technical incidents only; continue running beyond the observation horizon'}
+    raw['metadata'] = {**raw['metadata'], **source_metadata(), 'run_id': uuid.uuid4().hex,
+                       'network_fit': dict(config['fit_schedule']), 'traversal_budget_migration': migration}
+    contract = {'engine': ENGINE, 'track': track, 'config': config,
+                'run_id': raw['metadata']['run_id'], 'created_at': datetime.now(timezone.utc).isoformat(),
+                'migration': migration}
+    # All learning state, including both global RNGs and every track field, is
+    # serialized unchanged. Publish the complete destination as one directory.
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=directory.parent, prefix='.selfplay-v4-') as temporary:
+        staged = Path(temporary) / RUN_DIRECTORY
+        staged.mkdir()
+        write_checkpoint(staged / 'checkpoint.pt', raw)
+        atomic_bytes(staged / 'resume.json', encoded({'path': 'checkpoint.pt', 'iteration': raw['iteration']}))
+        atomic_bytes(staged / 'selfplay.json', encoded(contract))
+        staged.rename(directory)
+    return contract
 
 
 def initialize(directory: Path, track: str, *, source_directory: Path | None = None) -> dict:

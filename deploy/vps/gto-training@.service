@@ -5,6 +5,7 @@ StartLimitIntervalSec=600
 StartLimitBurst=3
 
 [Service]
+Slice=gto.slice
 Type=notify
 NotifyAccess=main
 TimeoutStartSec=180

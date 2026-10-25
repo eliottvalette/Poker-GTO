@@ -1,0 +1,23 @@
+[Unit]
+Description=Preserve HU audit milestones independently of training
+After=local-fs.target
+
+[Service]
+Slice=gto.slice
+Type=simple
+User=gto
+Group=gto
+Environment=GTO_ARCHIVE_CONFIG=/var/lib/gto/audit-archives/hu-selfplay-v3/config.json
+ExecStart=/usr/bin/python3 /opt/gto/audit/archive_milestones.py
+Restart=on-abnormal
+RestartSec=30
+Nice=15
+IOSchedulingClass=idle
+CPUQuota=20%
+MemoryMax=96M
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

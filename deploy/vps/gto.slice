@@ -1,0 +1,6 @@
+[Unit]
+Description=GTO project CPU scheduling group
+[Slice]
+CPUAccounting=yes
+CPUWeight=100
+MemoryAccounting=yes

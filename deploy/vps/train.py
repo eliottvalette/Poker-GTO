@@ -2,7 +2,7 @@
 import os
 import socket
 from pathlib import Path
-from training.selfplay import run
+from training.selfplay import RUN_DIRECTORY, run
 
 
 def notify_ready() -> None:
@@ -17,4 +17,4 @@ def notify_ready() -> None:
 if __name__ == '__main__':
     track = os.environ['GTO_TRACK']
     directory = Path(os.environ['GTO_DATA_DIR'])
-    run(directory / 'selfplay-v3', track, notify_ready)
+    run(directory / RUN_DIRECTORY, track, notify_ready)
