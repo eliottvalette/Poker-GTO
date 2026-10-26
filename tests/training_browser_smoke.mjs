@@ -57,7 +57,9 @@ try {
         attempted_hands:6144,discarded_hands:0,cpu_seconds:5,wall_seconds:7,gain:estimate,difference:estimate,
         segments:['uniform','loose_passive','tight_aggressive','push_fold'].flatMap((profile,p)=>['shallow','medium','asymmetric'].map((region,r)=>({profile,region,gain:{...estimate,mean:10+p*7-r*10,interval:[-10+p*7-r*10,30+p*7-r*10]},difference:{...estimate,mean:p*7-r*10,interval:[-20+p*7-r*10,20+p*7-r*10]}}))),river:null,warnings:['Synthetic browser test fixture'],units:'BB/100'};
       if(url.endsWith('/index.json')){
-        const payload=JSON.stringify({version:1,track,updated_at:new Date().toISOString(),runs:[2,1,0].map((hours,i)=>({...run,release_id:String(i+1).repeat(64),iteration:run.iteration-hours,evaluated_at:new Date(Date.now()-hours*3600000).toISOString(),is_reference:i===0,gain:{...estimate,mean:[20,12,15][i],interval:[[5,35],[-3,27],[0,30]][i]},difference:{...estimate,mean:[0,-8,-5][i],interval:[[0,0],[-20,4],[-17,7]][i]}}))});
+        const runs=[2,1,0].map((hours,i)=>({...run,run_id:(i===0?'d':'e').repeat(32),architecture:'shared_per_player_count',release_id:String(i+1).repeat(64),iteration:run.iteration-hours,evaluated_at:new Date(Date.now()-hours*3600000).toISOString(),is_reference:i===0,gain:{...estimate,mean:[20,12,15][i],interval:[[5,35],[-3,27],[0,30]][i]},difference:{...estimate,mean:[0,-8,-5][i],interval:[[0,0],[-20,4],[-17,7]][i]}}));
+        runs.unshift({...run,release_id:'4'.repeat(64),iteration:1,evaluated_at:new Date(Date.now()-48*3600000).toISOString()});
+        const payload=JSON.stringify({version:1,track,updated_at:new Date().toISOString(),runs});
         const bytes=await new Response(new Blob([payload]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
         window.__archives[track]=bytes;
         const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
@@ -68,26 +70,32 @@ try {
   ` });
   await call("Page.navigate", { url: origin });
   await until("[...document.querySelectorAll('button')].some(b=>b.textContent==='Training')");
-  await until("document.body.innerText.includes('Policies ·') || document.body.innerText.includes('Policy refresh failed')");
+  await until("document.querySelector('time[datetime]') !== null || document.querySelector('main > [role=alert]') !== null");
   await click("Training");
   await until("document.body.innerText.includes('Iteration 42')");
   assert.equal(await evaluate("document.querySelectorAll('svg[aria-label=\"Policy performance history in big blinds per 100 hands\"]').length"), 1);
   assert.equal(await evaluate("document.querySelectorAll('svg polyline').length > 0"), true);
   assert.equal(await evaluate("document.querySelectorAll('svg polygon').length > 0"), true);
+  assert.equal(await evaluate("document.querySelectorAll('circle[aria-label^=\"Select iteration\"]').length"), 3);
+  assert.equal(await evaluate("document.querySelectorAll('ul[aria-label=\"Evaluation series\"] li').length"), 2);
+  assert.equal(await evaluate("document.querySelectorAll('svg polyline').length"), 1, "Separate experiments must not be connected");
   await evaluate("document.querySelector('circle[aria-label^=\"Select iteration 41:\"]').dispatchEvent(new MouseEvent('click',{bubbles:true}))");
   await until("document.body.innerText.includes('Iteration 41')");
   await click("7d"); await click("vs opponent pool");
+  await until("document.querySelectorAll('circle[aria-label^=\"Select iteration\"]').length===4");
+  assert.equal(await evaluate("document.querySelectorAll('ul[aria-label=\"Evaluation series\"] li').length"), 3);
   await click("3-Max");
   await until("document.body.innerText.includes('Iteration 33')");
   if (process.env.POKER_SCREENSHOT_PATH) {
     const shot = await call("Page.captureScreenshot", { format: "png" });
     await writeFile(process.env.POKER_SCREENSHOT_PATH, Buffer.from(shot.data, "base64"));
   }
-  await evaluate("window.__historyMode='missing'"); await click("Refresh");
-  await until("document.body.innerText.includes('No evaluations in this period')");
   await evaluate("window.__historyMode='error'"); await click("Refresh");
   await until("document.body.innerText.includes('Training history unavailable: HTTP 503')");
-  await evaluate("window.__historyMode='ready'"); await click("Refresh");
+  assert.equal(await evaluate("document.querySelectorAll('circle[aria-label^=\"Select iteration\"]').length"), 4, "Refresh errors must preserve loaded history");
+  await evaluate("window.__historyMode='missing'"); await click("Refresh");
+  await until("document.body.innerText.includes('No evaluations in this period')");
+  await evaluate("window.__historyMode='ready'; document.dispatchEvent(new Event('visibilitychange'))");
   await until("document.body.innerText.includes('Iteration 33')");
   assert.deepEqual(await evaluate("window.__errors"), []);
   console.log("Training UI passed: HU, 3-max, periods, chart, empty state, HTTP failure and recovery.");
