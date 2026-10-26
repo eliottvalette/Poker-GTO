@@ -48,7 +48,7 @@ export default function SelfPlayStatus() {
     <div className="flex flex-wrap gap-6">{rows.map(row => <div key={row.track}>
       <strong>{row.track === "hu" ? "HU" : "3-Max"} · Iteration {row.iteration.toLocaleString()}</strong>
       <p className="text-xs text-muted-foreground">{row.iteration_seconds.toFixed(1)} s per last iteration · {new Date(row.updated_at).toLocaleString()}</p>
-      {row.opening_health?.passed === false && <p className="text-sm text-amber-500">Latest candidate withheld: {row.opening_health.reasons.join("; ")}</p>}
+      {row.opening_health?.passed === false && <p className="text-sm text-amber-500">Latest candidate diagnostic: {row.opening_health.reasons.join("; ")}</p>}
       {Date.now() - Date.parse(row.updated_at) > Math.max(180000, row.iteration_seconds * 3000) && <p className="text-sm text-amber-500">No recent completed iteration; check the training service.</p>}
     </div>)}</div>
   </div>;

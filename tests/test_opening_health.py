@@ -1,4 +1,4 @@
-"""Publication requires real coverage and holding-dependent learned output."""
+"""Opening diagnostics block publication only when explicitly required."""
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -45,3 +45,8 @@ class OpeningHealthTests(unittest.TestCase):
             self.assertIsNone(publish_pending(storage, 'hu', root, require_opening_health=True))
             self.assertEqual(json.loads(storage.objects['hu/current.json']), {'existing': 'unchanged'})
             self.assertFalse(any(event[0] == 'put' for event in storage.events))
+
+            del storage.objects['hu/current.json']
+            pointer = publish_pending(storage, 'hu', root, require_opening_health=False)
+            self.assertEqual(pointer['iteration'], 1)
+            self.assertEqual(json.loads(storage.objects['hu/current.json']), pointer)

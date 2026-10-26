@@ -192,7 +192,7 @@ def publish_status(storage: SupabaseStorage, directory: Path, track: str) -> Non
               'nodes': metric['nodes'], 'replay': metric['replay'],
               'advantage': metric['advantage'], 'average_policy': metric['average_policy'],
               'quality': 'experimental', 'objective': 'hand_chip_delta',
-              'learning_objective': 'decision_balanced_v1', 'publication_gate': 'opening_health_v1'}
+              'learning_objective': 'decision_balanced_v1', 'publication_gate': 'bundle_validation_only'}
     selected = directory / 'exports/current.json'
     if selected.exists():
         from training.workflow import validate_bundle

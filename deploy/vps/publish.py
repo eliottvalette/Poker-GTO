@@ -9,4 +9,4 @@ if __name__ == '__main__':
     directory = Path(os.environ['GTO_DATA_DIR']) / RUN_DIRECTORY
     track = os.environ['GTO_TRACK']
     publish_status(storage, directory, track)
-    publish_pending(storage, track, directory, keep=2, grace_hours=2, require_opening_health=True)
+    publish_pending(storage, track, directory, keep=2, grace_hours=2, require_opening_health=False)
